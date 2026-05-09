@@ -103,10 +103,11 @@ function run(sql, params = []) {
 }
 
 function createJob({ id, type, label, payload, total, items = [] }) {
-  // Insert job record with total count
+  // Insert job record with total count (use ISO 8601 for created_at for proper timezone handling)
+  const now = new Date().toISOString();
   run(
-    `INSERT INTO jobs (id, type, label, status, total, payload) VALUES (?, ?, ?, 'queued', ?, ?)`,
-    [id, type, label, total, JSON.stringify(payload)]
+    `INSERT INTO jobs (id, type, label, status, total, payload, created_at, updated_at) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?)`,
+    [id, type, label, total, JSON.stringify(payload), now, now]
   );
 
   // Create job_items for each item in the list
@@ -132,7 +133,8 @@ function listJobs() {
 }
 
 function setJobStatus(id, status) {
-  run(`UPDATE jobs SET status = ?, updated_at = datetime('now') WHERE id = ?`, [status, id]);
+  const now = new Date().toISOString();
+  run(`UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?`, [status, now, id]);
 }
 
 function updateJobCounts(jobId) {
@@ -142,9 +144,10 @@ function updateJobCounts(jobId) {
   const { failed } = queryOne(
     `SELECT COUNT(*) AS failed FROM job_items WHERE job_id = ? AND status = 'failed'`, [jobId]
   );
+  const now = new Date().toISOString();
   run(
-    `UPDATE jobs SET completed = ?, failed = ?, updated_at = datetime('now') WHERE id = ?`,
-    [completed, failed, jobId]
+    `UPDATE jobs SET completed = ?, failed = ?, updated_at = ? WHERE id = ?`,
+    [completed, failed, now, jobId]
   );
 }
 

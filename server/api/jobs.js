@@ -32,8 +32,8 @@ function extractCompanyNameFromUrl(url) {
 }
 
 /**
- * Enhance job label with company name if available
- * Example: "Sync GL Accounts" + "Surpass" → "Sync GL Accounts - Surpass"
+ * Enhance job label with company and community name if available
+ * Example: "Sync GL Accounts" + "Surpass" + "Aaron's Assisted Living" → "Sync GL Accounts - Surpass - Aaron's Assisted Living"
  */
 function enhanceLabelWithCompanyName(label, payload) {
   let companyName = null;
@@ -48,12 +48,20 @@ function enhanceLabelWithCompanyName(label, payload) {
     companyName = extractCompanyNameFromUrl(payload.companyUrl);
   }
 
+  // Build enhanced label
+  let enhancedLabel = label;
+
   // Append company name if found and not already in label
-  if (companyName && !label.includes(companyName)) {
-    return `${label} - ${companyName}`;
+  if (companyName && !enhancedLabel.includes(companyName)) {
+    enhancedLabel = `${enhancedLabel} - ${companyName}`;
   }
 
-  return label;
+  // Append community name if available (for sync-gl-accounts)
+  if (payload.communityName && !enhancedLabel.includes(payload.communityName)) {
+    enhancedLabel = `${enhancedLabel} - ${payload.communityName}`;
+  }
+
+  return enhancedLabel;
 }
 
 // ═══════════════════════════════════════════════════════════════════

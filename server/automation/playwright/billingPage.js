@@ -4,7 +4,7 @@
  */
 
 const { setTimeout } = require('timers/promises');
-const { addGLSyncDetail } = require('../db/database');
+const { addGLSyncDetail } = require('../../db/database');
 
 /**
  * Navigate to the billing settings page and ensure it's loaded

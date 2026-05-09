@@ -267,93 +267,6 @@ export default function JobDetail() {
         </div>
       </div>
 
-      {/* Communities and Log */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Communities list */}
-        <div className="lg:col-span-1">
-          <div className="card h-full flex flex-col">
-            <h2 className="font-semibold text-primary-900 mb-4">Communities</h2>
-            <div className="space-y-2 overflow-y-auto flex-1">
-              {(job.items || []).length === 0 ? (
-                <p className="text-neutral-500 text-sm">No items yet</p>
-              ) : (
-                (job.items || []).map(item => {
-                  const config = ITEM_CONFIG[item.status] || ITEM_CONFIG.pending;
-                  return (
-                    <div key={item.id} className="flex items-start gap-2.5 text-sm pb-2 border-b border-neutral-200 last:border-0">
-                      <span className={`flex-shrink-0 font-mono ${
-                        item.status === 'pending' ? 'text-neutral-400' :
-                        item.status === 'running' ? 'text-warning animate-pulse' :
-                        item.status === 'success' ? 'text-success font-bold' :
-                        'text-error font-bold'
-                      }`}>
-                        {config.icon}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`font-medium truncate ${
-                          item.status === 'pending' ? 'text-neutral-600' : 'text-primary-900'
-                        }`}>
-                          {item.name}
-                        </p>
-                        {item.error && (
-                          <p className="text-xs text-error mt-0.5 truncate" title={item.error}>
-                            {item.error}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Live log */}
-        <div className="lg:col-span-2">
-          <div className="card h-full flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-primary-900">Live Log</h2>
-              {isRunning && (
-                <span className="flex items-center gap-2 text-xs">
-                  <span className="status-dot status-dot-running"></span>
-                  <span className="text-warning">Live</span>
-                </span>
-              )}
-            </div>
-            <div
-              ref={logRef}
-              className="flex-1 overflow-y-auto space-y-1.5 font-mono text-xs text-neutral-600 bg-neutral-50 p-4 rounded border border-neutral-200"
-            >
-              {log.length === 0 && (
-                <div className="text-neutral-400">
-                  {isRunning ? 'Waiting for events...' : 'No events logged'}
-                </div>
-              )}
-              {log.map((entry, i) => {
-                const isSuccess = entry.text.startsWith('✓');
-                const isError = entry.text.startsWith('✗');
-                const isStart = entry.text.startsWith('→');
-
-                return (
-                  <div
-                    key={i}
-                    className={`${
-                      isSuccess ? 'text-success' :
-                      isError ? 'text-error' :
-                      isStart ? 'text-warning' :
-                      'text-neutral-600'
-                    }`}
-                  >
-                    <span className="text-neutral-400 mr-3">{entry.ts}</span>
-                    {entry.text}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* GL Sync Details (for sync-gl-accounts jobs only) */}
       {job.type === 'sync-gl-accounts' && glDetails.length > 0 && (
@@ -375,7 +288,7 @@ export default function JobDetail() {
                 handleExportGLDetails();
               }}
               disabled={isExporting}
-              className="px-3 py-1 rounded text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded font-semibold bg-success hover:bg-green-700 text-white shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isExporting ? '⏳ Exporting...' : '📥 Export CSV'}
             </button>
@@ -386,8 +299,7 @@ export default function JobDetail() {
               <table className="w-full text-sm">
                 <thead className="bg-neutral-100 border-t border-neutral-200">
                   <tr>
-                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Account #</th>
-                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Account Name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Item Name</th>
                     <th className="px-4 py-3 text-left font-semibold text-primary-900">Field Changed</th>
                     <th className="px-4 py-3 text-left font-semibold text-primary-900">Old Value</th>
                     <th className="px-4 py-3 text-left font-semibold text-primary-900">New Value</th>
@@ -398,7 +310,6 @@ export default function JobDetail() {
                 <tbody>
                   {glDetails.map((detail, idx) => (
                     <tr key={idx} className={`border-t border-neutral-200 ${detail.status === 'failed' ? 'bg-red-50' : 'hover:bg-neutral-50'}`}>
-                      <td className="px-4 py-3 text-neutral-900 font-mono text-xs">{detail.account_number || '—'}</td>
                       <td className="px-4 py-3 text-neutral-700">{detail.account_name || '—'}</td>
                       <td className="px-4 py-3 text-neutral-700">{detail.field_changed || '—'}</td>
                       <td className="px-4 py-3 text-neutral-600 font-mono text-xs">{detail.old_value || '—'}</td>
