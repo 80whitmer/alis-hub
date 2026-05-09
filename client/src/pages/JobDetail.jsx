@@ -135,15 +135,26 @@ export default function JobDetail() {
       setJob(JSON.parse(e.data));
     });
 
+    // Helper to prevent duplicate log entries (check last 5 entries for same text within ~2 seconds)
+    const addUniqueLogEntry = (entry) => {
+      setLog(l => {
+        const now = new Date(entry.ts).getTime();
+        const recentDuplicate = l.slice(-5).some(e => e.text === entry.text && Math.abs(new Date(e.ts).getTime() - now) < 2000);
+        return recentDuplicate ? l : [...l, entry];
+      });
+    };
+
     es.addEventListener('item_start', e => {
       const { name } = JSON.parse(e.data);
-      setLog(l => [...l, { ts: timestamp(), text: `→ Starting: ${name}` }]);
+      const newEntry = { ts: new Date().toISOString(), text: `→ Starting: ${name}` };
+      addUniqueLogEntry(newEntry);
       setJob(j => updateItem(j, name, 'running'));
     });
 
     es.addEventListener('item_done', e => {
       const { name } = JSON.parse(e.data);
-      setLog(l => [...l, { ts: timestamp(), text: `✓ Done: ${name}` }]);
+      const newEntry = { ts: new Date().toISOString(), text: `✓ Done: ${name}` };
+      addUniqueLogEntry(newEntry);
       setJob(j => {
         const updated = updateItem(j, name, 'success');
         // Calculate completed and failed from actual item statuses
@@ -155,7 +166,8 @@ export default function JobDetail() {
 
     es.addEventListener('item_fail', e => {
       const { name, error } = JSON.parse(e.data);
-      setLog(l => [...l, { ts: timestamp(), text: `✗ Failed: ${name} — ${error}` }]);
+      const newEntry = { ts: new Date().toISOString(), text: `✗ Failed: ${name} — ${error}` };
+      addUniqueLogEntry(newEntry);
       setJob(j => {
         const updated = updateItem(j, name, 'failed');
         // Calculate completed and failed from actual item statuses
@@ -166,14 +178,27 @@ export default function JobDetail() {
     });
 
     es.addEventListener('job_done', () => {
-      setLog(l => [...l, { ts: timestamp(), text: '══ Job complete ══' }]);
+      const newEntry = { ts: new Date().toISOString(), text: '══ Job complete ══' };
+      addUniqueLogEntry(newEntry);
       setJob(j => ({ ...j, status: 'done' }));
+
+      // Refetch GL sync details when job completes
+      if (id) {
+        fetch(`/api/jobs/${id}/gl-details`)
+          .then(r => r.json())
+          .then(detailsData => {
+            setGlDetails(detailsData.details || []);
+          })
+          .catch(err => console.error('Failed to load GL details:', err));
+      }
+
       es.close();
     });
 
     es.addEventListener('job_error', e => {
       const { error } = JSON.parse(e.data);
-      setLog(l => [...l, { ts: timestamp(), text: `✗ Job error: ${error}` }]);
+      const newEntry = { ts: new Date().toISOString(), text: `✗ Job error: ${error}` };
+      addUniqueLogEntry(newEntry);
       setJob(j => ({ ...j, status: 'failed' }));
       es.close();
     });
@@ -281,7 +306,7 @@ export default function JobDetail() {
             ) : (
               log.map((entry, idx) => (
                 <div key={idx} className="mb-1">
-                  <span className="text-neutral-400">{entry.ts}</span>{' '}
+                  <span className="text-neutral-400">{formatLocalTimeOnly(entry.ts)}</span>{' '}
                   <span className="text-neutral-100">{entry.text}</span>
                 </div>
               ))
