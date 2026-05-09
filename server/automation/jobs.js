@@ -100,7 +100,9 @@ async function runSyncGLAccountsJob(jobId, { communityName, billingSettingsUrl, 
   let page;
   try {
     page = await newPage();
-    await ensureLoggedIn(page);
+    // Navigate directly to billing settings URL (handles login if needed)
+    await ensureLoggedIn(page, billingSettingsUrl);
+    // Verify we're on the right page
     await navigateToBillingSettings(page, billingSettingsUrl);
   } catch (err) {
     setJobStatus(jobId, 'failed');
@@ -139,7 +141,8 @@ async function runSyncGLAccountsJob(jobId, { communityName, billingSettingsUrl, 
           disc1_new: disc1_new || null,
           disc2_old,
           disc2_new: disc2_new || null,
-        }
+        },
+        syncDate // Pass the sync date from the job
       );
 
       // Close any open detail views to prepare for next item

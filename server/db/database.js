@@ -87,13 +87,17 @@ function run(sql, params = []) {
   saveToDisk();
 }
 
-function createJob({ id, type, label, payload, communities }) {
+function createJob({ id, type, label, payload, total, items = [] }) {
+  // Insert job record with total count
   run(
     `INSERT INTO jobs (id, type, label, status, total, payload) VALUES (?, ?, ?, 'queued', ?, ?)`,
-    [id, type, label, communities.length, JSON.stringify(payload)]
+    [id, type, label, total, JSON.stringify(payload)]
   );
-  for (const c of communities) {
-    run(`INSERT INTO job_items (job_id, name) VALUES (?, ?)`, [id, c.name]);
+
+  // Create job_items for each item in the list
+  // items can be communities, billing items, or any array of objects with a 'name' property
+  for (const item of items) {
+    run(`INSERT INTO job_items (job_id, name) VALUES (?, ?)`, [id, item.name]);
   }
 }
 

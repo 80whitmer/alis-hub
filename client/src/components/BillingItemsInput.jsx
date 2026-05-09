@@ -12,6 +12,9 @@ import {
 } from '../utils/excel-parser';
 
 export default function BillingItemsInput({ items, onChange, error, setError }) {
+  // Ensure items is always an array
+  const safeItems = Array.isArray(items) ? items : [];
+
   const [activeTab, setActiveTab] = useState('table');
   const [jsonInput, setJsonInput] = useState('');
   const [editingIdx, setEditingIdx] = useState(null);
@@ -55,13 +58,13 @@ export default function BillingItemsInput({ items, onChange, error, setError }) 
 
   function handleAddItem() {
     onChange([
-      ...items,
+      ...safeItems,
       { name: '', gl_old: '', gl_new: '', disc1_old: '', disc1_new: '' },
     ]);
   }
 
   function handleRemoveItem(idx) {
-    onChange(items.filter((_, i) => i !== idx));
+    onChange(safeItems.filter((_, i) => i !== idx));
   }
 
   function handleUpdateItem(idx, field, value) {
@@ -82,7 +85,7 @@ export default function BillingItemsInput({ items, onChange, error, setError }) 
               : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >
-          Items Table ({items.length})
+          Items Table ({safeItems.length})
         </button>
         <button
           onClick={() => setActiveTab('excel')}
@@ -135,14 +138,14 @@ export default function BillingItemsInput({ items, onChange, error, setError }) 
                 </tr>
               </thead>
               <tbody>
-                {items.length === 0 ? (
+                {safeItems.length === 0 ? (
                   <tr>
                     <td colSpan="8" className="text-center text-neutral-500 py-6">
                       No items yet. Upload Excel, paste JSON, or add manually.
                     </td>
                   </tr>
                 ) : (
-                  items.map((item, idx) => (
+                  safeItems.map((item, idx) => (
                     <tr key={idx}>
                       <td>
                         <input

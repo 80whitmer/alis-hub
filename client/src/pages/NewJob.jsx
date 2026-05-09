@@ -35,10 +35,23 @@ export default function NewJob() {
     fetch(`/api/jobs/templates/${selectedTemplate}`)
       .then(r => r.json())
       .then(data => {
-        setTemplateData(data);
-        setFormData({});
-        setAdvancedJson('');
-        setError('');
+        try {
+          setTemplateData(data);
+          // Initialize formData with required fields from schema
+          const initialFormData = {};
+          if (data?.inputSchema?.properties) {
+            Object.entries(data.inputSchema.properties).forEach(([key, prop]) => {
+              if (prop?.type === 'array') {
+                initialFormData[key] = [];
+              }
+            });
+          }
+          setFormData(initialFormData);
+          setAdvancedJson('');
+          setError('');
+        } catch (err) {
+          setError(`Error processing template: ${err.message}`);
+        }
       })
       .catch(err => setError(`Failed to load template: ${err.message}`));
   }, [selectedTemplate]);
@@ -208,8 +221,19 @@ export default function NewJob() {
               <p className="input-help">Date when changes take effect</p>
             </div>
 
+            {/* Run Job button - above billing items */}
+            <div className="flex gap-3 pt-4 pb-6 border-b border-neutral-200">
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !selectedTemplate}
+                className="btn btn-primary btn-lg"
+              >
+                {loading ? 'Starting...' : 'Run Job →'}
+              </button>
+            </div>
+
             {/* Billing items */}
-            <div>
+            <div className="pt-6">
               <h3 className="input-label mb-4">Billing Items & GL Accounts</h3>
               <BillingItemsInput
                 items={formData.items || []}
@@ -241,16 +265,18 @@ export default function NewJob() {
         )}
       </div>
 
-      {/* Submit */}
-      <div className="flex gap-3">
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !selectedTemplate}
-          className="btn btn-primary btn-lg"
-        >
-          {loading ? 'Starting...' : 'Run Job →'}
-        </button>
-      </div>
+      {/* Submit - only for non-GL-sync templates (GL sync button is above the table) */}
+      {!isGLSync && (
+        <div className="flex gap-3">
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !selectedTemplate}
+            className="btn btn-primary btn-lg"
+          >
+            {loading ? 'Starting...' : 'Run Job →'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

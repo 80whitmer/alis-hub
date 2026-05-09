@@ -38,8 +38,10 @@ async function newPage() {
 /**
  * Ensure the page is logged in to ALIS admin.
  * Idempotent — safe to call before every job.
+ * @param {Page} page - Playwright page object
+ * @param {string} targetUrl - Optional target URL to navigate to (skips admin.alisonline.com redirect)
  */
-async function ensureLoggedIn(page) {
+async function ensureLoggedIn(page, targetUrl = null) {
   const username = process.env.ALIS_USERNAME;
   const password = process.env.ALIS_PASSWORD;
 
@@ -47,30 +49,62 @@ async function ensureLoggedIn(page) {
     throw new Error('ALIS_USERNAME / ALIS_PASSWORD not set in .env');
   }
 
-  await page.goto('https://admin.alisonline.com/', { waitUntil: 'networkidle' });
+  // If target URL provided, navigate directly there (it will redirect to login if needed)
+  const navUrl = targetUrl || 'https://admin.alisonline.com/';
+  await page.goto(navUrl, { waitUntil: 'networkidle' });
 
   const url = page.url();
-  if (!url.includes('/Account/Login') && !url.includes('/Account/SignIn')) {
+  // Check for login pages (ALIS uses /Login, not /Account/Login)
+  if (!url.includes('/Login') && !url.includes('/Account/Login') && !url.includes('/Account/SignIn')) {
     return; // already logged in
   }
 
-  await page.locator(
-    'input[name="Username"], input[name="UserName"], #Username, #UserName, input[name="Email"], #Email'
-  ).first().fill(username);
+  // We're on login page, fill in credentials
+  console.log('[Login] Filling username and password...');
 
-  await page.locator(
+  const usernameField = page.locator(
+    'input[name="Username"], input[name="UserName"], #Username, #UserName, input[name="Email"], #Email, input[type="text"]'
+  ).first();
+
+  const passwordField = page.locator(
     'input[name="Password"], input[type="password"], #Password'
-  ).first().fill(password);
+  ).first();
 
-  await page.locator(
+  const usernameVisible = await usernameField.isVisible().catch(() => false);
+  const passwordVisible = await passwordField.isVisible().catch(() => false);
+
+  console.log(`[Login] Username field visible: ${usernameVisible}, Password field visible: ${passwordVisible}`);
+
+  if (!usernameVisible || !passwordVisible) {
+    // Take screenshot to see what's on the page
+    await page.screenshot({ path: 'login_page_error.png', fullPage: true }).catch(() => {});
+    throw new Error('Could not find login fields on page');
+  }
+
+  await usernameField.fill(username);
+  await page.waitForTimeout(200);
+
+  await passwordField.fill(password);
+  await page.waitForTimeout(200);
+
+  console.log('[Login] Clicking login button...');
+
+  const loginButton = page.locator(
     'button:has-text("Login"), input[type="submit"], button[type="submit"]'
-  ).first().click();
+  ).first();
+
+  await loginButton.click();
+
+  console.log('[Login] Waiting for login to complete...');
 
   await page.waitForFunction(
-    () => !window.location.href.includes('/Account/Login') &&
+    () => !window.location.href.includes('/Login') &&
+          !window.location.href.includes('/Account/Login') &&
           !window.location.href.includes('/Account/SignIn'),
     { timeout: 15_000 }
   );
+
+  console.log('[Login] Login successful!');
 }
 
 module.exports = { getBrowser, closeBrowser, newPage, ensureLoggedIn };

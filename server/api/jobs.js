@@ -43,40 +43,52 @@ router.get('/templates/:id', (req, res) => {
 // POST /api/jobs/create — create job from any template
 // Body: { templateId: string, label?: string, payload: {...} }
 router.post('/create', (req, res) => {
-  const { templateId, label, payload } = req.body;
-
-  if (!templateId || !payload) {
-    return res.status(400).json({ error: 'templateId and payload are required' });
-  }
-
-  let template;
   try {
-    template = getTemplate(templateId);
+    const { templateId, label, payload } = req.body;
+
+    if (!templateId || !payload) {
+      return res.status(400).json({ error: 'templateId and payload are required' });
+    }
+
+    let template;
+    try {
+      template = getTemplate(templateId);
+    } catch (err) {
+      return res.status(404).json({ error: `Template '${templateId}' not found` });
+    }
+
+    const id = uuidv4();
+
+    // Determine item count and extract items array (varies by template)
+    let itemCount = 1;
+    let itemsToTrack = [];
+    if (payload.communities) {
+      itemCount = payload.communities.length;
+      itemsToTrack = payload.communities;
+    } else if (payload.items) {
+      itemCount = payload.items.length;
+      itemsToTrack = payload.items;
+    }
+
+    createJob({
+      id,
+      type: templateId,
+      label: label || template.name,
+      payload,
+      total: itemCount,
+      items: itemsToTrack,
+    });
+
+    // Kick off async — don't await
+    runTemplateJob(id, template, payload).catch(err => {
+      console.error(`[job:${id}] Unhandled error:`, err.message);
+    });
+
+    res.status(202).json({ id });
   } catch (err) {
-    return res.status(404).json({ error: `Template '${templateId}' not found` });
+    console.error('[jobs POST /create] Error:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  const id = uuidv4();
-
-  // Determine item count (varies by template)
-  let itemCount = 1;
-  if (payload.communities) itemCount = payload.communities.length;
-  if (payload.items) itemCount = payload.items.length;
-
-  createJob({
-    id,
-    type: templateId,
-    label: label || template.name,
-    payload,
-    total: itemCount,
-  });
-
-  // Kick off async — don't await
-  runTemplateJob(id, template, payload).catch(err => {
-    console.error(`[job:${id}] Unhandled error:`, err.message);
-  });
-
-  res.status(202).json({ id });
 });
 
 // POST /api/jobs/create-communities — Legacy support
@@ -94,6 +106,7 @@ router.post('/create-communities', (req, res) => {
     label: label || `Create ${communities.length} communities`,
     payload: { companyUrl, communities },
     total: communities.length,
+    items: communities,
   });
 
   // Kick off async

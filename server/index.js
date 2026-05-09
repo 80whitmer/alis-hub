@@ -16,6 +16,12 @@ app.use('/api/jobs',   jobsRouter);
 app.use('/api/stream', streamRouter);
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Error handler middleware — must be last
+app.use((err, req, res, next) => {
+  console.error('[Express Error Handler]', err);
+  res.status(500).json({ error: err.message || 'Internal server error' });
+});
+
 initDb().then(() => {
   app.listen(PORT, () => {
     console.log(`\n🚀  alis-hub server running at http://localhost:${PORT}\n`);
