@@ -1,0 +1,17 @@
+{
+  "name": "alis-hub",
+  "version": "0.1.0",
+  "description": "ALIS Admin Control Panel — Playwright automation hub for settings, configuration, and standardization across ALIS communities.",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "start": "npm run start --workspace=server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

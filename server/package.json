@@ -1,0 +1,21 @@
+{
+  "name": "alis-hub-server",
+  "version": "0.1.0",
+  "description": "Express backend for alis-hub",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "better-sqlite3": "^9.4.3",
+    "playwright": "^1.43.1",
+    "dotenv": "^16.4.5",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

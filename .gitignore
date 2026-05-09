@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment & credentials — NEVER commit these
+.env
+.env.local
+.env.*.local
+server/.env
+
+# ALIS credentials / session storage
+server/auth/
+server/.alis-session/
+*.session.json
+credentials.json
+
+# Database (contains project history / logs — local only)
+server/db/*.sqlite
+server/db/*.db
+*.sqlite
+*.db
+
+# Playwright artifacts
+server/automation/screenshots/
+server/automation/traces/
+test-results/
+playwright-report/
+
+# Build output
+client/dist/
+client/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
