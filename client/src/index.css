@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+
+body {
+  background: #0f1117;
+  color: #e2e8f0;
+  font-family: 'DM Sans', sans-serif;
+  margin: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #181c26; }
+::-webkit-scrollbar-thumb { background: #252a38; border-radius: 3px; }
+
+/* SSE status pulse */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.pulse { animation: pulse-dot 1.2s ease-in-out infinite; }
+
+/* Progress bar fill */
+@keyframes slide-in {
+  from { width: 0; }
+}
