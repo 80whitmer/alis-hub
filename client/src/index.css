@@ -2,28 +2,385 @@
 @tailwind components;
 @tailwind utilities;
 
-* { box-sizing: border-box; }
+/* ============================================================================
+   ALIS HUB — Modern Design System
+   Professional, inviting, and focused on automation excellence
+   =========================================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
 
 body {
-  background: #0f1117;
-  color: #e2e8f0;
-  font-family: 'DM Sans', sans-serif;
+  background: #f9fafb;
+  color: #374151;
+  font-family: system-ui, -apple-system, sans-serif;
   margin: 0;
+  padding: 0;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar       { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #181c26; }
-::-webkit-scrollbar-thumb { background: #252a38; border-radius: 3px; }
+/* ============================================================================
+   SCROLLBAR — Subtle, modern styling
+   =========================================================================== */
 
-/* SSE status pulse */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+  border: 2px solid #f3f4f6;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* ============================================================================
+   COMPONENT LIBRARY — Pre-built patterns
+   =========================================================================== */
+
+/* Cards — Clean, minimal containers with subtle shadows */
+@layer components {
+  .card {
+    @apply bg-white border border-neutral-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+
+  .card-sm {
+    @apply bg-white border border-neutral-200 rounded-lg p-4 shadow-xs;
+  }
+
+  /* Buttons — Modern, accessible button styles */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-base font-medium transition-all duration-200 cursor-pointer;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 disabled:bg-neutral-300 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply btn bg-neutral-100 text-primary-600 hover:bg-neutral-200 active:bg-neutral-300 disabled:bg-neutral-100 disabled:text-neutral-400;
+  }
+
+  .btn-accent {
+    @apply btn bg-accent-500 text-white hover:bg-accent-600 active:bg-accent-700 disabled:bg-neutral-300 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply btn text-primary-600 hover:bg-primary-50 active:bg-primary-100;
+  }
+
+  .btn-danger {
+    @apply btn bg-error text-white hover:bg-red-600 active:bg-red-700;
+  }
+
+  .btn-sm {
+    @apply text-sm px-3 py-1.5;
+  }
+
+  .btn-lg {
+    @apply text-lg px-6 py-3;
+  }
+
+  /* Input Groups */
+  .input-group {
+    @apply flex flex-col gap-2;
+  }
+
+  .input-label {
+    @apply block text-sm font-medium text-neutral-700;
+  }
+
+  .input-help {
+    @apply text-xs text-neutral-500;
+  }
+
+  .input-error {
+    @apply text-xs text-error;
+  }
+
+  /* Badges & Status Indicators */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-error {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .badge-info {
+    @apply bg-primary-50 text-info;
+  }
+
+  .badge-neutral {
+    @apply bg-neutral-100 text-neutral-700;
+  }
+
+  /* Status Dot — For real-time status indicators */
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+  }
+
+  .status-dot-active {
+    @apply bg-green-500 animate-pulse;
+  }
+
+  .status-dot-running {
+    @apply bg-yellow-500 animate-pulse;
+  }
+
+  .status-dot-error {
+    @apply bg-red-500;
+  }
+
+  .status-dot-pending {
+    @apply bg-gray-400;
+  }
+
+  /* Tables — Clean, readable data tables */
+  .table-container {
+    @apply overflow-x-auto;
+  }
+
+  .table {
+    @apply w-full border-collapse;
+  }
+
+  .table thead {
+    @apply bg-neutral-50 border-b border-neutral-200;
+  }
+
+  .table th {
+    @apply px-6 py-3 text-left text-xs font-semibold text-neutral-700 uppercase tracking-wider;
+  }
+
+  .table td {
+    @apply px-6 py-4 border-b border-neutral-200 text-sm text-neutral-700;
+  }
+
+  .table tbody tr:hover {
+    @apply bg-neutral-50 transition-colors;
+  }
+
+  /* Modals & Overlays */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity;
+  }
+
+  .modal {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+  }
+
+  .modal-content {
+    @apply bg-white rounded-lg shadow-lg max-w-md w-full max-h-96 overflow-y-auto;
+  }
+
+  /* Alert Boxes */
+  .alert {
+    @apply p-4 rounded-lg border flex gap-3 items-start;
+  }
+
+  .alert-success {
+    @apply bg-green-50 border-green-200 text-green-800;
+  }
+
+  .alert-warning {
+    @apply bg-yellow-50 border-yellow-200 text-yellow-800;
+  }
+
+  .alert-error {
+    @apply bg-red-50 border-red-200 text-red-800;
+  }
+
+  .alert-info {
+    @apply bg-blue-50 border-blue-200 text-blue-800;
+  }
+
+  /* Progress Bars */
+  .progress-bar {
+    @apply w-full h-2 bg-neutral-200 rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-accent-500 rounded-full transition-all duration-300;
+  }
+
+  /* Dividers */
+  .divider {
+    @apply border-t border-neutral-200;
+  }
+
+  /* Text Utilities */
+  .text-muted {
+    @apply text-neutral-500;
+  }
+
+  .text-subtle {
+    @apply text-neutral-400 text-xs;
+  }
+
+  /* Spacing Utilities */
+  .section {
+    @apply py-12 px-6;
+  }
+
+  .container-tight {
+    @apply max-w-4xl mx-auto;
+  }
+
+  .container-wide {
+    @apply max-w-7xl mx-auto;
+  }
+}
+
+/* ============================================================================
+   ANIMATIONS — Smooth, professional transitions
+   =========================================================================== */
+
+/* SSE Status Pulse */
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
-.pulse { animation: pulse-dot 1.2s ease-in-out infinite; }
 
-/* Progress bar fill */
+.pulse {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+/* Progress bar animation */
 @keyframes slide-in {
-  from { width: 0; }
+  from {
+    width: 0;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out;
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Slide up animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* ============================================================================
+   LAYOUT — Page structure and responsive patterns
+   =========================================================================== */
+
+/* Page wrapper */
+.page {
+  @apply min-h-screen bg-neutral-50;
+}
+
+.page-header {
+  @apply bg-white border-b border-neutral-200 py-6 px-6 sticky top-0 z-30;
+}
+
+.page-header h1 {
+  @apply text-3xl font-bold text-primary-900 mb-2;
+}
+
+.page-body {
+  @apply p-6 max-w-7xl mx-auto;
+}
+
+/* ============================================================================
+   UTILITY HELPERS — Common patterns
+   =========================================================================== */
+
+/* Flex center */
+.flex-center {
+  @apply flex items-center justify-center;
+}
+
+/* Flex between */
+.flex-between {
+  @apply flex items-center justify-between;
+}
+
+/* Grid columns */
+.grid-cols-auto {
+  @apply grid auto-cols-max gap-4;
+}
+
+/* Truncate text */
+.truncate-lines {
+  @apply line-clamp-2;
+}
+
+/* Backdrop blur */
+.backdrop-blur-md {
+  backdrop-filter: blur(12px);
+}
+
+/* ============================================================================
+   RESPONSIVE UTILITIES — Mobile-first design
+   =========================================================================== */
+
+/* Hide on mobile */
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none;
+  }
+}
+
+/* Show only on mobile */
+@media (max-width: 768px) {
+  .show-mobile {
+    display: block;
+  }
+}
+
+@media (min-width: 769px) {
+  .show-mobile {
+    display: none;
+  }
 }

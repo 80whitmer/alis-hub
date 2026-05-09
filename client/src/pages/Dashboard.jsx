@@ -1,18 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-const STATUS_COLORS = {
-  queued:  'text-muted',
-  running: 'text-warn',
-  done:    'text-accent',
-  failed:  'text-danger',
-};
-
-const STATUS_DOT = {
-  queued:  'bg-muted',
-  running: 'bg-warn pulse',
-  done:    'bg-accent',
-  failed:  'bg-danger',
+const STATUS_CONFIG = {
+  queued:  { badge: 'badge-neutral', dot: 'status-dot-pending', text: 'Queued' },
+  running: { badge: 'badge-warning', dot: 'status-dot-running', text: 'Running' },
+  done:    { badge: 'badge-success', dot: 'status-dot-active', text: 'Completed' },
+  failed:  { badge: 'badge-error', dot: 'status-dot-error', text: 'Failed' },
 };
 
 export default function Dashboard() {
@@ -32,85 +25,90 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="text-muted font-display text-sm mt-12 text-center">
-        Loading...
+      <div className="text-center py-12">
+        <p className="text-neutral-500">Loading jobs...</p>
       </div>
     );
   }
 
   if (jobs.length === 0) {
     return (
-      <div className="max-w-xl mx-auto mt-24 text-center">
-        <p className="text-muted font-display text-sm mb-4">No jobs yet.</p>
+      <div className="max-w-2xl mx-auto py-24 text-center">
+        <h2 className="text-2xl font-bold text-primary-900 mb-4">No jobs yet</h2>
+        <p className="text-neutral-600 mb-6">Create your first automation job to get started</p>
         <Link
           to="/new-job"
-          className="inline-block bg-accent text-ink font-display text-sm font-medium px-5 py-2.5 rounded hover:bg-green-300 transition-colors"
+          className="btn btn-primary btn-lg"
         >
-          + Create your first job
+          + Create Job
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-display text-sm text-muted uppercase tracking-widest">
-          Jobs
-        </h1>
-        <Link
-          to="/new-job"
-          className="bg-accent text-ink font-display text-xs font-medium px-4 py-2 rounded hover:bg-green-300 transition-colors"
-        >
+    <div>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-primary-900">Automation Jobs</h1>
+        <Link to="/new-job" className="btn btn-accent">
           + New Job
         </Link>
       </div>
 
-      <div className="space-y-2">
-        {jobs.map(job => (
-          <Link
-            key={job.id}
-            to={`/jobs/${job.id}`}
-            className="block bg-panel border border-border rounded-lg px-5 py-4 hover:border-muted transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              {/* Status dot */}
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[job.status] || 'bg-muted'}`} />
+      <div className="space-y-3">
+        {jobs.map(job => {
+          const config = STATUS_CONFIG[job.status] || STATUS_CONFIG.queued;
+          const pct = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
 
-              {/* Label */}
-              <span className="font-body text-sm text-white flex-1 truncate">
-                {job.label}
-              </span>
+          return (
+            <Link
+              key={job.id}
+              to={`/jobs/${job.id}`}
+              className="card hover:shadow-base transition-all duration-200"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  {/* Status indicator */}
+                  <span className={`status-dot ${config.dot} flex-shrink-0`}></span>
 
-              {/* Progress */}
-              <span className="font-display text-xs text-muted flex-shrink-0">
-                {job.completed}/{job.total}
-                {job.failed > 0 && (
-                  <span className="text-danger ml-2">{job.failed} failed</span>
-                )}
-              </span>
+                  {/* Job label */}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-primary-900 truncate">
+                      {job.label}
+                    </h3>
+                    <p className="text-sm text-neutral-500 mt-0.5">
+                      {new Date(job.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
 
-              {/* Status badge */}
-              <span className={`font-display text-xs flex-shrink-0 ${STATUS_COLORS[job.status] || 'text-muted'}`}>
-                {job.status}
-              </span>
-            </div>
-
-            {/* Progress bar */}
-            {job.total > 0 && (
-              <div className="mt-3 h-1 bg-border rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-accent rounded-full transition-all duration-500"
-                  style={{ width: `${Math.round((job.completed / job.total) * 100)}%` }}
-                />
+                {/* Status badge */}
+                <span className={`badge ${config.badge} flex-shrink-0`}>
+                  {config.text}
+                </span>
               </div>
-            )}
 
-            <div className="mt-2 font-display text-xs text-muted">
-              {new Date(job.created_at).toLocaleString()}
-            </div>
-          </Link>
-        ))}
+              {/* Progress bar */}
+              {job.total > 0 && (
+                <div className="mb-3">
+                  <div className="progress-bar">
+                    <div
+                      className="progress-bar-fill"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center mt-2 text-xs text-neutral-500">
+                    <span>{job.completed}/{job.total} completed</span>
+                    <span className="font-medium">{pct}%</span>
+                    {job.failed > 0 && (
+                      <span className="text-error font-medium">{job.failed} failed</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

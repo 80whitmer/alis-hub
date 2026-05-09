@@ -1,0 +1,165 @@
+{
+  "templates": [
+    {
+      "id": "create-communities",
+      "name": "Create Communities",
+      "description": "Provision communities in ALIS with licensed capacity and address information",
+      "category": "provisioning",
+      "icon": "🏢",
+      "timeout": 3600000,
+      "scriptPath": "./create-communities.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Create Communities",
+        "properties": {
+          "companyUrl": {
+            "type": "string",
+            "title": "Company Admin URL",
+            "description": "Full URL to the company page in ALIS admin",
+            "examples": ["https://admin.alisonline.com/Customers/Companies/770"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities",
+            "description": "List of communities to create",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Community Name",
+                  "examples": ["Steadman Hill"]
+                },
+                "crm_id": {
+                  "type": "string",
+                  "title": "CRM ID",
+                  "examples": ["12345678901"]
+                },
+                "licensed_capacity": {
+                  "type": "string",
+                  "title": "Licensed Capacity",
+                  "examples": ["60"]
+                },
+                "physical_capacity": {
+                  "type": "string",
+                  "title": "Physical Capacity",
+                  "examples": ["60"]
+                },
+                "street": {
+                  "type": "string",
+                  "title": "Street Address",
+                  "examples": ["123 Main St"]
+                },
+                "city": {
+                  "type": "string",
+                  "title": "City",
+                  "examples": ["Atlanta"]
+                },
+                "state": {
+                  "type": "string",
+                  "title": "State",
+                  "examples": ["GA"]
+                },
+                "zip": {
+                  "type": "string",
+                  "title": "ZIP Code",
+                  "examples": ["30301"]
+                },
+                "flags": {
+                  "type": "array",
+                  "title": "Flags",
+                  "items": { "type": "string" }
+                }
+              },
+              "required": ["name", "crm_id", "licensed_capacity", "physical_capacity", "street", "city", "state", "zip"]
+            }
+          }
+        },
+        "required": ["companyUrl", "communities"]
+      }
+    },
+    {
+      "id": "sync-gl-accounts",
+      "name": "Sync GL Accounts",
+      "description": "Synchronize GL accounts and discount accounts for ownership transitions and account restructuring",
+      "category": "billing",
+      "icon": "💰",
+      "timeout": 1800000,
+      "scriptPath": "./sync_alis_gl_accounts.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Sync GL Accounts",
+        "properties": {
+          "communityName": {
+            "type": "string",
+            "title": "Community Name",
+            "description": "Display name of the community",
+            "examples": ["Steadman Hill"]
+          },
+          "billingSettingsUrl": {
+            "type": "string",
+            "title": "Billing Settings URL",
+            "description": "Full URL to the billing settings page",
+            "examples": ["https://surpass.alisonline.com/Settings/Billing/1069?tab=private"]
+          },
+          "syncDate": {
+            "type": "string",
+            "title": "Sync Date",
+            "description": "Date when changes take effect (MM/DD/YYYY)",
+            "pattern": "^\\d{2}/\\d{2}/\\d{4}$",
+            "examples": ["05/01/2026"]
+          },
+          "items": {
+            "type": "array",
+            "title": "Billing Items",
+            "description": "Billing items and their GL account mappings",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Billing Item Name",
+                  "examples": ["Assisted Living Apartment Rent"]
+                },
+                "gl_old": {
+                  "type": "string",
+                  "title": "Current GL Account",
+                  "examples": ["40031"]
+                },
+                "gl_new": {
+                  "type": "string",
+                  "title": "New GL Account",
+                  "examples": ["400-10"]
+                },
+                "disc1_old": {
+                  "type": "string",
+                  "title": "Current Discount GL Account 1 (Optional)",
+                  "examples": ["41100"]
+                },
+                "disc1_new": {
+                  "type": "string",
+                  "title": "New Discount GL Account 1 (Optional)",
+                  "examples": ["440-01"]
+                },
+                "disc2_old": {
+                  "type": "string",
+                  "title": "Current Discount GL Account 2 (Optional)",
+                  "examples": ["41200"]
+                },
+                "disc2_new": {
+                  "type": "string",
+                  "title": "New Discount GL Account 2 (Optional)",
+                  "examples": ["440-02"]
+                }
+              },
+              "required": ["name", "gl_old", "gl_new"]
+            }
+          }
+        },
+        "required": ["communityName", "billingSettingsUrl", "syncDate", "items"]
+      }
+    }
+  ]
+}

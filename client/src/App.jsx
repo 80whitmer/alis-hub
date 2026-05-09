@@ -10,21 +10,23 @@ const nav = [
 
 export default function App() {
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Top bar */}
-      <header className="border-b border-border px-6 py-4 flex items-center gap-8">
-        <span className="font-display text-accent font-medium tracking-tight text-lg">
-          alis<span className="text-muted">-</span>hub
+    <div className="min-h-screen flex flex-col bg-neutral-50">
+      {/* Top bar — Clean, professional header */}
+      <header className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center gap-8 shadow-sm">
+        <span className="font-bold text-xl text-primary-600">
+          alis<span className="text-accent-500">-hub</span>
         </span>
-        <nav className="flex gap-6">
+        <nav className="flex gap-8">
           {nav.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
               end
               className={({ isActive }) =>
-                `font-body text-sm transition-colors ${
-                  isActive ? 'text-white' : 'text-muted hover:text-white'
+                `text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'text-primary-600 border-b-2 border-accent-500 pb-2'
+                    : 'text-neutral-600 hover:text-primary-600'
                 }`
               }
             >
@@ -32,18 +34,20 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto font-display text-xs text-muted">
+        <div className="ml-auto text-xs text-neutral-500">
           v0.1.0
         </div>
       </header>
 
-      {/* Page content */}
-      <main className="flex-1 p-6">
-        <Routes>
-          <Route path="/"          element={<Dashboard />} />
-          <Route path="/new-job"   element={<NewJob />}    />
-          <Route path="/jobs/:id"  element={<JobDetail />} />
-        </Routes>
+      {/* Page content — With proper spacing */}
+      <main className="flex-1 px-6 py-8">
+        <div className="container-wide">
+          <Routes>
+            <Route path="/"          element={<Dashboard />} />
+            <Route path="/new-job"   element={<NewJob />}    />
+            <Route path="/jobs/:id"  element={<JobDetail />} />
+          </Routes>
+        </div>
       </main>
     </div>
   );

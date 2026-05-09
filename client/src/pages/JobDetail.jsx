@@ -1,18 +1,18 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 
-const ICONS = {
-  pending: '○',
-  running: '◉',
-  success: '✓',
-  failed:  '✗',
+const ITEM_CONFIG = {
+  pending: { icon: '○', badge: 'badge-neutral', dot: 'status-dot-pending' },
+  running: { icon: '◉', badge: 'badge-warning', dot: 'status-dot-running' },
+  success: { icon: '✓', badge: 'badge-success', dot: 'status-dot-active' },
+  failed:  { icon: '✗', badge: 'badge-error', dot: 'status-dot-error' },
 };
 
-const ITEM_COLORS = {
-  pending: 'text-muted',
-  running: 'text-warn',
-  success: 'text-accent',
-  failed:  'text-danger',
+const JOB_STATUS_CONFIG = {
+  queued:  { badge: 'badge-neutral', text: 'Queued' },
+  running: { badge: 'badge-warning', text: 'Running' },
+  done:    { badge: 'badge-success', text: 'Completed' },
+  failed:  { badge: 'badge-error', text: 'Failed' },
 };
 
 export default function JobDetail() {
@@ -91,107 +91,145 @@ export default function JobDetail() {
   }
 
   if (!job) {
-    return <div className="text-muted font-display text-sm mt-12 text-center">Loading...</div>;
+    return (
+      <div className="text-center py-12">
+        <p className="text-neutral-500">Loading job details...</p>
+      </div>
+    );
   }
 
   const pct = job.total > 0 ? Math.round(((job.completed || 0) / job.total) * 100) : 0;
   const isRunning = job.status === 'running' || job.status === 'queued';
+  const statusConfig = JOB_STATUS_CONFIG[job.status] || JOB_STATUS_CONFIG.queued;
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Back */}
-      <Link to="/" className="font-display text-xs text-muted hover:text-white transition-colors mb-6 inline-block">
-        ← Dashboard
+    <div>
+      {/* Back link */}
+      <Link to="/" className="text-accent-500 hover:text-accent-600 text-sm font-medium mb-6 inline-flex items-center gap-2">
+        ← Back to Dashboard
       </Link>
 
-      {/* Header */}
-      <div className="bg-panel border border-border rounded-lg p-5 mb-4">
-        <div className="flex items-start justify-between gap-4 mb-4">
+      {/* Job header card */}
+      <div className="card mb-6">
+        <div className="flex items-start justify-between gap-4 mb-6">
           <div>
-            <h1 className="font-body text-white text-base font-medium">{job.label}</h1>
-            <div className="font-display text-xs text-muted mt-1">
-              {job.type} · {new Date(job.created_at).toLocaleString()}
-            </div>
+            <h1 className="text-2xl font-bold text-primary-900">{job.label}</h1>
+            <p className="text-neutral-600 text-sm mt-2">
+              {job.type} • {new Date(job.created_at).toLocaleString()}
+            </p>
           </div>
-          <StatusBadge status={job.status} />
+          <span className={`badge ${statusConfig.badge}`}>
+            {statusConfig.text}
+          </span>
         </div>
 
-        {/* Progress bar */}
-        <div className="h-1.5 bg-border rounded-full overflow-hidden mb-2">
-          <div
-            className="h-full bg-accent rounded-full transition-all duration-500"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <div className="flex justify-between font-display text-xs text-muted">
-          <span>
-            {job.completed || 0} done
-            {(job.failed || 0) > 0 && (
-              <span className="text-danger ml-3">{job.failed} failed</span>
-            )}
-          </span>
-          <span>{pct}% · {job.total} total</span>
+        {/* Progress section */}
+        <div>
+          <div className="progress-bar mb-3">
+            <div
+              className="progress-bar-fill"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-sm text-neutral-600">
+            <span>
+              <strong className="text-primary-900">{job.completed || 0}</strong> of{' '}
+              <strong className="text-primary-900">{job.total}</strong> completed
+              {(job.failed || 0) > 0 && (
+                <strong className="text-error ml-3">
+                  {job.failed} failed
+                </strong>
+              )}
+            </span>
+            <span className="font-semibold text-primary-900">{pct}%</span>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Community list */}
-        <div className="bg-panel border border-border rounded-lg p-4">
-          <div className="font-display text-xs text-muted uppercase tracking-wider mb-3">
-            Communities
-          </div>
-          <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-            {(job.items || []).map(item => (
-              <div key={item.id} className="flex items-start gap-2.5">
-                <span className={`font-display text-xs mt-0.5 flex-shrink-0 ${ITEM_COLORS[item.status]}`}>
-                  {ICONS[item.status] || '○'}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <span className={`font-body text-xs block truncate ${
-                    item.status === 'pending' ? 'text-muted' : 'text-white'
-                  }`}>
-                    {item.name}
-                  </span>
-                  {item.error && (
-                    <span className="font-display text-xs text-danger block truncate" title={item.error}>
-                      {item.error}
-                    </span>
-                  )}
-                </div>
-                {item.status === 'running' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-warn pulse flex-shrink-0 mt-1.5" />
-                )}
-              </div>
-            ))}
+      {/* Communities and Log */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Communities list */}
+        <div className="lg:col-span-1">
+          <div className="card h-full flex flex-col">
+            <h2 className="font-semibold text-primary-900 mb-4">Communities</h2>
+            <div className="space-y-2 overflow-y-auto flex-1">
+              {(job.items || []).length === 0 ? (
+                <p className="text-neutral-500 text-sm">No items yet</p>
+              ) : (
+                (job.items || []).map(item => {
+                  const config = ITEM_CONFIG[item.status] || ITEM_CONFIG.pending;
+                  return (
+                    <div key={item.id} className="flex items-start gap-2.5 text-sm pb-2 border-b border-neutral-200 last:border-0">
+                      <span className={`flex-shrink-0 font-mono ${
+                        item.status === 'pending' ? 'text-neutral-400' :
+                        item.status === 'running' ? 'text-warning animate-pulse' :
+                        item.status === 'success' ? 'text-success font-bold' :
+                        'text-error font-bold'
+                      }`}>
+                        {config.icon}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-medium truncate ${
+                          item.status === 'pending' ? 'text-neutral-600' : 'text-primary-900'
+                        }`}>
+                          {item.name}
+                        </p>
+                        {item.error && (
+                          <p className="text-xs text-error mt-0.5 truncate" title={item.error}>
+                            {item.error}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
 
         {/* Live log */}
-        <div className="bg-panel border border-border rounded-lg p-4 flex flex-col">
-          <div className="font-display text-xs text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
-            Live Log
-            {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-warn pulse" />}
-          </div>
-          <div
-            ref={logRef}
-            className="flex-1 overflow-y-auto space-y-1 max-h-96 font-display text-xs"
-          >
-            {log.length === 0 && (
-              <div className="text-muted">
-                {isRunning ? 'Waiting for events...' : 'No log for this job.'}
-              </div>
-            )}
-            {log.map((entry, i) => (
-              <div key={i} className={
-                entry.text.startsWith('✓') ? 'text-accent' :
-                entry.text.startsWith('✗') ? 'text-danger' :
-                entry.text.startsWith('→') ? 'text-warn'   :
-                'text-muted'
-              }>
-                <span className="text-muted mr-2">{entry.ts}</span>
-                {entry.text}
-              </div>
-            ))}
+        <div className="lg:col-span-2">
+          <div className="card h-full flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-primary-900">Live Log</h2>
+              {isRunning && (
+                <span className="flex items-center gap-2 text-xs">
+                  <span className="status-dot status-dot-running"></span>
+                  <span className="text-warning">Live</span>
+                </span>
+              )}
+            </div>
+            <div
+              ref={logRef}
+              className="flex-1 overflow-y-auto space-y-1.5 font-mono text-xs text-neutral-600 bg-neutral-50 p-4 rounded border border-neutral-200"
+            >
+              {log.length === 0 && (
+                <div className="text-neutral-400">
+                  {isRunning ? 'Waiting for events...' : 'No events logged'}
+                </div>
+              )}
+              {log.map((entry, i) => {
+                const isSuccess = entry.text.startsWith('✓');
+                const isError = entry.text.startsWith('✗');
+                const isStart = entry.text.startsWith('→');
+
+                return (
+                  <div
+                    key={i}
+                    className={`${
+                      isSuccess ? 'text-success' :
+                      isError ? 'text-error' :
+                      isStart ? 'text-warning' :
+                      'text-neutral-600'
+                    }`}
+                  >
+                    <span className="text-neutral-400 mr-3">{entry.ts}</span>
+                    {entry.text}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -213,18 +251,4 @@ function updateItem(job, name, status) {
       item.name === name ? { ...item, status } : item
     ),
   };
-}
-
-function StatusBadge({ status }) {
-  const styles = {
-    queued:  'text-muted  border-muted/30  bg-muted/10',
-    running: 'text-warn   border-warn/30   bg-warn/10',
-    done:    'text-accent border-accent/30 bg-accent/10',
-    failed:  'text-danger border-danger/30 bg-danger/10',
-  };
-  return (
-    <span className={`font-display text-xs border rounded px-2.5 py-1 flex-shrink-0 ${styles[status] || styles.queued}`}>
-      {status}
-    </span>
-  );
 }

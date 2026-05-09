@@ -1,0 +1,51 @@
+name: Deploy to HubSpot
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint code
+        run: npm run lint --if-present
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm run test --if-present
+        continue-on-error: true
+
+      - name: Deploy to HubSpot
+        env:
+          HUBSPOT_PRIVATE_APP_TOKEN: ${{ secrets.HUBSPOT_PRIVATE_APP_TOKEN }}
+          HUBSPOT_PORTAL_ID: ${{ secrets.HUBSPOT_PORTAL_ID }}
+          ALIS_USERNAME: ${{ secrets.ALIS_USERNAME }}
+          ALIS_PASSWORD: ${{ secrets.ALIS_PASSWORD }}
+          DEPLOYMENT_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+        run: npm run deploy
+
+      - name: Deployment Status
+        if: always()
+        run: |
+          echo "Deployment Status: ${{ job.status }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
