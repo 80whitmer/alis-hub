@@ -142,7 +142,8 @@ async function runSyncGLAccountsJob(jobId, { communityName, billingSettingsUrl, 
           disc2_old,
           disc2_new: disc2_new || null,
         },
-        syncDate // Pass the sync date from the job
+        syncDate, // Pass the sync date from the job
+        jobId     // Pass jobId for logging GL sync details
       );
 
       // Close any open detail views to prepare for next item

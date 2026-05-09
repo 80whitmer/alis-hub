@@ -146,7 +146,10 @@ export default function JobDetail() {
       setLog(l => [...l, { ts: timestamp(), text: `✓ Done: ${name}` }]);
       setJob(j => {
         const updated = updateItem(j, name, 'success');
-        return { ...updated, completed: (updated.completed || 0) + 1 };
+        // Calculate completed and failed from actual item statuses
+        const completed = (updated.items || []).filter(i => i.status === 'success').length;
+        const failed = (updated.items || []).filter(i => i.status === 'failed').length;
+        return { ...updated, completed, failed };
       });
     });
 
@@ -155,7 +158,10 @@ export default function JobDetail() {
       setLog(l => [...l, { ts: timestamp(), text: `✗ Failed: ${name} — ${error}` }]);
       setJob(j => {
         const updated = updateItem(j, name, 'failed');
-        return { ...updated, failed: (updated.failed || 0) + 1 };
+        // Calculate completed and failed from actual item statuses
+        const completed = (updated.items || []).filter(i => i.status === 'success').length;
+        const failed = (updated.items || []).filter(i => i.status === 'failed').length;
+        return { ...updated, completed, failed };
       });
     });
 

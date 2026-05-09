@@ -183,30 +183,30 @@ export default function Dashboard() {
       {deleteModal.show && (
         <div className="modal-backdrop" onClick={handleCloseModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-content">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-primary-900 mb-2">
+            <div className="modal-content p-8">
+              <div className="mb-8">
+                <h3 className="text-xl font-bold text-primary-900 mb-4">
                   Delete Job?
                 </h3>
-                <p className="text-neutral-600 text-sm">
-                  Are you sure you want to delete <strong>{deleteModal.jobLabel}</strong>? This action cannot be undone.
+                <p className="text-neutral-700 text-base leading-relaxed">
+                  Are you sure you want to delete <strong className="font-semibold">{deleteModal.jobLabel}</strong>? This action cannot be undone.
                 </p>
               </div>
 
-              <div className="flex gap-3 justify-end">
+              <div className="flex gap-4 justify-end pt-4 border-t border-neutral-200">
                 <button
                   onClick={handleCloseModal}
                   disabled={deleting}
-                  className="btn btn-secondary"
+                  className="px-5 py-2 rounded font-medium bg-neutral-200 text-neutral-900 hover:bg-neutral-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmDelete}
                   disabled={deleting}
-                  className="btn btn-danger"
+                  className="px-5 py-2 rounded font-medium bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {deleting ? 'Deleting...' : 'Delete'}
+                  {deleting ? '⏳ Deleting...' : '🗑 Delete'}
                 </button>
               </div>
             </div>

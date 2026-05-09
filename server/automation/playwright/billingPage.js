@@ -4,6 +4,7 @@
  */
 
 const { setTimeout } = require('timers/promises');
+const { addGLSyncDetail } = require('../db/database');
 
 /**
  * Navigate to the billing settings page and ensure it's loaded
@@ -56,8 +57,9 @@ async function findBillingItem(page, itemName) {
  * @param {string} glNew - New GL account to set
  * @param {object} discounts - Optional discount GL accounts {disc1_old, disc1_new, disc2_old, disc2_new}
  * @param {string} syncDate - Date to use for the sync (YYYY-MM-DD format)
+ * @param {string} jobId - Job ID for logging GL sync details (optional)
  */
-async function updateGLAccount(page, itemName, glOld, glNew, discounts = {}, syncDate = null) {
+async function updateGLAccount(page, itemName, glOld, glNew, discounts = {}, syncDate = null, jobId = null) {
   try {
     // Find the item row
     const itemRow = await findBillingItem(page, itemName);
@@ -385,6 +387,46 @@ async function updateGLAccount(page, itemName, glOld, glNew, discounts = {}, syn
       // Check if the message contains "SUCCESS" (even if it's queued/async)
       if (cleanText.includes('SUCCESS') || cleanText.includes('success') || cleanText.includes('queued')) {
         console.log(`[GL Sync] ✓ Sync submitted: ${cleanText}`);
+
+        // Log GL Account sync if jobId provided
+        if (jobId && glNew && glNew !== '?') {
+          addGLSyncDetail(jobId, {
+            accountNumber: itemName,
+            accountName: itemName,
+            oldValue: glOld || '',
+            newValue: glNew,
+            fieldChanged: 'GL Account Code',
+            status: 'success',
+            error: null
+          });
+        }
+
+        // Log Discount GL Account 1 if applicable
+        if (jobId && discounts.disc1_new && discounts.disc1_new !== '?') {
+          addGLSyncDetail(jobId, {
+            accountNumber: itemName,
+            accountName: itemName,
+            oldValue: discounts.disc1_old || '',
+            newValue: discounts.disc1_new,
+            fieldChanged: 'Discount GL Account 1',
+            status: 'success',
+            error: null
+          });
+        }
+
+        // Log Discount GL Account 2 if applicable
+        if (jobId && discounts.disc2_new && discounts.disc2_new !== '?') {
+          addGLSyncDetail(jobId, {
+            accountNumber: itemName,
+            accountName: itemName,
+            oldValue: discounts.disc2_old || '',
+            newValue: discounts.disc2_new,
+            fieldChanged: 'Discount GL Account 2',
+            status: 'success',
+            error: null
+          });
+        }
+
         return true;
       }
 
@@ -395,13 +437,80 @@ async function updateGLAccount(page, itemName, glOld, glNew, discounts = {}, syn
 
       // Otherwise, log and assume success
       console.log(`[GL Sync] Response: ${cleanText}`);
+
+      // Log successful sync to database if jobId provided
+      if (jobId && glNew && glNew !== '?') {
+        addGLSyncDetail(jobId, {
+          accountNumber: itemName,
+          accountName: itemName,
+          oldValue: glOld || '',
+          newValue: glNew,
+          fieldChanged: 'GL Account Code',
+          status: 'success',
+          error: null
+        });
+      }
+
       return true;
     }
 
     // No visible message, assume success
     console.log(`[GL Sync] ✓ Sync action completed for: ${itemName}`);
+
+    // Log successful sync to database if jobId provided
+    if (jobId && glNew && glNew !== '?') {
+      addGLSyncDetail(jobId, {
+        accountNumber: itemName,
+        accountName: itemName,
+        oldValue: glOld || '',
+        newValue: glNew,
+        fieldChanged: 'GL Account Code',
+        status: 'success',
+        error: null
+      });
+    }
+
+    // Log Discount GL Account 1 if applicable
+    if (jobId && discounts.disc1_new && discounts.disc1_new !== '?') {
+      addGLSyncDetail(jobId, {
+        accountNumber: itemName,
+        accountName: itemName,
+        oldValue: discounts.disc1_old || '',
+        newValue: discounts.disc1_new,
+        fieldChanged: 'Discount GL Account 1',
+        status: 'success',
+        error: null
+      });
+    }
+
+    // Log Discount GL Account 2 if applicable
+    if (jobId && discounts.disc2_new && discounts.disc2_new !== '?') {
+      addGLSyncDetail(jobId, {
+        accountNumber: itemName,
+        accountName: itemName,
+        oldValue: discounts.disc2_old || '',
+        newValue: discounts.disc2_new,
+        fieldChanged: 'Discount GL Account 2',
+        status: 'success',
+        error: null
+      });
+    }
+
     return true;
   } catch (err) {
+    // Log failed sync to database if jobId provided
+    if (jobId) {
+      addGLSyncDetail(jobId, {
+        accountNumber: itemName,
+        accountName: itemName,
+        oldValue: null,
+        newValue: null,
+        fieldChanged: 'GL Account Code',
+        status: 'failed',
+        error: err.message
+      });
+    }
+
     throw new Error(`Failed to sync GL records for '${itemName}': ${err.message}`);
   }
 }
