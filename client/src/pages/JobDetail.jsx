@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { formatLocalTime, formatLocalDate, formatLocalTimeOnly, getUserTimezone } from '../utils/timezone';
+import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvExport';
 
 const ITEM_CONFIG = {
   pending: { icon: '○', badge: 'badge-neutral', dot: 'status-dot-pending' },
@@ -11,16 +13,22 @@ const ITEM_CONFIG = {
 const JOB_STATUS_CONFIG = {
   queued:  { badge: 'badge-neutral', text: 'Queued' },
   running: { badge: 'badge-warning', text: 'Running' },
+  paused:  { badge: 'badge-info', text: 'Paused' },
   done:    { badge: 'badge-success', text: 'Completed' },
   failed:  { badge: 'badge-error', text: 'Failed' },
 };
 
 export default function JobDetail() {
-  const { id }           = useParams();
-  const [job, setJob]    = useState(null);
-  const [log, setLog]    = useState([]);
-  const logRef           = useRef(null);
-  const esRef            = useRef(null);
+  const { id }                    = useParams();
+  const [job, setJob]             = useState(null);
+  const [log, setLog]             = useState([]);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isPausing, setIsPausing] = useState(false);
+  const [glDetails, setGlDetails] = useState([]);
+  const [showGlDetails, setShowGlDetails] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const logRef                    = useRef(null);
+  const esRef                     = useRef(null);
 
   // Auto-scroll log
   useEffect(() => {
@@ -33,12 +41,91 @@ export default function JobDetail() {
       .then(r => r.json())
       .then(data => {
         setJob(data);
+
+        // Load GL sync details if this is a GL sync job
+        if (data.type === 'sync-gl-accounts') {
+          fetch(`/api/jobs/${id}/gl-details`)
+            .then(r => r.json())
+            .then(detailsData => {
+              setGlDetails(detailsData.details || []);
+            })
+            .catch(err => console.error('Failed to load GL details:', err));
+        }
+
         if (data.status === 'done' || data.status === 'failed') return; // no SSE needed
         openStream();
       });
 
     return () => esRef.current?.close();
   }, [id]);
+
+  async function handlePause() {
+    try {
+      setIsPausing(true);
+      const res = await fetch(`/api/jobs/${id}/pause`, { method: 'POST' });
+      if (res.ok) {
+        setJob(j => ({ ...j, status: 'paused' }));
+      } else {
+        alert('Failed to pause job');
+      }
+    } catch (err) {
+      console.error('Error pausing job:', err);
+      alert('Error pausing job');
+    } finally {
+      setIsPausing(false);
+    }
+  }
+
+  async function handleResume() {
+    try {
+      setIsPausing(true);
+      const res = await fetch(`/api/jobs/${id}/resume`, { method: 'POST' });
+      if (res.ok) {
+        setJob(j => ({ ...j, status: 'running' }));
+      } else {
+        alert('Failed to resume job');
+      }
+    } catch (err) {
+      console.error('Error resuming job:', err);
+      alert('Error resuming job');
+    } finally {
+      setIsPausing(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!confirm('Are you sure you want to cancel this job? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      setIsCancelling(true);
+      const res = await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+      if (res.ok) {
+        setJob(j => ({ ...j, status: 'failed' }));
+      } else {
+        alert('Failed to cancel job');
+      }
+    } catch (err) {
+      console.error('Error cancelling job:', err);
+      alert('Error cancelling job');
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  async function handleExportGLDetails() {
+    try {
+      setIsExporting(true);
+      const csvContent = generateGLSyncCSV(job.id, job.label, glDetails);
+      const filename = generateFilename(`gl-sync-${job.label?.replace(/\s+/g, '-')}`);
+      downloadCSV(csvContent, filename);
+    } catch (err) {
+      console.error('Error exporting GL details:', err);
+      alert('Failed to export GL details');
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   function openStream() {
     const es = new EventSource(`/api/stream/${id}`);
@@ -99,7 +186,7 @@ export default function JobDetail() {
   }
 
   const pct = job.total > 0 ? Math.round(((job.completed || 0) / job.total) * 100) : 0;
-  const isRunning = job.status === 'running' || job.status === 'queued';
+  const isRunning = job.status === 'running' || job.status === 'queued' || job.status === 'paused';
   const statusConfig = JOB_STATUS_CONFIG[job.status] || JOB_STATUS_CONFIG.queued;
 
   return (
@@ -115,12 +202,40 @@ export default function JobDetail() {
           <div>
             <h1 className="text-2xl font-bold text-primary-900">{job.label}</h1>
             <p className="text-neutral-600 text-sm mt-2">
-              {job.type} • {new Date(job.created_at).toLocaleString()}
+              {job.type} • {formatLocalTime(job.created_at)}
             </p>
           </div>
-          <span className={`badge ${statusConfig.badge}`}>
-            {statusConfig.text}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className={`badge ${statusConfig.badge}`}>
+              {statusConfig.text}
+            </span>
+
+            {/* Pause/Resume Button */}
+            {(job.status === 'running' || job.status === 'paused') && (
+              <button
+                onClick={job.status === 'paused' ? handleResume : handlePause}
+                disabled={isPausing || isCancelling}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                  job.status === 'paused'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {isPausing ? '⏳' : (job.status === 'paused' ? '▶ Resume' : '⏸ Pause')}
+              </button>
+            )}
+
+            {/* Cancel Button */}
+            {(job.status === 'running' || job.status === 'paused' || job.status === 'queued') && (
+              <button
+                onClick={handleCancel}
+                disabled={isCancelling || isPausing}
+                className="px-3 py-1 rounded text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCancelling ? '⏳' : '✕ Cancel'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Progress section */}
@@ -233,6 +348,73 @@ export default function JobDetail() {
           </div>
         </div>
       </div>
+
+      {/* GL Sync Details (for sync-gl-accounts jobs only) */}
+      {job.type === 'sync-gl-accounts' && glDetails.length > 0 && (
+        <div className="card mt-6">
+          <button
+            onClick={() => setShowGlDetails(!showGlDetails)}
+            className="w-full flex items-center justify-between p-4 bg-neutral-50 hover:bg-neutral-100 rounded border border-neutral-200 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-lg">{showGlDetails ? '▼' : '▶'}</span>
+              <div className="text-left">
+                <h3 className="font-semibold text-primary-900">GL Account Sync Details</h3>
+                <p className="text-xs text-neutral-600">{glDetails.length} account updates recorded</p>
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleExportGLDetails();
+              }}
+              disabled={isExporting}
+              className="px-3 py-1 rounded text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isExporting ? '⏳ Exporting...' : '📥 Export CSV'}
+            </button>
+          </button>
+
+          {showGlDetails && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-100 border-t border-neutral-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Account #</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Account Name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Field Changed</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Old Value</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">New Value</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Status</th>
+                    <th className="px-4 py-3 text-left font-semibold text-primary-900">Synced At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {glDetails.map((detail, idx) => (
+                    <tr key={idx} className={`border-t border-neutral-200 ${detail.status === 'failed' ? 'bg-red-50' : 'hover:bg-neutral-50'}`}>
+                      <td className="px-4 py-3 text-neutral-900 font-mono text-xs">{detail.account_number || '—'}</td>
+                      <td className="px-4 py-3 text-neutral-700">{detail.account_name || '—'}</td>
+                      <td className="px-4 py-3 text-neutral-700">{detail.field_changed || '—'}</td>
+                      <td className="px-4 py-3 text-neutral-600 font-mono text-xs">{detail.old_value || '—'}</td>
+                      <td className="px-4 py-3 text-neutral-600 font-mono text-xs">{detail.new_value || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-medium px-2 py-1 rounded ${
+                          detail.status === 'success' ? 'bg-green-100 text-green-800' :
+                          detail.status === 'failed' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {detail.status || 'unknown'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-neutral-600 text-xs">{formatLocalTimeOnly(detail.synced_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

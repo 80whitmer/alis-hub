@@ -52,6 +52,21 @@ async function initDb() {
     );
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS gl_sync_details (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id        TEXT NOT NULL,
+      account_number TEXT,
+      account_name  TEXT,
+      old_value     TEXT,
+      new_value     TEXT,
+      field_changed TEXT,
+      status        TEXT DEFAULT 'success',
+      error         TEXT,
+      synced_at     TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -149,4 +164,47 @@ function setItemStatus(jobId, name, status, error = null) {
   }
 }
 
-module.exports = { initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus };
+function deleteJob(id) {
+  // Delete job items first (foreign key)
+  run(`DELETE FROM job_items WHERE job_id = ?`, [id]);
+  // Then delete the job itself
+  run(`DELETE FROM jobs WHERE id = ?`, [id]);
+}
+
+function cancelJob(id) {
+  // Mark job as cancelled/stopped (update status to failed to indicate it didn't complete)
+  run(`UPDATE jobs SET status = 'failed', updated_at = datetime('now') WHERE id = ?`, [id]);
+  // Mark any running items as failed
+  run(`UPDATE job_items SET status = 'failed', error = 'Cancelled by user', finished_at = datetime('now') WHERE job_id = ? AND status = 'running'`, [id]);
+}
+
+function pauseJob(id) {
+  // Mark job as paused
+  run(`UPDATE jobs SET status = 'paused', updated_at = datetime('now') WHERE id = ?`, [id]);
+}
+
+function resumeJob(id) {
+  // Mark job as running (resume from pause)
+  run(`UPDATE jobs SET status = 'running', updated_at = datetime('now') WHERE id = ?`, [id]);
+}
+
+function addGLSyncDetail(jobId, { accountNumber, accountName, oldValue, newValue, fieldChanged, status = 'success', error = null }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO gl_sync_details (job_id, account_number, account_name, old_value, new_value, field_changed, status, error, synced_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [jobId, accountNumber, accountName, oldValue, newValue, fieldChanged, status, error, now]
+  );
+}
+
+function getGLSyncDetails(jobId) {
+  return queryAll(
+    `SELECT * FROM gl_sync_details WHERE job_id = ? ORDER BY synced_at DESC`,
+    [jobId]
+  );
+}
+
+module.exports = {
+  initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
+  deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails
+};

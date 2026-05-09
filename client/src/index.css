@@ -82,7 +82,11 @@ body {
   }
 
   .btn-danger {
-    @apply btn bg-error text-white hover:bg-red-600 active:bg-red-700;
+    @apply btn bg-error text-white hover:bg-red-600 active:bg-red-700 disabled:bg-neutral-300 disabled:cursor-not-allowed;
+  }
+
+  .btn-warning {
+    @apply btn bg-yellow-600 text-white hover:bg-yellow-700 active:bg-yellow-800 disabled:bg-neutral-300 disabled:cursor-not-allowed;
   }
 
   .btn-sm {

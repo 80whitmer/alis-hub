@@ -1,9 +1,60 @@
 const express  = require('express');
 const router   = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { createJob, getJob, listJobs } = require('../db/database');
+const { createJob, getJob, listJobs, deleteJob, cancelJob, pauseJob, resumeJob, getGLSyncDetails } = require('../db/database');
 const { loadTemplates, getTemplate } = require('../automation/templates-loader');
 const { runTemplateJob } = require('../automation/jobs');
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Extract company/community name from a URL
+ * Example: "https://surpass.alisonline.com/Settings/..." → "Surpass"
+ */
+function extractCompanyNameFromUrl(url) {
+  if (!url) return null;
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    // Extract subdomain (first part before the dot)
+    const parts = hostname.split('.');
+    if (parts.length > 0) {
+      const subdomain = parts[0];
+      // Capitalize first letter
+      return subdomain.charAt(0).toUpperCase() + subdomain.slice(1);
+    }
+  } catch (err) {
+    // Invalid URL, return null
+  }
+  return null;
+}
+
+/**
+ * Enhance job label with company name if available
+ * Example: "Sync GL Accounts" + "Surpass" → "Sync GL Accounts - Surpass"
+ */
+function enhanceLabelWithCompanyName(label, payload) {
+  let companyName = null;
+
+  // Try to extract from billingSettingsUrl (for sync-gl-accounts)
+  if (payload.billingSettingsUrl) {
+    companyName = extractCompanyNameFromUrl(payload.billingSettingsUrl);
+  }
+
+  // Try to extract from companyUrl (for create-communities)
+  if (!companyName && payload.companyUrl) {
+    companyName = extractCompanyNameFromUrl(payload.companyUrl);
+  }
+
+  // Append company name if found and not already in label
+  if (companyName && !label.includes(companyName)) {
+    return `${label} - ${companyName}`;
+  }
+
+  return label;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ROUTES — More specific routes BEFORE generic :id routes
@@ -70,10 +121,14 @@ router.post('/create', (req, res) => {
       itemsToTrack = payload.items;
     }
 
+    // Enhance label with company name from URL if available
+    let finalLabel = label || template.name;
+    finalLabel = enhanceLabelWithCompanyName(finalLabel, payload);
+
     createJob({
       id,
       type: templateId,
-      label: label || template.name,
+      label: finalLabel,
       payload,
       total: itemCount,
       items: itemsToTrack,
@@ -100,11 +155,17 @@ router.post('/create-communities', (req, res) => {
   }
 
   const id = uuidv4();
+  const payload = { companyUrl, communities };
+
+  // Enhance label with company name from URL if available
+  let finalLabel = label || `Create ${communities.length} communities`;
+  finalLabel = enhanceLabelWithCompanyName(finalLabel, payload);
+
   createJob({
     id,
     type: 'create-communities',
-    label: label || `Create ${communities.length} communities`,
-    payload: { companyUrl, communities },
+    label: finalLabel,
+    payload,
     total: communities.length,
     items: communities,
   });
@@ -132,6 +193,92 @@ router.get('/:id', (req, res) => {
   const job = getJob(req.params.id);
   if (!job) return res.status(404).json({ error: 'Not found' });
   res.json(job);
+});
+
+// GET /api/jobs/:id/gl-details — get GL sync details for a job
+router.get('/:id/gl-details', (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (job.type !== 'sync-gl-accounts') {
+      return res.status(400).json({ error: 'GL sync details only available for sync-gl-accounts jobs' });
+    }
+
+    const details = getGLSyncDetails(req.params.id);
+    res.json({ jobId: req.params.id, details });
+  } catch (err) {
+    console.error('[jobs GET /:id/gl-details] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/jobs/:id — delete a job and its items
+router.delete('/:id', (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    deleteJob(req.params.id);
+    res.json({ success: true, message: 'Job deleted' });
+  } catch (err) {
+    console.error('[jobs DELETE /:id] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/jobs/:id/cancel — cancel a running job
+router.post('/:id/cancel', (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (job.status !== 'running' && job.status !== 'queued' && job.status !== 'paused') {
+      return res.status(400).json({ error: 'Can only cancel running, queued, or paused jobs' });
+    }
+
+    cancelJob(req.params.id);
+    res.json({ success: true, message: 'Job cancelled' });
+  } catch (err) {
+    console.error('[jobs POST /:id/cancel] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/jobs/:id/pause — pause a running job
+router.post('/:id/pause', (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (job.status !== 'running') {
+      return res.status(400).json({ error: 'Can only pause running jobs' });
+    }
+
+    pauseJob(req.params.id);
+    res.json({ success: true, message: 'Job paused' });
+  } catch (err) {
+    console.error('[jobs POST /:id/pause] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/jobs/:id/resume — resume a paused job
+router.post('/:id/resume', (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (job.status !== 'paused') {
+      return res.status(400).json({ error: 'Can only resume paused jobs' });
+    }
+
+    resumeJob(req.params.id);
+    res.json({ success: true, message: 'Job resumed' });
+  } catch (err) {
+    console.error('[jobs POST /:id/resume] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
