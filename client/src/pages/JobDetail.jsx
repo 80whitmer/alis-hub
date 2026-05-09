@@ -268,8 +268,30 @@ export default function JobDetail() {
       </div>
 
 
-      {/* GL Sync Details (for sync-gl-accounts jobs only) */}
-      {job.type === 'sync-gl-accounts' && glDetails.length > 0 && (
+      {/* Live Log (for in-progress sync-gl-accounts jobs) */}
+      {job.type === 'sync-gl-accounts' && isRunning && (
+        <div className="card mt-6">
+          <h3 className="font-semibold text-primary-900 mb-4">Live Log</h3>
+          <div
+            ref={logRef}
+            className="bg-neutral-900 text-neutral-100 rounded p-4 font-mono text-sm h-64 overflow-y-auto"
+          >
+            {log.length === 0 ? (
+              <p className="text-neutral-500">Waiting for job to start...</p>
+            ) : (
+              log.map((entry, idx) => (
+                <div key={idx} className="mb-1">
+                  <span className="text-neutral-400">{entry.ts}</span>{' '}
+                  <span className="text-neutral-100">{entry.text}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* GL Sync Details (for completed sync-gl-accounts jobs) */}
+      {job.type === 'sync-gl-accounts' && !isRunning && glDetails.length > 0 && (
         <div className="card mt-6">
           <button
             onClick={() => setShowGlDetails(!showGlDetails)}
