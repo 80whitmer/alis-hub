@@ -26,6 +26,9 @@ server/automation/traces/
 test-results/
 playwright-report/
 
+# Raw KPI-export API pulls (resident-level data — cache only, never commit)
+server/automation/kpi-cache/
+
 # Build output
 client/dist/
 client/build/

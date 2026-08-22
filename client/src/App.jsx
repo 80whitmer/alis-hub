@@ -2,6 +2,8 @@ import { Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import NewJob    from './pages/NewJob';
 import JobDetail from './pages/JobDetail';
+import FormMarkupApproval from './pages/FormMarkupApproval';
+import KpiDashboard from './pages/KpiDashboard';
 
 const nav = [
   { to: '/',        label: 'Dashboard' },
@@ -43,9 +45,11 @@ export default function App() {
       <main className="flex-1 px-6 py-8">
         <div className="container-wide">
           <Routes>
-            <Route path="/"          element={<Dashboard />} />
-            <Route path="/new-job"   element={<NewJob />}    />
-            <Route path="/jobs/:id"  element={<JobDetail />} />
+            <Route path="/"                    element={<Dashboard />} />
+            <Route path="/new-job"             element={<NewJob />}    />
+            <Route path="/jobs/:id"            element={<JobDetail />} />
+            <Route path="/form-markup/:jobId"  element={<FormMarkupApproval />} />
+            <Route path="/qbr/:jobId"          element={<KpiDashboard />} />
           </Routes>
         </div>
       </main>

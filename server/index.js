@@ -2,9 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 
-const { initDb }   = require('./db/database');
-const jobsRouter   = require('./api/jobs');
-const streamRouter = require('./api/stream');
+const { initDb }    = require('./db/database');
+const jobsRouter    = require('./api/jobs');
+const streamRouter  = require('./api/stream');
+const hubspotRouter = require('./api/hubspot');
+const qbrRouter     = require('./api/qbr');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -12,8 +14,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
-app.use('/api/jobs',   jobsRouter);
-app.use('/api/stream', streamRouter);
+app.use('/api/jobs',    jobsRouter);
+app.use('/api/stream',  streamRouter);
+app.use('/api/hubspot', hubspotRouter);
+app.use('/api/qbr',     qbrRouter);
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Error handler middleware — must be last

@@ -1,0 +1,84 @@
+{
+  "quarter": "2026-Q2",
+  "source": {
+    "occupancyReport": "ALIS500_Occupancy_Report_2026_Q2.pdf",
+    "clinicalReport": "ALIS500_Clinical_Report_2026_Q2.pdf",
+    "portfolioSize": 500
+  },
+  "occupancy": {
+    "referenceOccupancyPct": 75,
+    "residentDemographics": {
+      "avgAgeAtAdmission": 82.65,
+      "ageAtAdmissionBuckets": { "90+": 0.198, "80-90": 0.467, "70-80": 0.257, "under70": 0.078 },
+      "careSettingSplit": { "AL": 0.636, "MC": 0.341, "other": 0.023 },
+      "femaleToMaleRatio": 2.27
+    },
+    "lengthOfStay": {
+      "avgDays": 524,
+      "medianDays": 298,
+      "moveOutWithin": { "3mo": 0.276, "6mo": 0.396, "12mo": 0.542 }
+    },
+    "moveOutReasons": {
+      "totalMoveOutsQ2": 2962,
+      "health": 0.742,
+      "healthBreakdown": { "death": 0.489, "declined": 0.205, "improved": 0.028, "behavioral": 0.020 },
+      "lifeDynamics": 0.162,
+      "lifeDynamicsBreakdown": { "relocation": 0.073, "discharged": 0.052, "respite": 0.021, "other": 0.016 },
+      "qualityOfService": 0.096,
+      "qualityOfServiceBreakdown": { "financial": 0.033, "competition": 0.026, "transferred": 0.025, "dissatisfied": 0.012 }
+    }
+  },
+  "clinical": {
+    "demographics": {
+      "totalResidents": 29048,
+      "avgAge": 84.8,
+      "medianAge": 85.6,
+      "ageBuckets": { "90+": 0.295, "80-90": 0.439, "70-80": 0.209, "under70": 0.056 },
+      "genderSplit": { "female": 0.66, "male": 0.29, "notReported": 0.05 },
+      "femaleToMaleRatio": 2.27
+    },
+    "diagnosisPrevalence": {
+      "cerebrovascular": 0.563,
+      "neurodegenerative": 0.565,
+      "hypertensive": 0.600,
+      "cardiovascular": 0.423,
+      "lipidDisorders": 0.383,
+      "musculoskeletal": 0.335,
+      "moodDisorders": 0.291,
+      "anxietyDisorders": 0.216,
+      "sleepDisorders": 0.132,
+      "diabetes": 0.220,
+      "thyroidDisorders": 0.208,
+      "gerd": 0.182,
+      "colorectalDiseases": 0.136,
+      "kidneyFailure": 0.155,
+      "obstructiveLung": 0.119,
+      "anemia": 0.108
+    },
+    "topComorbidities": [
+      { "pair": ["cerebrovascular", "neurodegenerative"], "rate": 0.44 },
+      { "pair": ["hypertensive", "cerebrovascular"], "rate": 0.37 },
+      { "pair": ["neurodegenerative", "hypertensive"], "rate": 0.33 }
+    ],
+    "falls": {
+      "totalQ2": 16974,
+      "per1000ResidentDays": 7.2,
+      "notes": "Memory Care residents more likely to fall; no significant day-of-week variation"
+    },
+    "hospitalVisits": {
+      "totalQ2": 7045,
+      "per1000ResidentDays": 3,
+      "avgLengthOfStayDays": 4.7,
+      "medianLengthOfStayDays": 1.4
+    },
+    "prnAdministrationPer1000ResidentDays": {
+      "analgesics": 51,
+      "sedativesAntipsychotics": 17,
+      "gastrointestinal": 9,
+      "respiratory": 7,
+      "sleep": 3,
+      "muscleRelaxants": 2,
+      "other": 9
+    }
+  }
+}

@@ -1,9 +1,11 @@
 const { newPage, ensureLoggedIn }          = require('./playwright/browser');
 const { createCommunity, setCrmId }        = require('./playwright/communityPage');
 const { navigateToBillingSettings, updateGLAccount, closeDetailView } = require('./playwright/billingPage');
+const { captureResidentSettings, applyResidentSettings } = require('./playwright/residentSettingsPage');
 const { setJobStatus, setItemStatus }      = require('../db/database');
 const { broadcast }                        = require('../api/broadcaster');
 const { getTemplate }                      = require('./templates-loader');
+const { runKpiExportJob }                  = require('./kpiExport');
 
 /**
  * Run the create-communities job.
@@ -76,6 +78,12 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'sync-gl-accounts':
         return await runSyncGLAccountsJob(jobId, payload);
+
+      case 'sync-resident-settings':
+        return await runSyncResidentSettingsJob(jobId, payload);
+
+      case 'kpi-export':
+        return await runKpiExportJob(jobId, payload);
 
       default:
         setJobStatus(jobId, 'failed');
@@ -180,8 +188,92 @@ async function runSyncGLAccountsJob(jobId, { communityName, billingSettingsUrl, 
   emit('job_done', summary);
 }
 
+/**
+ * Run the sync-resident-settings job.
+ *
+ * Phase 1 — captures all form-field states + compliance template properties
+ *            from the source community's Resident Settings page.
+ * Phase 2 — applies that snapshot to each target community.
+ *
+ * Each target community is one job item (pass/fail).
+ * SSE events: job_start | progress | item_start | item_done | item_fail | job_done
+ */
+async function runSyncResidentSettingsJob(jobId, { sourceName, sourceUrl, targets }) {
+  const emit = (event, data) => broadcast(jobId, event, data);
+
+  setJobStatus(jobId, 'running');
+  emit('job_start', { jobId, total: targets.length, source: sourceName });
+
+  // ── Phase 1: Capture source ──────────────────────────────────────────────
+  let page;
+  try {
+    page = await newPage();
+    await ensureLoggedIn(page, sourceUrl);
+  } catch (err) {
+    setJobStatus(jobId, 'failed');
+    emit('job_error', { error: `Login failed: ${err.message}` });
+    return;
+  }
+
+  let snapshot;
+  try {
+    emit('progress', { message: `Capturing settings from "${sourceName}"…` });
+    snapshot = await captureResidentSettings(page, sourceUrl);
+    emit('progress', {
+      message:
+        `Captured — checkboxes: ${snapshot.fields.checkboxes.length}, ` +
+        `selects: ${snapshot.fields.selects.length}, ` +
+        `compliance templates: ${snapshot.complianceTemplates.length}`,
+    });
+  } catch (err) {
+    setJobStatus(jobId, 'failed');
+    emit('job_error', { error: `Failed to capture source settings: ${err.message}` });
+    await page.context().close().catch(() => {});
+    return;
+  }
+
+  // ── Phase 2: Apply to each target ────────────────────────────────────────
+  for (const target of targets) {
+    setItemStatus(jobId, target.name, 'running');
+    emit('item_start', { name: target.name });
+
+    try {
+      // ensureLoggedIn handles re-auth when switching to a different subdomain
+      await ensureLoggedIn(page, target.url);
+
+      const result = await applyResidentSettings(
+        page,
+        target.url,
+        snapshot,
+        emit,
+      );
+
+      setItemStatus(jobId, target.name, 'success');
+      emit('item_done', {
+        name:    target.name,
+        applied: result.applied,
+        skipped: result.skipped,
+        failed:  result.failed,
+      });
+    } catch (err) {
+      const shot = `error_settings_${target.name.replace(/[^a-z0-9]/gi, '_')}_${jobId}.png`;
+      await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+
+      setItemStatus(jobId, target.name, 'failed', err.message);
+      emit('item_fail', { name: target.name, error: err.message });
+    }
+  }
+
+  await page.context().close().catch(() => {});
+
+  setJobStatus(jobId, 'done');
+  emit('job_done', { jobId, source: sourceName, targets: targets.length });
+}
+
 module.exports = {
   runCreateCommunitiesJob,
   runTemplateJob,
   runSyncGLAccountsJob,
+  runSyncResidentSettingsJob,
+  runKpiExportJob,
 };

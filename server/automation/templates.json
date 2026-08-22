@@ -80,6 +80,55 @@
       }
     },
     {
+      "id": "sync-resident-settings",
+      "name": "Sync Resident Settings",
+      "description": "Copy resident settings (checkboxes, dropdowns, and compliance template properties) from a source community to one or more target communities",
+      "category": "settings",
+      "icon": "⚙️",
+      "timeout": 3600000,
+      "inputSchema": {
+        "type": "object",
+        "title": "Sync Resident Settings",
+        "properties": {
+          "sourceName": {
+            "type": "string",
+            "title": "Source Community Name",
+            "description": "Display name of the community to copy settings FROM",
+            "examples": ["Meadow Brook"]
+          },
+          "sourceUrl": {
+            "type": "string",
+            "title": "Source Resident Settings URL",
+            "description": "Full URL of the Resident settings page to copy from",
+            "examples": ["https://medtelligent.alisonline.com/Settings/Resident/847"]
+          },
+          "targets": {
+            "type": "array",
+            "title": "Target Communities",
+            "description": "Communities to apply the settings TO",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Community Name",
+                  "examples": ["Sunrise Gardens"]
+                },
+                "url": {
+                  "type": "string",
+                  "title": "Resident Settings URL",
+                  "examples": ["https://medtelligent.alisonline.com/Settings/Resident/902"]
+                }
+              },
+              "required": ["name", "url"]
+            }
+          }
+        },
+        "required": ["sourceName", "sourceUrl", "targets"]
+      }
+    },
+    {
       "id": "sync-gl-accounts",
       "name": "Sync GL Accounts",
       "description": "Synchronize GL accounts and discount accounts for ownership transitions and account restructuring",
@@ -159,6 +208,71 @@
           }
         },
         "required": ["communityName", "billingSettingsUrl", "syncDate", "items"]
+      }
+    },
+    {
+      "id": "kpi-export",
+      "name": "KPI Export / QBR Pipeline",
+      "description": "Pull KPI data from the ALIS export API, benchmark against ALIS 500, pull HubSpot ticket history, and generate QBR discussion-point flags",
+      "category": "reporting",
+      "icon": "📊",
+      "timeout": 1800000,
+      "scriptPath": "./kpiExport.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "KPI Export / QBR Pipeline",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Viva Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"viva\" for viva.alisonline.com) — used to build the export API auth username",
+            "examples": ["viva"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities",
+            "description": "Communities to include in this account's KPI pull",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Community Name",
+                  "examples": ["Steadman Hill"]
+                },
+                "communityId": {
+                  "type": "string",
+                  "title": "ALIS Community ID",
+                  "examples": ["1069"]
+                }
+              },
+              "required": ["name", "communityId"]
+            }
+          },
+          "periodStart": {
+            "type": "string",
+            "title": "Period Start (YYYY-MM-DD)",
+            "examples": ["2026-04-01"]
+          },
+          "periodEnd": {
+            "type": "string",
+            "title": "Period End (YYYY-MM-DD)",
+            "examples": ["2026-06-30"]
+          },
+          "hubspotCompanyId": {
+            "type": "string",
+            "title": "HubSpot Company ID (optional)",
+            "description": "Links this KPI pull to the account's HubSpot ticket history for Support Review / Enhancement Requests",
+            "examples": ["770"]
+          }
+        },
+        "required": ["companyName", "companyHost", "communities", "periodStart", "periodEnd"]
       }
     }
   ]

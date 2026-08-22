@@ -67,6 +67,18 @@ async function initDb() {
     );
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS kpi_snapshots (
+      job_id        TEXT PRIMARY KEY,
+      company_name  TEXT,
+      period_start  TEXT,
+      period_end    TEXT,
+      benchmark_quarter TEXT,
+      summary_json  TEXT NOT NULL,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -207,7 +219,25 @@ function getGLSyncDetails(jobId) {
   );
 }
 
+function addKpiSnapshot(jobId, { companyName, periodStart, periodEnd, benchmarkQuarter, summary }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT OR REPLACE INTO kpi_snapshots (job_id, company_name, period_start, period_end, benchmark_quarter, summary_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [jobId, companyName, periodStart, periodEnd, benchmarkQuarter, JSON.stringify(summary), now]
+  );
+}
+
+function getKpiSnapshot(jobId) {
+  const row = queryOne('SELECT * FROM kpi_snapshots WHERE job_id = ?', [jobId]);
+  if (!row) return null;
+  row.summary = JSON.parse(row.summary_json);
+  delete row.summary_json;
+  return row;
+}
+
 module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
-  deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails
+  deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
+  addKpiSnapshot, getKpiSnapshot
 };
