@@ -137,9 +137,11 @@ function addKeyStatsSlide(pptx, { normalized, diffs }) {
   statCard(slide, 3.4, 2.65, 'Hospital/SNF visits / 1,000 res-days', normalized.hospitalVisits?.per1000ResidentDays != null ? normalized.hospitalVisits.per1000ResidentDays.toFixed(1) : '—', diffs.hospitalVisitsPer1000ResidentDays);
   statCard(slide, 6.3, 2.65, 'Sedative PRN / 1,000 res-days', normalized.prnAdministration?.sedativesAntipsychotics != null ? normalized.prnAdministration.sedativesAntipsychotics.toFixed(1) : '—', diffs.sedativePrnPer1000ResidentDays);
 
-  // No ALIS 500 benchmark exists for care task completion yet — shown
-  // without the ▲/▼-vs-benchmark line the other cards get.
+  // No ALIS 500 benchmark exists for these yet — shown without the
+  // ▲/▼-vs-benchmark line the cards above get.
   statCard(slide, 0.5, 4.0, 'Care Tasks Completed', pctStr(normalized.careCompletion?.pct), null);
+  statCard(slide, 3.4, 4.0, 'Staff Active (30d)', pctStr(normalized.staffActivity?.pct), null);
+  statCard(slide, 6.3, 4.0, 'Active Staff : Census', normalized.staffActivity?.staffToCensusRatio != null ? `1 : ${(1 / normalized.staffActivity.staffToCensusRatio).toFixed(1)}` : '—', null);
 }
 
 function addSupportReviewSlide(pptx, ticketSummary) {

@@ -111,6 +111,19 @@ function generateFlags(normalized, diffs, ticketSummary) {
     }
   }
 
+  // Staff activity is a login-recency snapshot as of the job run, not
+  // scoped to the reporting period — see kpiNormalizer.js. No benchmark
+  // exists for it either, so this is an absolute threshold too.
+  if (normalized.staffActivity?.pct != null && normalized.staffActivity.pct < 0.60) {
+    flags.push({
+      severity: SEVERITY.WATCH,
+      category: 'Adoption',
+      title: `Only ${pct(normalized.staffActivity.pct)} of enabled staff have logged into ALIS in the last 30 days`,
+      detail: `${normalized.staffActivity.activeInWindow} of ${normalized.staffActivity.totalEnabledStaff} enabled staff active in the last 30 days; ${normalized.staffActivity.neverLoggedIn} have never logged in at all.`,
+      talkingPoint: 'Worth checking whether this is an onboarding gap, a role that doesn\'t need system access, or an adoption issue worth addressing.',
+    });
+  }
+
   // ── Support tickets ───────────────────────────────────────────────────
   if (ticketSummary) {
     if (ticketSummary.agingOpenTickets.length > 0) {

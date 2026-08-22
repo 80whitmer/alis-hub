@@ -143,12 +143,12 @@ export default function KpiDashboard() {
         <StatCard label="Hospital/SNF visits / 1,000 res-days" value={normalized.hospitalVisits?.per1000ResidentDays?.toFixed(1) ?? '—'} diff={diffs.hospitalVisitsPer1000ResidentDays} />
         <StatCard label="Sedative PRN / 1,000 res-days" value={normalized.prnAdministration?.sedativesAntipsychotics?.toFixed(1) ?? '—'} diff={diffs.sedativePrnPer1000ResidentDays} />
         <StatCard label="Care Tasks Completed" value={pctStr(normalized.careCompletion?.pct)} />
+        <StatCard label="Staff Active (30d)" value={pctStr(normalized.staffActivity?.pct)} />
+        <StatCard label="Active Staff : Census" value={normalized.staffActivity?.staffToCensusRatio != null ? `1 : ${(1 / normalized.staffActivity.staffToCensusRatio).toFixed(1)}` : '—'} />
       </div>
-      {normalized.careCompletion?.daysSampled > 0 && (
-        <p className="text-xs text-neutral-400 mb-8">
-          Care completion sampled from {normalized.careCompletion.daysSampled} day(s) — no ALIS 500 benchmark exists for this metric yet.
-        </p>
-      )}
+      <p className="text-xs text-neutral-400 mb-8">
+        Care completion and staff activity have no ALIS 500 benchmark yet — care completion is currently disabled pending a more scalable data source (see project notes); staff activity reflects login recency as of when this report ran, not the reporting period itself.
+      </p>
 
       {/* Benchmark chart */}
       <div className="card mb-8">

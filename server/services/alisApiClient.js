@@ -84,6 +84,9 @@ const getOccupancy = (companyHost, { communityId, monthAndYear } = {}) =>
 const getCommunities = (companyHost) =>
   alisApiGet(companyHost, '/v1/export/communities');
 
+const getStaff = (companyHost) =>
+  alisApiGet(companyHost, '/v1/export/staff');
+
 const getResidents = (companyHost, { status = 'CurrentResident' } = {}) =>
   alisApiGet(companyHost, '/v1/export/residents', { status });
 
@@ -124,6 +127,7 @@ module.exports = {
   alisApiGet,
   getOccupancy,
   getCommunities,
+  getStaff,
   getResidents,
   getMoveInsAndOuts,
   getHistoricalMoveInMoveOuts,

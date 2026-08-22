@@ -299,6 +299,46 @@ function normalizeDiagnoses(residentRows = [], totalResidents) {
   return Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v / totalResidents]));
 }
 
+// ── Staff activity ────────────────────────────────────────────────────────
+
+/**
+ * /v1/export/staff (one account-wide call, no per-community loop needed)
+ * gives one row per staff member with isActive/isLoginEnabled and a single
+ * `loginTime` (their most recent login, not a login history). This is a
+ * snapshot as of when the job runs, not scoped to periodStart/periodEnd
+ * the way the other KPIs are — there's no way to ask "who logged in
+ * during Q2" from this field alone, only "who has logged in recently."
+ * activeStaffCount vs. residentCensus is a rough staffing-intensity
+ * comparison, not a validated industry ratio.
+ */
+function normalizeStaffActivity(staffRows = [], { recencyDays = 30, referenceDate, residentCensus } = {}) {
+  const ref = referenceDate ? new Date(referenceDate) : new Date();
+  const enabled = staffRows.filter((r) => r.isActive && r.isLoginEnabled);
+  if (enabled.length === 0) {
+    return { totalEnabledStaff: 0, activeInWindow: 0, pct: null, neverLoggedIn: 0, staffToCensusRatio: null };
+  }
+
+  let activeInWindow = 0;
+  let neverLoggedIn = 0;
+  for (const r of enabled) {
+    const loginTime = firstDefined(r, ['loginTime', 'lastLoginTime', 'lastLogin']);
+    if (!loginTime) {
+      neverLoggedIn++;
+      continue;
+    }
+    const daysAgo = (ref.getTime() - new Date(loginTime).getTime()) / 86400000;
+    if (daysAgo >= -1 && daysAgo <= recencyDays) activeInWindow++;
+  }
+
+  return {
+    totalEnabledStaff: enabled.length,
+    activeInWindow,
+    pct: activeInWindow / enabled.length,
+    neverLoggedIn,
+    staffToCensusRatio: residentCensus ? activeInWindow / residentCensus : null,
+  };
+}
+
 // ── Care task completion ──────────────────────────────────────────────────
 
 /**
@@ -395,6 +435,7 @@ module.exports = {
   normalizeHospitalVisits,
   normalizeDiagnoses,
   normalizeCareCompletion,
+  normalizeStaffActivity,
   normalizePrnAdministration,
   estimateResidentDays,
   computeBenchmarkDiffs,

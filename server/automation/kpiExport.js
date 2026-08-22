@@ -2,13 +2,13 @@ const fs = require('fs');
 const path = require('path');
 
 const {
-  getOccupancy, getCommunities, getResidents, getMoveInsAndOuts, getIncidents,
+  getOccupancy, getCommunities, getStaff, getResidents, getMoveInsAndOuts, getIncidents,
   getLeaves, getDiagnosesAndAllergies, getRecordedCare, getScheduledCareTasks,
 } = require('../services/alisApiClient');
 const {
   normalizeOccupancy, normalizeDemographics, normalizeLengthOfStayAndMoveOuts,
   normalizeFalls, normalizeHospitalVisits, normalizeDiagnoses, normalizeCareCompletion,
-  normalizePrnAdministration, estimateResidentDays, computeBenchmarkDiffs,
+  normalizeStaffActivity, normalizePrnAdministration, estimateResidentDays, computeBenchmarkDiffs,
   filterByDateRange,
 } = require('../services/kpiNormalizer');
 
@@ -136,9 +136,10 @@ async function runKpiExportJob(jobId, payload) {
     { key: 'incidents', fn: () => getIncidents(companyHost) },
     { key: 'leaves', fn: () => getLeaves(companyHost) },
     { key: 'diagnosesAndAllergies', fn: () => getDiagnosesAndAllergies(companyHost) },
+    { key: 'staff', fn: () => getStaff(companyHost) },
   ];
 
-  emit('progress', { message: 'Pulling resident roster, move-ins/outs, incidents, leaves, and diagnoses…' });
+  emit('progress', { message: 'Pulling resident roster, move-ins/outs, incidents, leaves, diagnoses, and staff…' });
   const settled = await Promise.allSettled(ACCOUNT_WIDE_ENDPOINTS.map((e) => e.fn()));
 
   const pulled = {};
@@ -164,7 +165,7 @@ async function runKpiExportJob(jobId, payload) {
     emit('progress', { message: `${endpointErrors.length} of ${ACCOUNT_WIDE_ENDPOINTS.length} account-wide pulls failed and will be treated as empty: ${endpointErrors.join('; ')}` });
   }
 
-  const { residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies } = pulled;
+  const { residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies, staff } = pulled;
 
   // ── Per-community pulls (occupancy + recorded care + care completion) ──
   // hqOccupancies takes a single `monthAndYear`, not a range, so a
@@ -257,6 +258,7 @@ async function runKpiExportJob(jobId, payload) {
   const asArray = (v) => (Array.isArray(v) ? v : v?.items || []);
   const scopedResidents = filterByCommunity(asArray(residents), requestedCommunityIds);
   const scopedDiagnoses = filterByCommunity(asArray(diagnosesAndAllergies), requestedCommunityIds);
+  const scopedStaff = filterByCommunity(asArray(staff), requestedCommunityIds);
 
   // incidents and leaves have no server-side date filter at all (confirmed
   // against the live OpenAPI spec) — they return full history, so an
@@ -292,8 +294,11 @@ async function runKpiExportJob(jobId, payload) {
   const diagnosisPrevalence = normalizeDiagnoses(scopedDiagnoses, demographics.totalResidents);
   const prnAdministration = normalizePrnAdministration(recordedCareRows, residentDays);
   const careCompletion = normalizeCareCompletion(careCompletionDailySummaries);
+  // Average daily census over the period, for the staff-to-census ratio.
+  const avgCensus = occupancy.occupiedRoomDays != null && days.length ? occupancy.occupiedRoomDays / days.length : null;
+  const staffActivity = normalizeStaffActivity(scopedStaff, { residentCensus: avgCensus });
 
-  const normalized = { occupancy, demographics, lengthOfStay, falls, hospitalVisits, diagnosisPrevalence, prnAdministration, careCompletion };
+  const normalized = { occupancy, demographics, lengthOfStay, falls, hospitalVisits, diagnosisPrevalence, prnAdministration, careCompletion, staffActivity };
 
   const benchmark = getLatestBenchmarks();
   const diffs = computeBenchmarkDiffs(normalized, benchmark);
