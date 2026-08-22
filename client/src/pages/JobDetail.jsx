@@ -53,7 +53,7 @@ export default function JobDetail() {
         }
 
         if (data.status === 'done' || data.status === 'failed') return; // no SSE needed
-        openStream();
+        openStream(data.type);
       });
 
     return () => esRef.current?.close();
@@ -127,7 +127,7 @@ export default function JobDetail() {
     }
   }
 
-  function openStream() {
+  function openStream(jobType) {
     const es = new EventSource(`/api/stream/${id}`);
     esRef.current = es;
 
@@ -143,6 +143,11 @@ export default function JobDetail() {
         return recentDuplicate ? l : [...l, entry];
       });
     };
+
+    es.addEventListener('progress', e => {
+      const { message } = JSON.parse(e.data);
+      addUniqueLogEntry({ ts: new Date().toISOString(), text: message });
+    });
 
     es.addEventListener('item_start', e => {
       const { name } = JSON.parse(e.data);
@@ -182,8 +187,8 @@ export default function JobDetail() {
       addUniqueLogEntry(newEntry);
       setJob(j => ({ ...j, status: 'done' }));
 
-      // Refetch GL sync details when job completes
-      if (id) {
+      // Refetch GL sync details when job completes (GL sync jobs only)
+      if (jobType === 'sync-gl-accounts' && id) {
         fetch(`/api/jobs/${id}/gl-details`)
           .then(r => r.json())
           .then(detailsData => {
@@ -293,8 +298,9 @@ export default function JobDetail() {
       </div>
 
 
-      {/* Live Log (for in-progress sync-gl-accounts jobs) */}
-      {job.type === 'sync-gl-accounts' && isRunning && (
+      {/* Live Log (for any in-progress job — surfaces item start/done/fail
+          and free-text progress messages from the job handler) */}
+      {isRunning && (
         <div className="card mt-6">
           <h3 className="font-semibold text-primary-900 mb-4">Live Log</h3>
           <div
