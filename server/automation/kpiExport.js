@@ -43,27 +43,44 @@ async function runKpiExportJob(jobId, payload) {
   emit('job_start', { jobId, total: communities.length, company: companyName });
 
   // ── Account-wide pulls (one call each, not per-community) ──────────────
-  let residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies;
-  try {
-    emit('progress', { message: 'Pulling resident roster, move-ins/outs, incidents, leaves, and diagnoses…' });
-    [residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies] = await Promise.all([
-      getResidents(companyHost),
-      getMoveInsAndOuts(companyHost),
-      getIncidents(companyHost),
-      getLeaves(companyHost),
-      getDiagnosesAndAllergies(companyHost),
-    ]);
-    cacheRaw(jobId, 'residents', residents);
-    cacheRaw(jobId, 'moveInsAndOuts', moveInsAndOuts);
-    cacheRaw(jobId, 'incidents', incidents);
-    cacheRaw(jobId, 'leaves', leaves);
-    cacheRaw(jobId, 'diagnosesAndAllergies', diagnosesAndAllergies);
-  } catch (err) {
-    console.error(`[kpi-export:${jobId}] Account-wide ALIS API pull failed:`, err);
+  // Promise.allSettled (not Promise.all) so one endpoint 401ing doesn't hide
+  // whether the others also failed — Promise.all would short-circuit on the
+  // first rejection and silently drop the rest.
+  const ACCOUNT_WIDE_ENDPOINTS = [
+    { key: 'residents', fn: () => getResidents(companyHost) },
+    { key: 'moveInsAndOuts', fn: () => getMoveInsAndOuts(companyHost) },
+    { key: 'incidents', fn: () => getIncidents(companyHost) },
+    { key: 'leaves', fn: () => getLeaves(companyHost) },
+    { key: 'diagnosesAndAllergies', fn: () => getDiagnosesAndAllergies(companyHost) },
+  ];
+
+  emit('progress', { message: 'Pulling resident roster, move-ins/outs, incidents, leaves, and diagnoses…' });
+  const settled = await Promise.allSettled(ACCOUNT_WIDE_ENDPOINTS.map((e) => e.fn()));
+
+  const pulled = {};
+  const endpointErrors = [];
+  settled.forEach((result, i) => {
+    const { key } = ACCOUNT_WIDE_ENDPOINTS[i];
+    if (result.status === 'fulfilled') {
+      pulled[key] = result.value;
+      cacheRaw(jobId, key, result.value);
+    } else {
+      pulled[key] = null;
+      endpointErrors.push(`${key}: ${result.reason.message}`);
+      console.error(`[kpi-export:${jobId}] "${key}" pull failed:`, result.reason);
+    }
+  });
+
+  if (endpointErrors.length === ACCOUNT_WIDE_ENDPOINTS.length) {
     setJobStatus(jobId, 'failed');
-    emit('job_error', { error: `Account-wide ALIS API pull failed: ${err.message}` });
+    emit('job_error', { error: `All account-wide ALIS API pulls failed: ${endpointErrors.join('; ')}` });
     return;
   }
+  if (endpointErrors.length > 0) {
+    emit('progress', { message: `${endpointErrors.length} of ${ACCOUNT_WIDE_ENDPOINTS.length} account-wide pulls failed and will be treated as empty: ${endpointErrors.join('; ')}` });
+  }
+
+  const { residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies } = pulled;
 
   // ── Per-community pulls (occupancy + recorded care) ─────────────────────
   const occupancyRows = [];
@@ -74,20 +91,32 @@ async function runKpiExportJob(jobId, payload) {
     setItemStatus(jobId, name, 'running');
     emit('item_start', { name });
 
-    try {
-      const [occupancy, recordedCare] = await Promise.all([
-        getOccupancy(companyHost, { communityId, monthAndYear: periodStart }),
-        getRecordedCare(companyHost, { communityId, careStartDate: periodStart, careEndDate: periodEnd }),
-      ]);
-      occupancyRows.push(...(Array.isArray(occupancy) ? occupancy : [occupancy]).filter(Boolean));
-      recordedCareRows.push(...(Array.isArray(recordedCare) ? recordedCare : [recordedCare]).filter(Boolean));
+    const [occupancyResult, recordedCareResult] = await Promise.allSettled([
+      getOccupancy(companyHost, { communityId, monthAndYear: periodStart }),
+      getRecordedCare(companyHost, { communityId, careStartDate: periodStart, careEndDate: periodEnd }),
+    ]);
 
+    if (occupancyResult.status === 'fulfilled') {
+      const occupancy = occupancyResult.value;
+      occupancyRows.push(...(Array.isArray(occupancy) ? occupancy : [occupancy]).filter(Boolean));
+    } else {
+      console.error(`[kpi-export:${jobId}] "occupancy" pull failed for "${name}":`, occupancyResult.reason);
+    }
+
+    if (recordedCareResult.status === 'fulfilled') {
+      const recordedCare = recordedCareResult.value;
+      recordedCareRows.push(...(Array.isArray(recordedCare) ? recordedCare : [recordedCare]).filter(Boolean));
+    } else {
+      console.error(`[kpi-export:${jobId}] "recordedCare" pull failed for "${name}":`, recordedCareResult.reason);
+    }
+
+    if (occupancyResult.status === 'rejected' && recordedCareResult.status === 'rejected') {
+      const error = `occupancy: ${occupancyResult.reason.message}; recordedCare: ${recordedCareResult.reason.message}`;
+      setItemStatus(jobId, name, 'failed', error);
+      emit('item_fail', { name, error });
+    } else {
       setItemStatus(jobId, name, 'success');
       emit('item_done', { name });
-    } catch (err) {
-      console.error(`[kpi-export:${jobId}] Per-community pull failed for "${name}":`, err);
-      setItemStatus(jobId, name, 'failed', err.message);
-      emit('item_fail', { name, error: err.message });
     }
   }
   cacheRaw(jobId, 'occupancy', occupancyRows);
