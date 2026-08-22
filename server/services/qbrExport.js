@@ -129,17 +129,17 @@ function addKeyStatsSlide(pptx, { normalized, diffs }) {
   const slide = pptx.addSlide();
   addSectionHeader(slide, 'Key Stats');
 
-  statCard(slide, 0.5, 1.3, 'Occupancy', pctStr(normalized.occupancy?.pct), diffs.occupancyPct);
-  statCard(slide, 3.4, 1.3, 'Median Length of Stay', normalized.lengthOfStay?.medianDays != null ? `${Math.round(normalized.lengthOfStay.medianDays)}d` : '—', diffs.medianLosDays);
-  statCard(slide, 6.3, 1.3, '12mo Move-Out Rate', pctStr(normalized.lengthOfStay?.moveOutWithin?.['12mo']), diffs.moveOutWithin12mo);
+  statCard(slide, 0.5, 1.1, 'Occupancy', pctStr(normalized.occupancy?.pct), diffs.occupancyPct);
+  statCard(slide, 3.4, 1.1, 'Median Length of Stay', normalized.lengthOfStay?.medianDays != null ? `${Math.round(normalized.lengthOfStay.medianDays)}d` : '—', diffs.medianLosDays);
+  statCard(slide, 6.3, 1.1, '12mo Move-Out Rate', pctStr(normalized.lengthOfStay?.moveOutWithin?.['12mo']), diffs.moveOutWithin12mo);
 
-  statCard(slide, 0.5, 3.0, 'Falls / 1,000 res-days', normalized.falls?.per1000ResidentDays != null ? normalized.falls.per1000ResidentDays.toFixed(1) : '—', diffs.fallsPer1000ResidentDays);
-  statCard(slide, 3.4, 3.0, 'Hospital/SNF visits / 1,000 res-days', normalized.hospitalVisits?.per1000ResidentDays != null ? normalized.hospitalVisits.per1000ResidentDays.toFixed(1) : '—', diffs.hospitalVisitsPer1000ResidentDays);
-  statCard(slide, 6.3, 3.0, 'Sedative PRN / 1,000 res-days', normalized.prnAdministration?.sedativesAntipsychotics != null ? normalized.prnAdministration.sedativesAntipsychotics.toFixed(1) : '—', diffs.sedativePrnPer1000ResidentDays);
+  statCard(slide, 0.5, 2.65, 'Falls / 1,000 res-days', normalized.falls?.per1000ResidentDays != null ? normalized.falls.per1000ResidentDays.toFixed(1) : '—', diffs.fallsPer1000ResidentDays);
+  statCard(slide, 3.4, 2.65, 'Hospital/SNF visits / 1,000 res-days', normalized.hospitalVisits?.per1000ResidentDays != null ? normalized.hospitalVisits.per1000ResidentDays.toFixed(1) : '—', diffs.hospitalVisitsPer1000ResidentDays);
+  statCard(slide, 6.3, 2.65, 'Sedative PRN / 1,000 res-days', normalized.prnAdministration?.sedativesAntipsychotics != null ? normalized.prnAdministration.sedativesAntipsychotics.toFixed(1) : '—', diffs.sedativePrnPer1000ResidentDays);
 
-  slide.addText('Benchmarked against the current ALIS 500 dataset (~500 communities nationwide).', {
-    x: 0.5, y: 4.7, w: 9, h: 0.3, fontFace: FONT_BODY, fontSize: 9, italic: true, color: BRAND.slate,
-  });
+  // No ALIS 500 benchmark exists for care task completion yet — shown
+  // without the ▲/▼-vs-benchmark line the other cards get.
+  statCard(slide, 0.5, 4.0, 'Care Tasks Completed', pctStr(normalized.careCompletion?.pct), null);
 }
 
 function addSupportReviewSlide(pptx, ticketSummary) {

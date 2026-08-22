@@ -3,11 +3,11 @@ const path = require('path');
 
 const {
   getOccupancy, getResidents, getMoveInsAndOuts, getIncidents,
-  getLeaves, getDiagnosesAndAllergies, getRecordedCare,
+  getLeaves, getDiagnosesAndAllergies, getRecordedCare, getScheduledCareTasks,
 } = require('../services/alisApiClient');
 const {
   normalizeOccupancy, normalizeDemographics, normalizeLengthOfStayAndMoveOuts,
-  normalizeFalls, normalizeHospitalVisits, normalizeDiagnoses,
+  normalizeFalls, normalizeHospitalVisits, normalizeDiagnoses, normalizeCareCompletion,
   normalizePrnAdministration, estimateResidentDays, computeBenchmarkDiffs,
   filterByDateRange,
 } = require('../services/kpiNormalizer');
@@ -25,6 +25,22 @@ function monthsInRange(startIso, endIso) {
   }
   return months;
 }
+
+/** 'YYYY-MM-DD' for each calendar day between two ISO dates, inclusive. */
+function daysInRange(startIso, endIso) {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const days = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (cursor <= last) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
+const CARE_TASK_BATCH_SIZE = 8;
 
 /**
  * residents/moveInsAndOuts/incidents/leaves/diagnosesAndAllergies are
@@ -117,12 +133,18 @@ async function runKpiExportJob(jobId, payload) {
 
   const { residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies } = pulled;
 
-  // ── Per-community pulls (occupancy + recorded care) ─────────────────────
+  // ── Per-community pulls (occupancy + recorded care + care completion) ──
   // hqOccupancies takes a single `monthAndYear`, not a range, so a
   // multi-month period needs one call per calendar month.
   const months = monthsInRange(periodStart, periodEnd);
+  // scheduledCareTasks has no date-range param at all — one call per day,
+  // batched to avoid hammering the API. Only compact per-day counts are
+  // kept (a full quarter is ~90 calls × ~700-800 tasks each — too much to
+  // hold as raw rows).
+  const days = daysInRange(periodStart, periodEnd);
   const occupancyRows = [];
   const recordedCareRows = [];
+  const careCompletionDailySummaries = [];
 
   for (const community of communities) {
     const { name, communityId } = community;
@@ -153,8 +175,29 @@ async function runKpiExportJob(jobId, payload) {
       console.error(`[kpi-export:${jobId}] "recordedCare" pull failed for "${name}":`, recordedCareOutcome.reason);
     }
 
-    if (occupancySuccessCount === 0 && recordedCareOutcome.status === 'rejected') {
-      const error = `occupancy: all ${months.length} month(s) failed; recordedCare: ${recordedCareOutcome.reason.message}`;
+    let careTaskDaysSucceeded = 0;
+    for (let i = 0; i < days.length; i += CARE_TASK_BATCH_SIZE) {
+      const batch = days.slice(i, i + CARE_TASK_BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map((d) => getScheduledCareTasks(companyHost, { communityId, localCareDate: d }))
+      );
+      batchResults.forEach((result, j) => {
+        const date = batch[j];
+        if (result.status === 'fulfilled') {
+          careTaskDaysSucceeded++;
+          const tasks = (result.value || []).flatMap((r) => r.careTrackingItems || []);
+          const recorded = tasks.filter((t) => String(t.taskStatus) === '1');
+          const completed = recorded.filter((t) => String(t.outcome) === '1').length;
+          careCompletionDailySummaries.push({ communityId, date, total: recorded.length, completed });
+        } else {
+          console.error(`[kpi-export:${jobId}] "scheduledCareTasks" pull failed for "${name}" / ${date}:`, result.reason);
+        }
+      });
+      emit('progress', { message: `Care completion: ${Math.min(i + CARE_TASK_BATCH_SIZE, days.length)}/${days.length} days pulled for "${name}"` });
+    }
+
+    if (occupancySuccessCount === 0 && recordedCareOutcome.status === 'rejected' && careTaskDaysSucceeded === 0) {
+      const error = `occupancy: all ${months.length} month(s) failed; recordedCare: ${recordedCareOutcome.reason.message}; care completion: all ${days.length} day(s) failed`;
       setItemStatus(jobId, name, 'failed', error);
       emit('item_fail', { name, error });
     } else {
@@ -164,6 +207,7 @@ async function runKpiExportJob(jobId, payload) {
   }
   cacheRaw(jobId, 'occupancy', occupancyRows);
   cacheRaw(jobId, 'recordedCare', recordedCareRows);
+  cacheRaw(jobId, 'careCompletionDailySummaries', careCompletionDailySummaries);
 
   // ── Normalize ─────────────────────────────────────────────────────────
   emit('progress', { message: 'Normalizing KPIs and diffing against ALIS 500 benchmarks…' });
@@ -210,8 +254,9 @@ async function runKpiExportJob(jobId, payload) {
   const hospitalVisits = normalizeHospitalVisits(scopedLeaves, residentDays);
   const diagnosisPrevalence = normalizeDiagnoses(scopedDiagnoses, demographics.totalResidents);
   const prnAdministration = normalizePrnAdministration(recordedCareRows, residentDays);
+  const careCompletion = normalizeCareCompletion(careCompletionDailySummaries);
 
-  const normalized = { occupancy, demographics, lengthOfStay, falls, hospitalVisits, diagnosisPrevalence, prnAdministration };
+  const normalized = { occupancy, demographics, lengthOfStay, falls, hospitalVisits, diagnosisPrevalence, prnAdministration, careCompletion };
 
   const benchmark = getLatestBenchmarks();
   const diffs = computeBenchmarkDiffs(normalized, benchmark);

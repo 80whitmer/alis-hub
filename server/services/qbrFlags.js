@@ -87,6 +87,30 @@ function generateFlags(normalized, diffs, ticketSummary) {
     });
   }
 
+  // Care task completion has no ALIS 500 benchmark to diff against (that
+  // dataset doesn't cover it) — these are absolute thresholds, not a
+  // vs.-benchmark comparison like the flags above.
+  if (normalized.careCompletion?.pct != null) {
+    const careCompletionPct = normalized.careCompletion.pct;
+    if (careCompletionPct < 0.80) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Clinical',
+        title: `Only ${pct(careCompletionPct)} of scheduled care tasks were recorded as completed this period`,
+        detail: `Based on ${normalized.careCompletion.daysSampled} sampled day(s), ${normalized.careCompletion.completed} of ${normalized.careCompletion.totalRecorded} recorded tasks were marked Completed.`,
+        talkingPoint: 'Review care task completion workflow with the care team — this is a meaningful gap versus a fully-staffed community.',
+      });
+    } else if (careCompletionPct < 0.90) {
+      flags.push({
+        severity: SEVERITY.WATCH,
+        category: 'Clinical',
+        title: `${pct(careCompletionPct)} of scheduled care tasks were recorded as completed this period`,
+        detail: `Based on ${normalized.careCompletion.daysSampled} sampled day(s), ${normalized.careCompletion.completed} of ${normalized.careCompletion.totalRecorded} recorded tasks were marked Completed.`,
+        talkingPoint: 'Worth a quick check on whether this concentrates on specific shifts or task types.',
+      });
+    }
+  }
+
   // ── Support tickets ───────────────────────────────────────────────────
   if (ticketSummary) {
     if (ticketSummary.agingOpenTickets.length > 0) {

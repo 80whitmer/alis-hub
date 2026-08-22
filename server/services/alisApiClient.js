@@ -102,6 +102,21 @@ const getDiagnosesAndAllergies = (companyHost) =>
 const getRecordedCare = (companyHost, { communityId, careStartDate, careEndDate } = {}) =>
   alisApiGet(companyHost, '/v1/export/care/recordedCare', { communityId, careStartDate, careEndDate });
 
+// Only v1 actually exists — the "use v2/v3 instead" deprecation note on v1
+// doesn't correspond to any registered path in the spec. Capped to 3 months
+// of history server-side (startDate/endDate default to the current month).
+const getOrderAdministration = (companyHost, { communityId, startDate, endDate } = {}) =>
+  alisApiGet(companyHost, '/v1/export/clinical/orderAdministration', { communityId, startDate, endDate });
+
+// Integration (not Export) endpoint — communityId is a path segment, not a
+// query param. `localCareDate` takes a single date, not a range; unclear
+// yet whether omitting it returns "today" or everything (this looks like a
+// live shift-view endpoint for 3rd-party care apps, not a historical
+// reporting one — confirm with a real call before relying on it for a
+// full-quarter pull).
+const getScheduledCareTasks = (companyHost, { communityId, careListID, residentID, shiftID, localCareDate, roomNumber, taskStatus } = {}) =>
+  alisApiGet(companyHost, `/v1/integration/care/${communityId}/scheduledCareTasks`, { careListID, residentID, shiftID, localCareDate, roomNumber, taskStatus });
+
 module.exports = {
   alisApiGet,
   getOccupancy,
@@ -112,4 +127,6 @@ module.exports = {
   getLeaves,
   getDiagnosesAndAllergies,
   getRecordedCare,
+  getOrderAdministration,
+  getScheduledCareTasks,
 };

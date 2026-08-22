@@ -142,7 +142,13 @@ export default function KpiDashboard() {
         <StatCard label="Falls / 1,000 res-days" value={normalized.falls?.per1000ResidentDays?.toFixed(1) ?? '—'} diff={diffs.fallsPer1000ResidentDays} />
         <StatCard label="Hospital/SNF visits / 1,000 res-days" value={normalized.hospitalVisits?.per1000ResidentDays?.toFixed(1) ?? '—'} diff={diffs.hospitalVisitsPer1000ResidentDays} />
         <StatCard label="Sedative PRN / 1,000 res-days" value={normalized.prnAdministration?.sedativesAntipsychotics?.toFixed(1) ?? '—'} diff={diffs.sedativePrnPer1000ResidentDays} />
+        <StatCard label="Care Tasks Completed" value={pctStr(normalized.careCompletion?.pct)} />
       </div>
+      {normalized.careCompletion?.daysSampled > 0 && (
+        <p className="text-xs text-neutral-400 mb-8">
+          Care completion sampled from {normalized.careCompletion.daysSampled} day(s) — no ALIS 500 benchmark exists for this metric yet.
+        </p>
+      )}
 
       {/* Benchmark chart */}
       <div className="card mb-8">

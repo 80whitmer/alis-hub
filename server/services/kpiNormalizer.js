@@ -299,6 +299,28 @@ function normalizeDiagnoses(residentRows = [], totalResidents) {
   return Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v / totalResidents]));
 }
 
+// ── Care task completion ──────────────────────────────────────────────────
+
+/**
+ * scheduledCareTasks (Integration: Care) has no date-range param — the
+ * caller pulls one day at a time and passes in compact per-day summaries
+ * here rather than raw task rows, since a full quarter is ~90 calls
+ * returning ~700-800 tasks each (way too much to hold as raw JSON).
+ * `taskStatus` = whether the task has been recorded yet (1) vs. still
+ * pending (0); `outcome` = the actual result ("1"→Completed per
+ * outcomeOptions). % delivered = completed / recorded, not / all tasks.
+ */
+function normalizeCareCompletion(dailySummaries = []) {
+  const total = dailySummaries.reduce((s, d) => s + d.total, 0);
+  const completed = dailySummaries.reduce((s, d) => s + d.completed, 0);
+  return {
+    pct: total ? completed / total : null,
+    totalRecorded: total,
+    completed,
+    daysSampled: dailySummaries.length,
+  };
+}
+
 // ── PRN administration ───────────────────────────────────────────────────
 
 const PRN_CATEGORY_MAP = {
@@ -372,6 +394,7 @@ module.exports = {
   normalizeFalls,
   normalizeHospitalVisits,
   normalizeDiagnoses,
+  normalizeCareCompletion,
   normalizePrnAdministration,
   estimateResidentDays,
   computeBenchmarkDiffs,
