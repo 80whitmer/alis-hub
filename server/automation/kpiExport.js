@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const {
-  getOccupancy, getResidents, getMoveInsAndOuts, getIncidents,
+  getOccupancy, getCommunities, getResidents, getMoveInsAndOuts, getIncidents,
   getLeaves, getDiagnosesAndAllergies, getRecordedCare, getScheduledCareTasks,
 } = require('../services/alisApiClient');
 const {
@@ -78,10 +78,31 @@ function cacheRaw(jobId, name, data) {
  * Emits SSE events: job_start | progress | item_start | item_done | item_fail | job_done
  */
 async function runKpiExportJob(jobId, payload) {
-  const { companyName, companyHost, communities, periodStart, periodEnd, hubspotCompanyId } = payload;
+  const { companyName, companyHost, periodStart, periodEnd, hubspotCompanyId } = payload;
   const emit = (event, data) => broadcast(jobId, event, data);
 
   setJobStatus(jobId, 'running');
+
+  // No communities specified → pull every community for this account,
+  // minus any with "Training" in the name (not real communities).
+  let communities = payload.communities;
+  if (!communities || communities.length === 0) {
+    emit('progress', { message: 'No communities specified — pulling the full community list for this account…' });
+    try {
+      const all = await getCommunities(companyHost);
+      communities = all
+        .filter((c) => !(c.communityName || '').toLowerCase().includes('training'))
+        .map((c) => ({ name: c.communityName, communityId: c.communityId }));
+      emit('progress', { message: `Auto-resolved ${communities.length} communities (excluded ${all.length - communities.length} Training community/ies).` });
+    } catch (err) {
+      setJobStatus(jobId, 'failed');
+      const error = `Failed to auto-resolve community list: ${err.message}`;
+      console.error(`[kpi-export:${jobId}] ${error}`);
+      emit('job_error', { error });
+      return;
+    }
+  }
+
   emit('job_start', { jobId, total: communities.length, company: companyName });
 
   const missingId = communities.find((c) => !c.communityId);

@@ -81,6 +81,9 @@ function alisApiGet(companyHost, path, params) {
 const getOccupancy = (companyHost, { communityId, monthAndYear } = {}) =>
   alisApiGet(companyHost, '/v1/export/communities/floorPlan/hqOccupancies', { communityId, monthAndYear });
 
+const getCommunities = (companyHost) =>
+  alisApiGet(companyHost, '/v1/export/communities');
+
 const getResidents = (companyHost, { status = 'CurrentResident' } = {}) =>
   alisApiGet(companyHost, '/v1/export/residents', { status });
 
@@ -120,6 +123,7 @@ const getScheduledCareTasks = (companyHost, { communityId, careListID, residentI
 module.exports = {
   alisApiGet,
   getOccupancy,
+  getCommunities,
   getResidents,
   getMoveInsAndOuts,
   getHistoricalMoveInMoveOuts,

@@ -235,9 +235,8 @@
           },
           "communities": {
             "type": "array",
-            "title": "Communities",
-            "description": "Communities to include in this account's KPI pull",
-            "minItems": 1,
+            "title": "Communities (optional)",
+            "description": "Leave empty to automatically pull every community for this account, excluding any with \"Training\" in the name",
             "items": {
               "type": "object",
               "properties": {
@@ -272,7 +271,7 @@
             "examples": ["770"]
           }
         },
-        "required": ["companyName", "companyHost", "communities", "periodStart", "periodEnd"]
+        "required": ["companyName", "companyHost", "periodStart", "periodEnd"]
       }
     }
   ]
