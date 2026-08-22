@@ -1,0 +1,3 @@
+{
+  "ignore": ["automation/kpi-cache/*", "db/*.sqlite"]
+}
