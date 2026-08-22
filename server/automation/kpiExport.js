@@ -84,7 +84,11 @@ async function runKpiExportJob(jobId, payload) {
   setJobStatus(jobId, 'running');
 
   // No communities specified → pull every community for this account,
-  // minus any with "Training" in the name (not real communities).
+  // minus Training communities (by name) and canceled/suspended ones (by
+  // status). Only "canceled" and "active" have been seen in real data so
+  // far — "suspended" isn't confirmed yet, matched defensively in case a
+  // different account uses it.
+  const EXCLUDED_STATUSES = ['canceled', 'cancelled', 'suspended'];
   let communities = payload.communities;
   if (!communities || communities.length === 0) {
     emit('progress', { message: 'No communities specified — pulling the full community list for this account…' });
@@ -92,8 +96,9 @@ async function runKpiExportJob(jobId, payload) {
       const all = await getCommunities(companyHost);
       communities = all
         .filter((c) => !(c.communityName || '').toLowerCase().includes('training'))
+        .filter((c) => !EXCLUDED_STATUSES.includes((c.status || '').toLowerCase()))
         .map((c) => ({ name: c.communityName, communityId: c.communityId }));
-      emit('progress', { message: `Auto-resolved ${communities.length} communities (excluded ${all.length - communities.length} Training community/ies).` });
+      emit('progress', { message: `Auto-resolved ${communities.length} of ${all.length} communities (excluded Training and canceled/suspended communities).` });
     } catch (err) {
       setJobStatus(jobId, 'failed');
       const error = `Failed to auto-resolve community list: ${err.message}`;
