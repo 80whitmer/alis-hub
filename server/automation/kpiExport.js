@@ -68,6 +68,15 @@ async function runKpiExportJob(jobId, payload) {
   setJobStatus(jobId, 'running');
   emit('job_start', { jobId, total: communities.length, company: companyName });
 
+  const missingId = communities.find((c) => !c.communityId);
+  if (missingId) {
+    setJobStatus(jobId, 'failed');
+    const error = `Community "${missingId.name}" is missing an ALIS Community ID — fill that field in before running the job.`;
+    console.error(`[kpi-export:${jobId}] ${error}`);
+    emit('job_error', { error });
+    return;
+  }
+
   // ── Account-wide pulls (one call each, not per-community) ──────────────
   // Promise.allSettled (not Promise.all) so one endpoint 401ing doesn't hide
   // whether the others also failed — Promise.all would short-circuit on the
