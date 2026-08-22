@@ -129,6 +129,21 @@ function createJob({ id, type, label, payload, total, items = [] }) {
   }
 }
 
+/**
+ * Backfills job_items rows and the jobs.total count for a job whose real
+ * item list wasn't known at creation time (e.g. kpi-export auto-resolving
+ * "all communities" after the job already exists with communities: []).
+ * Without this, setItemStatus's UPDATE-by-name matches zero rows and
+ * per-item success/failure tracking silently does nothing.
+ */
+function syncJobItems(jobId, itemNames) {
+  const now = new Date().toISOString();
+  run(`UPDATE jobs SET total = ?, updated_at = ? WHERE id = ?`, [itemNames.length, now, jobId]);
+  for (const name of itemNames) {
+    run(`INSERT INTO job_items (job_id, name) VALUES (?, ?)`, [jobId, name]);
+  }
+}
+
 function getJob(id) {
   const job = queryOne('SELECT * FROM jobs WHERE id = ?', [id]);
   if (!job) return null;
@@ -239,5 +254,5 @@ function getKpiSnapshot(jobId) {
 module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
   deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
-  addKpiSnapshot, getKpiSnapshot
+  addKpiSnapshot, getKpiSnapshot, syncJobItems
 };

@@ -62,7 +62,7 @@ function filterByCommunity(rows, communityIds) {
 const { getLatestBenchmarks } = require('../services/alis500Benchmarks');
 const { getTicketSummaryForCompany } = require('../services/hubspotTickets');
 const { generateFlags } = require('../services/qbrFlags');
-const { setJobStatus, setItemStatus, addKpiSnapshot } = require('../db/database');
+const { setJobStatus, setItemStatus, addKpiSnapshot, syncJobItems } = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
 
 const CACHE_ROOT = path.join(__dirname, 'kpi-cache');
@@ -90,6 +90,14 @@ async function runKpiExportJob(jobId, payload) {
 
   setJobStatus(jobId, 'running');
 
+  if (!periodStart || !periodEnd) {
+    setJobStatus(jobId, 'failed');
+    const error = 'Period Start and Period End are both required — fill those fields in before running the job.';
+    console.error(`[kpi-export:${jobId}] ${error}`);
+    emit('job_error', { error });
+    return;
+  }
+
   // No communities specified → pull every community for this account,
   // minus Training communities (by name) and canceled/suspended ones (by
   // status). Only "canceled" and "active" have been seen in real data so
@@ -106,6 +114,10 @@ async function runKpiExportJob(jobId, payload) {
         .filter((c) => !EXCLUDED_STATUSES.includes((c.status || '').toLowerCase()))
         .map((c) => ({ name: c.communityName, communityId: c.communityId }));
       emit('progress', { message: `Auto-resolved ${communities.length} of ${all.length} communities (excluded Training and canceled/suspended communities).` });
+      // The job record was created with communities: [] before this
+      // resolved — backfill job_items now, or setItemStatus's UPDATE-by-name
+      // silently matches nothing and per-community tracking never works.
+      syncJobItems(jobId, communities.map((c) => c.name));
     } catch (err) {
       setJobStatus(jobId, 'failed');
       const error = `Failed to auto-resolve community list: ${err.message}`;
