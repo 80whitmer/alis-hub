@@ -9,7 +9,33 @@ const {
   normalizeOccupancy, normalizeDemographics, normalizeLengthOfStayAndMoveOuts,
   normalizeFalls, normalizeHospitalVisits, normalizeDiagnoses,
   normalizePrnAdministration, estimateResidentDays, computeBenchmarkDiffs,
+  filterByDateRange,
 } = require('../services/kpiNormalizer');
+
+/** 'YYYY-MM-01' for each calendar month between two ISO dates, inclusive. */
+function monthsInRange(startIso, endIso) {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const months = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const last = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (cursor <= last) {
+    months.push(cursor.toISOString().slice(0, 10));
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return months;
+}
+
+/**
+ * residents/moveInsAndOuts/incidents/leaves/diagnosesAndAllergies are
+ * account-wide (no communityId query param exists for them) — without this
+ * filter, a job scoped to one community would silently report numbers for
+ * the whole account.
+ */
+function filterByCommunity(rows, communityIds) {
+  if (!Array.isArray(rows)) return rows;
+  return rows.filter((r) => communityIds.has(String(r.communityId)));
+}
 const { getLatestBenchmarks } = require('../services/alis500Benchmarks');
 const { getTicketSummaryForCompany } = require('../services/hubspotTickets');
 const { generateFlags } = require('../services/qbrFlags');
@@ -83,6 +109,9 @@ async function runKpiExportJob(jobId, payload) {
   const { residents, moveInsAndOuts, incidents, leaves, diagnosesAndAllergies } = pulled;
 
   // ── Per-community pulls (occupancy + recorded care) ─────────────────────
+  // hqOccupancies takes a single `monthAndYear`, not a range, so a
+  // multi-month period needs one call per calendar month.
+  const months = monthsInRange(periodStart, periodEnd);
   const occupancyRows = [];
   const recordedCareRows = [];
 
@@ -91,27 +120,32 @@ async function runKpiExportJob(jobId, payload) {
     setItemStatus(jobId, name, 'running');
     emit('item_start', { name });
 
-    const [occupancyResult, recordedCareResult] = await Promise.allSettled([
-      getOccupancy(companyHost, { communityId, monthAndYear: periodStart }),
-      getRecordedCare(companyHost, { communityId, careStartDate: periodStart, careEndDate: periodEnd }),
+    const [occupancyMonthResults, recordedCareResult] = await Promise.all([
+      Promise.allSettled(months.map((m) => getOccupancy(companyHost, { communityId, monthAndYear: m }))),
+      Promise.allSettled([getRecordedCare(companyHost, { communityId, careStartDate: periodStart, careEndDate: periodEnd })]),
     ]);
 
-    if (occupancyResult.status === 'fulfilled') {
-      const occupancy = occupancyResult.value;
-      occupancyRows.push(...(Array.isArray(occupancy) ? occupancy : [occupancy]).filter(Boolean));
-    } else {
-      console.error(`[kpi-export:${jobId}] "occupancy" pull failed for "${name}":`, occupancyResult.reason);
-    }
+    let occupancySuccessCount = 0;
+    occupancyMonthResults.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        occupancySuccessCount++;
+        const occupancy = result.value;
+        occupancyRows.push(...(Array.isArray(occupancy) ? occupancy : [occupancy]).filter(Boolean));
+      } else {
+        console.error(`[kpi-export:${jobId}] "occupancy" pull failed for "${name}" / ${months[i]}:`, result.reason);
+      }
+    });
 
-    if (recordedCareResult.status === 'fulfilled') {
-      const recordedCare = recordedCareResult.value;
+    const recordedCareOutcome = recordedCareResult[0];
+    if (recordedCareOutcome.status === 'fulfilled') {
+      const recordedCare = recordedCareOutcome.value;
       recordedCareRows.push(...(Array.isArray(recordedCare) ? recordedCare : [recordedCare]).filter(Boolean));
     } else {
-      console.error(`[kpi-export:${jobId}] "recordedCare" pull failed for "${name}":`, recordedCareResult.reason);
+      console.error(`[kpi-export:${jobId}] "recordedCare" pull failed for "${name}":`, recordedCareOutcome.reason);
     }
 
-    if (occupancyResult.status === 'rejected' && recordedCareResult.status === 'rejected') {
-      const error = `occupancy: ${occupancyResult.reason.message}; recordedCare: ${recordedCareResult.reason.message}`;
+    if (occupancySuccessCount === 0 && recordedCareOutcome.status === 'rejected') {
+      const error = `occupancy: all ${months.length} month(s) failed; recordedCare: ${recordedCareOutcome.reason.message}`;
       setItemStatus(jobId, name, 'failed', error);
       emit('item_fail', { name, error });
     } else {
@@ -125,13 +159,47 @@ async function runKpiExportJob(jobId, payload) {
   // ── Normalize ─────────────────────────────────────────────────────────
   emit('progress', { message: 'Normalizing KPIs and diffing against ALIS 500 benchmarks…' });
 
+  // residents/moveInsAndOuts/incidents/leaves/diagnosesAndAllergies are
+  // account-wide pulls — filter down to the communities this job actually
+  // asked about before normalizing, or a single-community job would report
+  // whole-account numbers.
+  const requestedCommunityIds = new Set(communities.map((c) => String(c.communityId)));
+  const asArray = (v) => (Array.isArray(v) ? v : v?.items || []);
+  const scopedResidents = filterByCommunity(asArray(residents), requestedCommunityIds);
+  const scopedDiagnoses = filterByCommunity(asArray(diagnosesAndAllergies), requestedCommunityIds);
+
+  // incidents and leaves have no server-side date filter at all (confirmed
+  // against the live OpenAPI spec) — they return full history, so an
+  // unfiltered pull would badly inflate any per-1000-resident-days rate.
+  const scopedIncidents = filterByDateRange(
+    filterByCommunity(asArray(incidents), requestedCommunityIds),
+    ['incidentDateTime', 'incidentDate'],
+    periodStart, periodEnd
+  );
+  const scopedLeaves = filterByDateRange(
+    filterByCommunity(asArray(leaves), requestedCommunityIds),
+    ['startDate', 'leaveStartDate'],
+    periodStart, periodEnd
+  );
+  // Move-out cohort = residents who moved out during this period (matches
+  // how the ALIS 500 benchmark frames its move-out reason breakdown), not
+  // every historical stay for this community.
+  const scopedMoveInsAndOuts = filterByDateRange(
+    filterByCommunity(asArray(moveInsAndOuts), requestedCommunityIds),
+    ['physicalMoveOutDate', 'financialMoveOutDate', 'moveOutDate'],
+    periodStart, periodEnd
+  );
+
   const occupancy = normalizeOccupancy(occupancyRows);
-  const demographics = normalizeDemographics(Array.isArray(residents) ? residents : residents?.items || []);
-  const lengthOfStay = normalizeLengthOfStayAndMoveOuts(Array.isArray(moveInsAndOuts) ? moveInsAndOuts : moveInsAndOuts?.items || []);
-  const residentDays = estimateResidentDays({ avgCensus: occupancy.census, periodStart, periodEnd });
-  const falls = normalizeFalls(Array.isArray(incidents) ? incidents : incidents?.items || [], residentDays);
-  const hospitalVisits = normalizeHospitalVisits(Array.isArray(leaves) ? leaves : leaves?.items || [], residentDays);
-  const diagnosisPrevalence = normalizeDiagnoses(Array.isArray(diagnosesAndAllergies) ? diagnosesAndAllergies : diagnosesAndAllergies?.items || [], demographics.totalResidents);
+  const demographics = normalizeDemographics(scopedResidents);
+  const lengthOfStay = normalizeLengthOfStayAndMoveOuts(scopedMoveInsAndOuts);
+  // occupiedRoomDays IS the real resident-days figure for the period (one
+  // resident ≈ one occupied room-day) — prefer it over the avgCensus*days
+  // estimate, which only kicks in if occupancy data is missing entirely.
+  const residentDays = occupancy.occupiedRoomDays ?? estimateResidentDays({ avgCensus: occupancy.pct, periodStart, periodEnd });
+  const falls = normalizeFalls(scopedIncidents, residentDays);
+  const hospitalVisits = normalizeHospitalVisits(scopedLeaves, residentDays);
+  const diagnosisPrevalence = normalizeDiagnoses(scopedDiagnoses, demographics.totalResidents);
   const prnAdministration = normalizePrnAdministration(recordedCareRows, residentDays);
 
   const normalized = { occupancy, demographics, lengthOfStay, falls, hospitalVisits, diagnosisPrevalence, prnAdministration };

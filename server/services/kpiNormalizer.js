@@ -22,32 +22,61 @@ function warnUnmatched(context, keys) {
   console.warn(`[kpiNormalizer] Could not find any of [${keys.join(', ')}] on a ${context} record — check server/services/alisApiClient.js response shape.`);
 }
 
+/**
+ * Several export endpoints (incidents, leaves) have no server-side date
+ * query param at all — they return their full history. Filter client-side
+ * by whichever of `dateKeys` is present, or an unscoped period would pull
+ * in incidents/leaves from outside the requested window and badly inflate
+ * any per-1000-resident-days rate.
+ */
+function filterByDateRange(rows, dateKeys, periodStart, periodEnd) {
+  if (!Array.isArray(rows)) return rows;
+  const start = new Date(periodStart).getTime();
+  const end = new Date(periodEnd).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return rows;
+
+  return rows.filter((r) => {
+    const raw = firstDefined(r, dateKeys);
+    if (!raw) return false;
+    const t = new Date(raw).getTime();
+    return !Number.isNaN(t) && t >= start && t <= end;
+  });
+}
+
 // ── Occupancy ────────────────────────────────────────────────────────────
 
+/**
+ * hqOccupancies returns one row per room per day, with `dataSet` telling
+ * you whether that room-day was "Occupied", "Vacant", or "Budget" (budget
+ * rows are a forecast figure, not an actual state, and are excluded).
+ * Occupancy % = occupied room-days / (occupied + vacant) room-days.
+ * `occupiedRoomDays` doubles as a real resident-days figure for the
+ * per-1000-resident-days rate calcs elsewhere — no need to estimate it
+ * from an average census when we already have the room-day-level data.
+ */
 function normalizeOccupancy(rawRows = []) {
-  if (rawRows.length === 0) return { pct: null, census: null, capacity: null, byCommunity: [] };
+  const relevant = rawRows.filter((r) => r.dataSet === 'Occupied' || r.dataSet === 'Vacant');
+  if (relevant.length === 0) return { pct: null, occupiedRoomDays: null, totalRoomDays: null, byCommunity: [] };
 
-  const byCommunity = rawRows.map((row) => {
-    const census = firstDefined(row, ['census', 'currentCensus', 'occupiedUnits']);
-    const capacity = firstDefined(row, ['capacity', 'licensedCapacity', 'physicalCapacity', 'totalUnits']);
-    if (census === undefined || capacity === undefined) warnUnmatched('hqOccupancies', ['census/currentCensus', 'capacity/licensedCapacity']);
-    return {
-      communityId: firstDefined(row, ['communityId', 'communityID']),
-      communityName: firstDefined(row, ['communityName', 'name']),
-      census: census ?? null,
-      capacity: capacity ?? null,
-      pct: census != null && capacity ? census / capacity : null,
-    };
-  });
+  const byCommunity = {};
+  for (const r of relevant) {
+    const cid = r.communityId ?? 'unknown';
+    byCommunity[cid] = byCommunity[cid] || { occupied: 0, total: 0 };
+    byCommunity[cid].total++;
+    if (r.dataSet === 'Occupied') byCommunity[cid].occupied++;
+  }
 
-  const totalCensus = byCommunity.reduce((s, c) => s + (c.census || 0), 0);
-  const totalCapacity = byCommunity.reduce((s, c) => s + (c.capacity || 0), 0);
+  const totalOccupied = Object.values(byCommunity).reduce((s, c) => s + c.occupied, 0);
+  const totalRoomDays = Object.values(byCommunity).reduce((s, c) => s + c.total, 0);
 
   return {
-    pct: totalCapacity ? totalCensus / totalCapacity : null,
-    census: totalCensus,
-    capacity: totalCapacity,
-    byCommunity,
+    pct: totalRoomDays ? totalOccupied / totalRoomDays : null,
+    occupiedRoomDays: totalOccupied,
+    totalRoomDays,
+    byCommunity: Object.entries(byCommunity).map(([communityId, c]) => ({
+      communityId,
+      pct: c.total ? c.occupied / c.total : null,
+    })),
   };
 }
 
@@ -119,11 +148,30 @@ function median(nums) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+// Bucketed to match the three top-level categories the ALIS 500 benchmark
+// reports move-out reasons under (health / life dynamics / quality of
+// service) — real `moveOutReason` string values weren't confirmed from a
+// live pull yet (every sample row we've seen had it null), so this is a
+// best-effort keyword match pending real values to check against.
+const MOVE_OUT_REASON_BUCKETS = {
+  health: ['death', 'deceas', 'declin', 'improv', 'behavior'],
+  lifeDynamics: ['relocat', 'discharg', 'respite', 'family'],
+  qualityOfService: ['financ', 'competit', 'transfer', 'dissatisf', 'complaint'],
+};
+
+function bucketMoveOutReason(reason) {
+  const r = (reason || '').toString().toLowerCase();
+  for (const [bucket, keywords] of Object.entries(MOVE_OUT_REASON_BUCKETS)) {
+    if (keywords.some((k) => r.includes(k))) return bucket;
+  }
+  return 'unknown';
+}
+
 function normalizeLengthOfStayAndMoveOuts(moveInOutRows = []) {
   const stays = moveInOutRows
     .map((r) => {
-      const moveIn = firstDefined(r, ['moveInDate', 'admissionDate']);
-      const moveOut = firstDefined(r, ['moveOutDate', 'dischargeDate']);
+      const moveIn = firstDefined(r, ['physicalMoveInDate', 'financialMoveInDate', 'moveInDate', 'admissionDate']);
+      const moveOut = firstDefined(r, ['physicalMoveOutDate', 'financialMoveOutDate', 'moveOutDate', 'dischargeDate']);
       const reason = firstDefined(r, ['moveOutReason', 'moveOutReasonCategory', 'reason']);
       if (!moveIn || !moveOut) return null;
       const los = daysBetween(moveIn, moveOut);
@@ -132,7 +180,7 @@ function normalizeLengthOfStayAndMoveOuts(moveInOutRows = []) {
     .filter(Boolean);
 
   if (stays.length === 0) {
-    return { avgDays: null, medianDays: null, moveOutWithin: {}, moveOutReasons: {}, totalMoveOuts: 0 };
+    return { avgDays: null, medianDays: null, moveOutWithin: {}, moveOutReasons: {}, moveOutReasonBuckets: {}, totalMoveOuts: 0 };
   }
 
   const losValues = stays.map((s) => s.los);
@@ -142,12 +190,18 @@ function normalizeLengthOfStayAndMoveOuts(moveInOutRows = []) {
   const within = (days) => stays.filter((s) => s.los <= days).length / stays.length;
 
   const reasonCounts = {};
+  const bucketCounts = {};
   for (const s of stays) {
     const key = (s.reason || 'unknown').toString().toLowerCase();
     reasonCounts[key] = (reasonCounts[key] || 0) + 1;
+    const bucket = bucketMoveOutReason(s.reason);
+    bucketCounts[bucket] = (bucketCounts[bucket] || 0) + 1;
   }
   const moveOutReasons = Object.fromEntries(
     Object.entries(reasonCounts).map(([k, v]) => [k, v / stays.length])
+  );
+  const moveOutReasonBuckets = Object.fromEntries(
+    Object.entries(bucketCounts).map(([k, v]) => [k, v / stays.length])
   );
 
   return {
@@ -155,6 +209,7 @@ function normalizeLengthOfStayAndMoveOuts(moveInOutRows = []) {
     medianDays,
     moveOutWithin: { '3mo': within(90), '6mo': within(180), '12mo': within(365) },
     moveOutReasons,
+    moveOutReasonBuckets,
     totalMoveOuts: stays.length,
   };
 }
@@ -199,14 +254,47 @@ function normalizeHospitalVisits(leaveRows = [], residentDays) {
 
 // ── Diagnoses ─────────────────────────────────────────────────────────────
 
-function normalizeDiagnoses(diagnosisRows = [], totalResidents) {
+/**
+ * diagnosesAndAllergies returns one row per resident with free-text
+ * `primaryDiagnoses`/`secondaryDiagnoses` strings (e.g. "HTN; GERD; OA"),
+ * not per-category rows — so this is keyword matching against that text,
+ * not a field lookup. Category keys match alis500-benchmarks-*.json's
+ * `clinical.diagnosisPrevalence` keys so the two can be diffed directly.
+ */
+const DIAGNOSIS_KEYWORDS = {
+  cerebrovascular: ['stroke', 'cva', 'tia', 'cerebrovascular'],
+  neurodegenerative: ['dementia', 'alzheimer', 'parkinson', 'cognitive impairment'],
+  hypertensive: ['hypertension', 'htn', 'hypotension'],
+  cardiovascular: ['heart failure', 'chf', 'arrhythmia', 'afib', 'atrial fibrillation', 'cad', 'angina', 'dvt', 'cardiovascular'],
+  lipidDisorders: ['hyperlipidemia', 'lipid'],
+  musculoskeletal: ['osteoarthrit', 'osteoporosis', 'osteopenia', ' oa;', ' oa,', ' oa.'],
+  moodDisorders: ['depress', 'bipolar'],
+  anxietyDisorders: ['anxiety', 'gad', 'panic', 'ptsd'],
+  sleepDisorders: ['insomnia', 'sleep apnea'],
+  diabetes: ['diabet', ' dm;', ' dm,', ' dm.'],
+  thyroidDisorders: ['thyroid'],
+  gerd: ['gerd', 'acid reflux', 'reflux'],
+  colorectalDiseases: ['diverticul', 'irritable bowel', ' ibs', 'colon cancer', 'colorectal'],
+  kidneyFailure: ['kidney', 'renal failure', 'ckd'],
+  obstructiveLung: ['copd', 'emphysema', 'asthma'],
+  anemia: ['anemia'],
+};
+
+function normalizeDiagnoses(residentRows = [], totalResidents) {
   if (!totalResidents) return {};
   const counts = {};
-  for (const r of diagnosisRows) {
-    const category = firstDefined(r, ['diagnosisCategory', 'category', 'diagnosisCode']);
-    if (!category) continue;
-    const key = category.toString().toLowerCase();
-    counts[key] = (counts[key] || 0) + 1;
+  for (const r of residentRows) {
+    const text = [
+      firstDefined(r, ['primaryDiagnoses', 'primaryDiagnosis']),
+      firstDefined(r, ['secondaryDiagnoses', 'secondaryDiagnosis']),
+    ].filter(Boolean).join('; ').toLowerCase();
+    if (!text) continue;
+
+    for (const [category, keywords] of Object.entries(DIAGNOSIS_KEYWORDS)) {
+      if (keywords.some((k) => text.includes(k))) {
+        counts[category] = (counts[category] || 0) + 1;
+      }
+    }
   }
   return Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v / totalResidents]));
 }
@@ -270,7 +358,7 @@ function computeBenchmarkDiffs(normalized, benchmark) {
     occupancyPct: diffMetric(normalized.occupancy?.pct, occ.referenceOccupancyPct / 100, { higherIsBetter: true }),
     medianLosDays: diffMetric(normalized.lengthOfStay?.medianDays, occ.lengthOfStay.medianDays, { higherIsBetter: true }),
     moveOutWithin12mo: diffMetric(normalized.lengthOfStay?.moveOutWithin?.['12mo'], occ.lengthOfStay.moveOutWithin['12mo'], { higherIsBetter: false }),
-    qualityOfServiceMoveOutShare: diffMetric(normalized.lengthOfStay?.moveOutReasons?.qos, occ.moveOutReasons.qualityOfService, { higherIsBetter: false }),
+    qualityOfServiceMoveOutShare: diffMetric(normalized.lengthOfStay?.moveOutReasonBuckets?.qualityOfService, occ.moveOutReasons.qualityOfService, { higherIsBetter: false }),
     fallsPer1000ResidentDays: diffMetric(normalized.falls?.per1000ResidentDays, clin.falls.per1000ResidentDays, { higherIsBetter: false }),
     hospitalVisitsPer1000ResidentDays: diffMetric(normalized.hospitalVisits?.per1000ResidentDays, clin.hospitalVisits.per1000ResidentDays, { higherIsBetter: false }),
     sedativePrnPer1000ResidentDays: diffMetric(normalized.prnAdministration?.sedativesAntipsychotics, clin.prnAdministrationPer1000ResidentDays.sedativesAntipsychotics, { higherIsBetter: false }),
@@ -287,4 +375,5 @@ module.exports = {
   normalizePrnAdministration,
   estimateResidentDays,
   computeBenchmarkDiffs,
+  filterByDateRange,
 };

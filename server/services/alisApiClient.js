@@ -36,7 +36,7 @@ function buildQuery(params = {}) {
   return parts.length ? `?${parts.join('&')}` : '';
 }
 
-const REQUEST_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 90000;
 
 function alisApiGet(companyHost, path, params) {
   const query = buildQuery(params);
