@@ -42,6 +42,13 @@ function daysInRange(startIso, endIso) {
 
 const CARE_TASK_BATCH_SIZE = 8;
 
+// Disabled for now: scheduledCareTasks has no date-range param, so this is
+// a day-by-day loop with no scalable ceiling (91 days × N communities for
+// a quarter — thousands of calls for a multi-community account). Revisit
+// once care completion is sourced from an ALIS HQ Dashboard report upload
+// instead of the raw API. See feature/kpi-qbr-pipeline commit history.
+const CARE_COMPLETION_ENABLED = false;
+
 /**
  * residents/moveInsAndOuts/incidents/leaves/diagnosesAndAllergies are
  * account-wide (no communityId query param exists for them) — without this
@@ -201,25 +208,29 @@ async function runKpiExportJob(jobId, payload) {
       console.error(`[kpi-export:${jobId}] "recordedCare" pull failed for "${name}":`, recordedCareOutcome.reason);
     }
 
-    let careTaskDaysSucceeded = 0;
-    for (let i = 0; i < days.length; i += CARE_TASK_BATCH_SIZE) {
-      const batch = days.slice(i, i + CARE_TASK_BATCH_SIZE);
-      const batchResults = await Promise.allSettled(
-        batch.map((d) => getScheduledCareTasks(companyHost, { communityId, localCareDate: d }))
-      );
-      batchResults.forEach((result, j) => {
-        const date = batch[j];
-        if (result.status === 'fulfilled') {
-          careTaskDaysSucceeded++;
-          const tasks = (result.value || []).flatMap((r) => r.careTrackingItems || []);
-          const recorded = tasks.filter((t) => String(t.taskStatus) === '1');
-          const completed = recorded.filter((t) => String(t.outcome) === '1').length;
-          careCompletionDailySummaries.push({ communityId, date, total: recorded.length, completed });
-        } else {
-          console.error(`[kpi-export:${jobId}] "scheduledCareTasks" pull failed for "${name}" / ${date}:`, result.reason);
-        }
-      });
-      emit('progress', { message: `Care completion: ${Math.min(i + CARE_TASK_BATCH_SIZE, days.length)}/${days.length} days pulled for "${name}"` });
+    // careTaskDaysSucceeded defaults to 1 (not 0) when the feature is
+    // disabled, so it never gets blamed in the failure check below.
+    let careTaskDaysSucceeded = CARE_COMPLETION_ENABLED ? 0 : 1;
+    if (CARE_COMPLETION_ENABLED) {
+      for (let i = 0; i < days.length; i += CARE_TASK_BATCH_SIZE) {
+        const batch = days.slice(i, i + CARE_TASK_BATCH_SIZE);
+        const batchResults = await Promise.allSettled(
+          batch.map((d) => getScheduledCareTasks(companyHost, { communityId, localCareDate: d }))
+        );
+        batchResults.forEach((result, j) => {
+          const date = batch[j];
+          if (result.status === 'fulfilled') {
+            careTaskDaysSucceeded++;
+            const tasks = (result.value || []).flatMap((r) => r.careTrackingItems || []);
+            const recorded = tasks.filter((t) => String(t.taskStatus) === '1');
+            const completed = recorded.filter((t) => String(t.outcome) === '1').length;
+            careCompletionDailySummaries.push({ communityId, date, total: recorded.length, completed });
+          } else {
+            console.error(`[kpi-export:${jobId}] "scheduledCareTasks" pull failed for "${name}" / ${date}:`, result.reason);
+          }
+        });
+        emit('progress', { message: `Care completion: ${Math.min(i + CARE_TASK_BATCH_SIZE, days.length)}/${days.length} days pulled for "${name}"` });
+      }
     }
 
     if (occupancySuccessCount === 0 && recordedCareOutcome.status === 'rejected' && careTaskDaysSucceeded === 0) {
