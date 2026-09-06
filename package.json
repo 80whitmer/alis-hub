@@ -1,6 +1,6 @@
 {
   "name": "alis-hub",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "ALIS Admin Control Panel — Playwright automation hub for settings, configuration, and standardization across ALIS communities.",
   "private": true,
   "workspaces": [

@@ -1,6 +1,6 @@
 {
   "name": "alis-hub-client",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "React frontend for alis-hub",
   "scripts": {
     "dev": "vite --port 5173",
