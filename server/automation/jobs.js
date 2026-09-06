@@ -2,6 +2,7 @@ const { newPage, ensureLoggedIn }          = require('./playwright/browser');
 const { createCommunity, setCrmId }        = require('./playwright/communityPage');
 const { navigateToBillingSettings, updateGLAccount, closeDetailView } = require('./playwright/billingPage');
 const { captureResidentSettings, applyResidentSettings } = require('./playwright/residentSettingsPage');
+const { getSettingsDestination } = require('../services/settingsDestinations');
 const { setJobStatus, setItemStatus }      = require('../db/database');
 const { broadcast }                        = require('../api/broadcaster');
 const { getTemplate }                      = require('./templates-loader');
@@ -207,17 +208,55 @@ async function runSyncGLAccountsJob(jobId, { communityName, billingSettingsUrl, 
 }
 
 /**
- * Run the sync-resident-settings job.
+ * Resolves a sourceUrl/target url from (category, companyHost, communityId)
+ * via settingsDestinations.js when a raw url isn't given directly — this is
+ * what generalized "Sync Resident Settings" into "Sync ALIS Settings"
+ * (captureFormFields/applyFormFields were never actually Resident-specific,
+ * they just hadn't been pointed anywhere else). An explicit `url` always
+ * wins, so every job payload saved before this existed keeps working
+ * unchanged.
+ */
+function resolveSettingsUrl({ url, category, companyHost, communityId }) {
+  if (url) return url;
+  if (!category || !companyHost) {
+    throw new Error('Either a direct URL, or both category + companyHost, are required.');
+  }
+  const dest = getSettingsDestination(category);
+  if (dest.scope === 'community' && !communityId) {
+    throw new Error(`"${dest.label}" is a per-community settings page — a communityId is required.`);
+  }
+  return dest.urlFor(companyHost, communityId);
+}
+
+/**
+ * Run the sync-settings job (formerly "sync-resident-settings" — same
+ * engine, now pointed at any Settings category via settingsDestinations.js,
+ * not just Resident Settings).
  *
  * Phase 1 — captures all form-field states + compliance template properties
- *            from the source community's Resident Settings page.
- * Phase 2 — applies that snapshot to each target community.
+ *            from the source page.
+ * Phase 2 — applies that snapshot to each target.
  *
- * Each target community is one job item (pass/fail).
+ * Each target is one job item (pass/fail).
  * SSE events: job_start | progress | item_start | item_done | item_fail | job_done
  */
-async function runSyncResidentSettingsJob(jobId, { sourceName, sourceUrl, targets }) {
+async function runSyncResidentSettingsJob(jobId, payload) {
+  const { sourceName, category, companyHost, sourceCommunityId, targets: rawTargets } = payload;
   const emit = (event, data) => broadcast(jobId, event, data);
+
+  let sourceUrl;
+  let targets;
+  try {
+    sourceUrl = resolveSettingsUrl({ url: payload.sourceUrl, category, companyHost, communityId: sourceCommunityId });
+    targets = rawTargets.map((t) => ({
+      name: t.name,
+      url: resolveSettingsUrl({ url: t.url, category, companyHost, communityId: t.communityId }),
+    }));
+  } catch (err) {
+    setJobStatus(jobId, 'failed');
+    emit('job_error', { error: err.message });
+    return;
+  }
 
   setJobStatus(jobId, 'running');
   emit('job_start', { jobId, total: targets.length, source: sourceName });

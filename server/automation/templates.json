@@ -81,31 +81,47 @@
     },
     {
       "id": "sync-resident-settings",
-      "name": "Sync Resident Settings",
-      "description": "Copy resident settings (checkboxes, dropdowns, and compliance template properties) from a source community to one or more target communities",
+      "name": "Sync ALIS Settings",
+      "description": "Copy settings (checkboxes, dropdowns, and compliance-item properties) from one ALIS Settings page to one or more others — Resident, Care, Medication, Billing, CRM/Prospect, and more (see settingsDestinations.js for the full list and which ones are confirmed ready). Either pick a Category + Company Host + community ID(s), or paste full Settings URLs directly for anything not in the category list yet.",
       "category": "settings",
       "icon": "⚙️",
       "timeout": 3600000,
       "inputSchema": {
         "type": "object",
-        "title": "Sync Resident Settings",
+        "title": "Sync ALIS Settings",
         "properties": {
           "sourceName": {
             "type": "string",
-            "title": "Source Community Name",
-            "description": "Display name of the community to copy settings FROM",
+            "title": "Source Name",
+            "description": "Display name of the community (or account) to copy settings FROM",
             "examples": ["Meadow Brook"]
+          },
+          "category": {
+            "type": "string",
+            "title": "Settings Category (optional)",
+            "description": "One of: resident, care, medication, billing, crmProspect, staff, company, community, connect, evaluations, drugDatabase, billingCenter, residencyAgreement, intacctGl, notifications, calendar, alisHq — see settingsDestinations.js for what each covers and its readiness. Leave blank and paste full URLs below instead if you need a page not yet in this list.",
+            "examples": ["resident"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain, required if using Category)",
+            "examples": ["imagineseniorliving"]
+          },
+          "sourceCommunityId": {
+            "type": "string",
+            "title": "Source ALIS Community ID (if using Category, and the category is per-community)",
+            "examples": ["847"]
           },
           "sourceUrl": {
             "type": "string",
-            "title": "Source Resident Settings URL",
-            "description": "Full URL of the Resident settings page to copy from",
+            "title": "Source Settings URL (optional — overrides Category/Host/Community ID above)",
+            "description": "Full URL of the settings page to copy from. Only needed if Category doesn't cover this page yet.",
             "examples": ["https://medtelligent.alisonline.com/Settings/Resident/847"]
           },
           "targets": {
             "type": "array",
             "title": "Target Communities",
-            "description": "Communities to apply the settings TO",
+            "description": "Communities to apply the settings TO — fill communityId to use the Category above, or url directly to override.",
             "minItems": 1,
             "items": {
               "type": "object",
@@ -115,17 +131,22 @@
                   "title": "Community Name",
                   "examples": ["Sunrise Gardens"]
                 },
+                "communityId": {
+                  "type": "string",
+                  "title": "ALIS Community ID (if using Category)",
+                  "examples": ["902"]
+                },
                 "url": {
                   "type": "string",
-                  "title": "Resident Settings URL",
+                  "title": "Settings URL (optional — overrides communityId above)",
                   "examples": ["https://medtelligent.alisonline.com/Settings/Resident/902"]
                 }
               },
-              "required": ["name", "url"]
+              "required": ["name"]
             }
           }
         },
-        "required": ["sourceName", "sourceUrl", "targets"]
+        "required": ["sourceName", "targets"]
       }
     },
     {
