@@ -25,13 +25,32 @@ async function captureFormFields(page) {
       }
       const parentLabel = el.closest('label');
       if (parentLabel) {
-        return Array.from(parentLabel.childNodes)
+        const ownText = Array.from(parentLabel.childNodes)
           .filter(n => n.nodeType === Node.TEXT_NODE)
           .map(n => n.textContent.trim())
           .filter(Boolean)
           .join(' ') || parentLabel.textContent.trim();
+        if (ownText) return ownText;
+        // Fall through — confirmed live (Sep 2026, Settings/Resident/{id}):
+        // the compliance-item checkboxes ARE wrapped in a <label> (so this
+        // branch matches), but that label only contains the checkbox +
+        // icon, no text at all — the item's real name is a sibling <td>'s.
       }
-      const container = el.closest('.form-group, .field-row, .setting-row, td, li');
+      // Table-row pattern (confirmed live on the same page): checkbox's own
+      // <td> has no text — the row's name lives in the first LATER <td>
+      // that actually has text (there's usually a drag-handle <td> with an
+      // icon-only cell in between).
+      const row = el.closest('tr');
+      if (row) {
+        const cells = Array.from(row.querySelectorAll(':scope > td'));
+        const ownCell = el.closest('td');
+        const ownIndex = cells.indexOf(ownCell);
+        for (let i = ownIndex + 1; i < cells.length; i++) {
+          const text = cells[i].textContent.trim();
+          if (text) return text;
+        }
+      }
+      const container = el.closest('.form-group, .field-row, .setting-row, li');
       if (container) {
         const lbl = container.querySelector('label, .label, .field-label');
         if (lbl && !lbl.contains(el)) return lbl.textContent.trim();
@@ -40,14 +59,31 @@ async function captureFormFields(page) {
     }
 
     function getSectionLabel(el) {
-      let node = el.parentElement;
+      // Confirmed live: section headings (e.g. "Compliance Configuration")
+      // are NOT ancestor-and-direct-child of the field's container — this
+      // whole settings page is one long form where a heading is a
+      // PRECEDING SIBLING of whatever wraps the fields under it (often
+      // several ancestor levels up from any individual field). Walking up
+      // and checking preceding siblings at every level finds it either way.
+      let node = el;
       while (node && node !== document.body) {
+        let sib = node.previousElementSibling;
+        while (sib) {
+          // Confirmed live: the heading itself is an <h2> wrapped one level
+          // down in a <div class="mt-section-hdg-title"> — check both "sib
+          // IS a heading" and "sib CONTAINS one" so it matches whichever
+          // level the wrapping div sits at.
+          if (/^H[1-4]$/.test(sib.tagName) || (sib.matches && sib.matches('.panel-heading, .section-title, legend'))) {
+            return sib.textContent.trim();
+          }
+          const nested = sib.querySelector && sib.querySelector('h1, h2, h3, h4, .panel-heading, .section-title, legend');
+          if (nested) return nested.textContent.trim();
+          sib = sib.previousElementSibling;
+        }
         if (node.tagName === 'FIELDSET') {
-          const legend = node.querySelector('legend');
+          const legend = node.querySelector(':scope > legend');
           if (legend) return legend.textContent.trim();
         }
-        const header = node.querySelector(':scope > h2, :scope > h3, :scope > h4, :scope > .panel-heading, :scope > .section-title');
-        if (header) return header.textContent.trim();
         node = node.parentElement;
       }
       return '';
@@ -60,6 +96,11 @@ async function captureFormFields(page) {
 
     document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       if (!cb.id && !cb.name) return;
+      // "Select all" utility checkboxes (id="CheckAll" confirmed live) are a
+      // page convenience, not a real setting — applying one across
+      // communities doesn't mean anything and would just toggle whatever
+      // else happens to be checked at apply time.
+      if (cb.id === 'CheckAll' && !cb.name) return;
       checkboxes.push({
         id:      cb.id   || '',
         name:    cb.name || '',
@@ -135,8 +176,20 @@ async function saveSettings(page) {
 // ─── Compliance Template Helpers ──────────────────────────────────────────────
 
 /**
- * Locate the compliance template list on the page.
- * Returns a Playwright Locator (possibly empty) or null if nothing found.
+ * KNOWN DEAD CODE (confirmed live, Sep 2026, against Settings/Resident/{id}):
+ * none of the guessed selectors below match anything on the real page — this
+ * has always returned 0 templates, silently. The real compliance-item rows
+ * (`<tr data-sort-item-identifier="106046">`, one per item, with an
+ * Edit/Retire/Delete/Markup Form dropdown) ARE already captured by the main
+ * checkbox capture above (name="ComplianceItemIds[106046]") — this
+ * function was reaching for something MORE than that flat enable/disable
+ * checkbox: each item's own deeper config (required/optional, expiration
+ * rules, etc.), reachable only via that row's "Edit" link
+ * (`/Settings/Compliance/{communityId}/resident/Edit/{itemId}`, an AJAX
+ * pane load). Left disabled/inert rather than guessed at further — opening
+ * and capturing 100+ items' Edit panes one at a time is a real, slower
+ * feature that needs its own scoped pass (confirm the Edit pane's field
+ * shape first), not something to bolt on blind.
  */
 async function findComplianceTemplateRows(page) {
   const selectors = [
