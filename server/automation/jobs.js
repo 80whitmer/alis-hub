@@ -280,7 +280,7 @@ async function runSyncResidentSettingsJob(jobId, payload) {
       message:
         `Captured — checkboxes: ${snapshot.fields.checkboxes.length}, ` +
         `selects: ${snapshot.fields.selects.length}, ` +
-        `compliance templates: ${snapshot.complianceTemplates.length}`,
+        `compliance items (deep config): ${snapshot.complianceItemsDeep.length}`,
     });
   } catch (err) {
     setJobStatus(jobId, 'failed');

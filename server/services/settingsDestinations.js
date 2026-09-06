@@ -21,7 +21,7 @@ const DESTINATIONS = {
     label: 'Resident Settings', scope: 'community',
     urlFor: (host, communityId) => `https://${host}.alisonline.com/Settings/Resident/${communityId}`,
     readiness: 'ready',
-    notes: '98 real fields at one real account (54 compliance-item checkboxes + evacuation/advanced-directive/move-out/monitoring lists). Label/section extraction fixed and verified live.',
+    notes: '98 real fields at one real account (54 compliance-item checkboxes + evacuation/advanced-directive/move-out/monitoring lists). Label/section extraction fixed and verified live. Compliance items also sync their deep-edit policy now (Description, Compliance Stages, Product Types, Classification, Tags, Expires, Optional — via each item\'s Edit pane, matched cross-community by Document Name), not just the flat enable/disable checkbox; Document Name and the Template PDF itself are deliberately excluded as per-community content.',
   },
   care: {
     label: 'Care Settings', scope: 'community',
@@ -51,7 +51,7 @@ const DESTINATIONS = {
     label: 'Staff Settings', scope: 'account',
     urlFor: (host) => `https://${host}.alisonline.com/Settings/Staff`,
     readiness: 'ready',
-    notes: 'Has its own "Compliance Configuration" section, same pattern as Resident Settings\' — but this page is not community-scoped at all.',
+    notes: 'Has its own "Compliance Configuration" section, same pattern as Resident Settings\' (including the same deep-edit sync) — but this page is not community-scoped at all.',
   },
   approval: {
     label: 'Approval Center', scope: 'not-applicable',

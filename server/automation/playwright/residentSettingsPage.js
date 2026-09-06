@@ -280,116 +280,197 @@ async function saveSettings(page) {
   return false;
 }
 
-// ─── Compliance Template Helpers ──────────────────────────────────────────────
+// ─── Compliance Item Deep-Edit Helpers ────────────────────────────────────────
 
 /**
- * KNOWN DEAD CODE (confirmed live, Sep 2026, against Settings/Resident/{id}):
- * none of the guessed selectors below match anything on the real page — this
- * has always returned 0 templates, silently. The real compliance-item rows
- * (`<tr data-sort-item-identifier="106046">`, one per item, with an
- * Edit/Retire/Delete/Markup Form dropdown) ARE already captured by the main
- * checkbox capture above (name="ComplianceItemIds[106046]") — this
- * function was reaching for something MORE than that flat enable/disable
- * checkbox: each item's own deeper config (required/optional, expiration
- * rules, etc.), reachable only via that row's "Edit" link
- * (`/Settings/Compliance/{communityId}/resident/Edit/{itemId}`, an AJAX
- * pane load). Left disabled/inert rather than guessed at further — opening
- * and capturing 100+ items' Edit panes one at a time is a real, slower
- * feature that needs its own scoped pass (confirm the Edit pane's field
- * shape first), not something to bolt on blind.
+ * Deep per-item config for a ComplianceItemIds[N] checkbox, reachable only
+ * via that row's "Edit" link (an AJAX side-pane load, not a full
+ * navigation) — confirmed live (Sep 2026, imagineseniorliving community
+ * 952) at `/Settings/Compliance/{communityId}/{entityType}/Edit/{itemId}`.
+ * The main checkbox capture above only sees the flat enable/disable state;
+ * this is the item's actual policy: Description, Compliance Stages,
+ * Product Types, Classification, Tags, Expires (+ custom day count when
+ * "Custom Date" is chosen), and whether it's optional.
+ *
+ * Deliberately excludes two fields the pane also has — Document Name and
+ * the Template PDF upload — per an explicit design call: those are
+ * genuinely per-community content (the same logical item can be worded
+ * differently, or use a different uploaded form, per community) and
+ * should never be blindly overwritten by a sync; Document Name is instead
+ * used read-only, as the stable identity that matches an item across
+ * communities in the first place (same role it already plays for the
+ * flat checkbox, via locateComplianceCheckboxByLabel above).
+ *
+ * The row is found directly by `tr[data-sort-item-identifier="{itemId}"]`
+ * — the SAME id as the checkbox's `ComplianceItemIds[itemId]` name — so
+ * none of this needs to parse the Edit link's URL at all.
  */
-async function findComplianceTemplateRows(page) {
-  const selectors = [
-    // Specific ALIS compliance table patterns (tune once we see the real DOM)
-    'table.compliance-templates tbody tr',
-    '#complianceTemplates tbody tr',
-    '.compliance-list .compliance-item',
-    '[data-compliance-template]',
-    // Generic: rows inside a section whose nearest header mentions "Compliance" or "Template"
-    '.panel:has(.panel-heading:has-text("Compliance")) tbody tr',
-    '.section:has(h3:has-text("Compliance")) .list-item',
-    '.setting-section:has(h3:has-text("Template")) tr',
-  ];
+function complianceItemRow(page, itemId) {
+  return page.locator(`tr[data-sort-item-identifier="${itemId}"]`);
+}
 
-  for (const sel of selectors) {
-    const count = await page.locator(sel).count().catch(() => 0);
-    if (count > 0) {
-      console.log(`[Settings] Compliance rows found (${count}) via: ${sel}`);
-      return { locator: page.locator(sel), count };
+/** Finds a compliance item's row on whatever page is currently loaded by its Document Name (its stable cross-community identity) rather than by item id. */
+function complianceItemRowByName(page, name) {
+  return page.locator('tr[data-sort-item-identifier]').filter({ hasText: name }).first();
+}
+
+/**
+ * Opens a compliance item's Edit pane: its row's "Options" dropdown must
+ * be opened first (the Edit link exists in the DOM but is CSS-hidden
+ * until then — confirmed live, a direct click without this step times
+ * out waiting for visibility), then the pane loads into #paneWrap
+ * (visibility toggled via `.mt-isActive` on an ancestor `.mt-pane`, not a
+ * fresh element each time — #paneWrap's PREVIOUS item's markup lingers
+ * until the AJAX response replaces it, so this waits for #Name to exist
+ * rather than assuming the wait alone is enough).
+ */
+async function openComplianceItemPane(page, itemId) {
+  const row = complianceItemRow(page, itemId);
+  await row.locator('.js-dropdown-trigger').click();
+  await page.waitForTimeout(200);
+  await row.locator('a').filter({ hasText: 'Edit' }).first().click();
+  await page.waitForSelector('#paneWrap #Name', { timeout: 8000 });
+  await page.waitForTimeout(300);
+}
+
+/** Closes the currently-open compliance item Edit pane via its confirmed close affordance (`.mt-pane-close`, present in the DOM at all times, not just while open). */
+async function closeComplianceItemPane(page) {
+  const closeLink = page.locator('.mt-pane-close').first();
+  if (await closeLink.count() > 0) {
+    await closeLink.click();
+  }
+  await page.waitForTimeout(200);
+}
+
+/** Reads the currently-open compliance item Edit pane's deep-config fields. */
+async function readComplianceItemPaneFields(page) {
+  return page.evaluate(() => {
+    const pane = document.querySelector('#paneWrap');
+    if (!pane) return null;
+    const val = (id) => pane.querySelector('#' + id)?.value ?? '';
+    const selected = (id) =>
+      Array.from(pane.querySelectorAll(`#${id} option`))
+        .filter((o) => o.selected)
+        .map((o) => o.value);
+    return {
+      description: val('Description'),
+      complianceStageIds: selected('ComplianceStageIDs'),
+      productTypeKeys: selected('ProductTypeTextKeys'),
+      classification: val('ResidentTag'),
+      tagIds: selected('TagIDs'),
+      duration: val('Duration'),
+      customDuration: val('CustomDuration'),
+      optional: pane.querySelector('input[name="Optional"]:checked')?.value ?? 'False',
+    };
+  });
+}
+
+/**
+ * Writes deep-config field values into the currently-open compliance item
+ * Edit pane, WITHOUT submitting — the multi-selects (Compliance Stages,
+ * Product Types, Tags) are bootstrap-multiselect-wrapped native
+ * `<select multiple>` elements; that plugin keeps the native select as
+ * its real source of truth and listens for its native `change` event, so
+ * setting `option.selected` directly + dispatching `change` is sufficient
+ * (the visual dropdown widget staying stale until then is cosmetic —
+ * what the form actually submits is the native select's state, read the
+ * same way in readComplianceItemPaneFields above). Returns whether
+ * anything actually differed from the pane's current state, so a caller
+ * can skip submitting when nothing changed.
+ */
+async function writeComplianceItemPaneFields(page, item) {
+  return page.evaluate((item) => {
+    const pane = document.querySelector('#paneWrap');
+    if (!pane) return false;
+    let changed = false;
+
+    const setSelected = (id, values) => {
+      const select = pane.querySelector('#' + id);
+      if (!select) return;
+      const wanted = new Set(values || []);
+      let localChanged = false;
+      Array.from(select.options).forEach((opt) => {
+        const shouldBeSelected = wanted.has(opt.value);
+        if (opt.selected !== shouldBeSelected) {
+          opt.selected = shouldBeSelected;
+          localChanged = true;
+        }
+      });
+      if (localChanged) {
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        changed = true;
+      }
+    };
+
+    const setValue = (id, value) => {
+      const el = pane.querySelector('#' + id);
+      if (!el || el.value === (value || '')) return;
+      el.value = value || '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      changed = true;
+    };
+
+    setValue('Description', item.description);
+    setSelected('ComplianceStageIDs', item.complianceStageIds);
+    setSelected('ProductTypeTextKeys', item.productTypeKeys);
+    setValue('ResidentTag', item.classification);
+    setSelected('TagIDs', item.tagIds);
+    setValue('Duration', item.duration || '0');
+    if ((item.duration || '0') === '-1') {
+      setValue('CustomDuration', item.customDuration);
     }
-  }
-  return null;
-}
 
-/**
- * Open a compliance template row for editing.
- * Tries an edit button first, then falls back to clicking the row itself.
- */
-async function openTemplateEdit(page, row) {
-  const editBtn = row.locator(
-    'button:has-text("Edit"), a:has-text("Edit"), button.edit, a.edit, [data-action="edit"]'
-  ).first();
+    const wantOptional = item.optional === 'True';
+    const radio = pane.querySelector(
+      `input[name="Optional"][value="${wantOptional ? 'True' : 'False'}"]`
+    );
+    if (radio && !radio.checked) {
+      radio.checked = true;
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
+      changed = true;
+    }
 
-  if (await editBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await editBtn.click();
-  } else {
-    await row.click();
-  }
-  await page.waitForTimeout(800);
-}
-
-/**
- * Close an open modal or expanded inline panel.
- */
-async function closeTemplateEdit(page) {
-  const closeBtn = page.locator(
-    '.modal .close, .modal button:has-text("Close"), .modal button:has-text("Cancel"), [aria-label="Close"]'
-  ).first();
-  if (await closeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await closeBtn.click();
-  } else {
-    await page.keyboard.press('Escape');
-  }
-  await page.waitForTimeout(400);
+    return changed;
+  }, item);
 }
 
 // ─── Capture ──────────────────────────────────────────────────────────────────
 
 /**
- * Capture compliance template names and their form-field states.
+ * Deep-edit details for every ComplianceItemIds[N] checkbox already found
+ * by the main field capture — captures ALL of them regardless of current
+ * checked state (a community may want an item's policy correctly
+ * configured even while it's currently disabled, ready for whenever it's
+ * turned on), skipped entirely on pages with no compliance items at all
+ * (Care Settings, Billing Settings, etc. — no wasted pane round-trips).
  */
-async function captureComplianceTemplates(page) {
-  const result = await findComplianceTemplateRows(page);
-  if (!result) return [];
+async function captureComplianceItemsDeep(page, checkboxes) {
+  const items = (checkboxes || [])
+    .map((cb) => ({ cb, match: /^ComplianceItemIds\[(\d+)\]$/.exec(cb.name || '') }))
+    .filter((x) => x.match);
+  if (items.length === 0) return [];
 
-  const { locator, count } = result;
-  const templates = [];
-
-  for (let i = 0; i < count; i++) {
-    const row = locator.nth(i);
-    let name = '';
+  console.log(`[Settings] Capturing deep-edit details for ${items.length} compliance item(s)...`);
+  const results = [];
+  for (const { cb, match } of items) {
+    const itemId = match[1];
     try {
-      // Name is usually in the first column
-      name = (
-        await row.locator('td:first-child, .name, .template-name, strong').first().textContent()
-      ).trim();
-      if (!name) continue;
-
-      console.log(`[Settings] Capturing compliance template: "${name}"`);
-
-      await openTemplateEdit(page, row);
-
-      const fields = await captureFormFields(page);
-      templates.push({ name, fields });
-
-      await closeTemplateEdit(page);
+      await openComplianceItemPane(page, itemId);
+      const fields = await readComplianceItemPaneFields(page);
+      await closeComplianceItemPane(page);
+      if (fields) {
+        results.push({ itemId, name: cb.label, ...fields });
+      }
     } catch (err) {
-      console.log(`[Settings] Warning — could not capture template "${name}": ${err.message}`);
-      await closeTemplateEdit(page).catch(() => {});
+      console.log(
+        `[Settings] Warning — could not capture compliance item deep details for ` +
+        `"${cb.label || itemId}": ${err.message}`
+      );
+      await closeComplianceItemPane(page).catch(() => {});
     }
   }
-
-  return templates;
+  return results;
 }
 
 /**
@@ -414,14 +495,13 @@ async function captureResidentSettings(page, url) {
     );
   }
 
-  const complianceTemplates = await captureComplianceTemplates(page);
-  console.log(`[Settings] Compliance templates captured: ${complianceTemplates.length}`);
+  const complianceItemsDeep = await captureComplianceItemsDeep(page, fields.checkboxes);
 
   return {
     capturedAt: new Date().toISOString(),
     sourceUrl: url,
     fields,
-    complianceTemplates,
+    complianceItemsDeep,
   };
 }
 
@@ -549,47 +629,42 @@ async function applyFormFields(page, snapshot, results) {
 }
 
 /**
- * Apply compliance template settings to matching templates on the target page.
+ * Apply deep-edit compliance item details to the matching item on the
+ * target page — matched by Document Name (complianceItemRowByName), the
+ * same stable cross-community identity the flat checkbox sync already
+ * relies on, since item ids are per-community and never line up across
+ * communities (see isComplianceItemField's doc comment above).
  */
-async function applyComplianceTemplates(page, sourceTemplates, results) {
-  for (const srcTemplate of sourceTemplates) {
+async function applyComplianceItemsDeep(page, sourceItems, results) {
+  for (const item of sourceItems) {
     try {
-      console.log(`[Settings] Applying compliance template: "${srcTemplate.name}"`);
-
-      // Find the matching row on target by visible text
-      const row = page
-        .locator('tr, .compliance-item, .template-item, .list-item')
-        .filter({ hasText: srcTemplate.name })
-        .first();
-
-      if (!await row.isVisible({ timeout: 3000 }).catch(() => false)) {
-        console.log(`[Settings]   ⚠ Template not found on target: "${srcTemplate.name}"`);
+      const row = complianceItemRowByName(page, item.name);
+      const targetItemId = await row.getAttribute('data-sort-item-identifier').catch(() => null);
+      if (!targetItemId) {
+        console.log(`[Settings]   ⚠ Compliance item not found on target: "${item.name}"`);
         results.skipped++;
         continue;
       }
 
-      await openTemplateEdit(page, row);
+      await openComplianceItemPane(page, targetItemId);
+      const changed = await writeComplianceItemPaneFields(page, item);
 
-      const templateResults = { applied: 0, skipped: 0, failed: 0 };
-      await applyFormFields(page, srcTemplate.fields, templateResults);
-
-      if (templateResults.applied > 0) {
-        await saveSettings(page);
+      if (changed) {
+        await page.locator('#paneWrap .mt-pane-wrap-content-action button[type="submit"]').click();
+        await page.waitForTimeout(1000);
       }
+      await closeComplianceItemPane(page);
 
-      await closeTemplateEdit(page);
-
-      results.applied += templateResults.applied;
-      results.skipped += templateResults.skipped;
-      results.failed  += templateResults.failed;
-      console.log(
-        `[Settings]   ✓ Template "${srcTemplate.name}" — ` +
-        `applied: ${templateResults.applied}, skipped: ${templateResults.skipped}`
-      );
+      if (changed) {
+        results.applied++;
+        console.log(`[Settings]   ✓ Compliance item deep details "${item.name}"`);
+      } else {
+        results.skipped++;
+      }
     } catch (err) {
       results.failed++;
-      console.log(`[Settings]   ✗ Template "${srcTemplate.name}": ${err.message}`);
-      await closeTemplateEdit(page).catch(() => {});
+      console.log(`[Settings]   ✗ Compliance item deep details "${item.name}": ${err.message}`);
+      await closeComplianceItemPane(page).catch(() => {});
     }
   }
 }
@@ -617,11 +692,11 @@ async function applyResidentSettings(page, url, snapshot, emit = () => {}) {
     await saveSettings(page);
   }
 
-  if (snapshot.complianceTemplates && snapshot.complianceTemplates.length > 0) {
+  if (snapshot.complianceItemsDeep && snapshot.complianceItemsDeep.length > 0) {
     emit('progress', {
-      message: `Applying ${snapshot.complianceTemplates.length} compliance template settings...`,
+      message: `Applying deep-edit details for ${snapshot.complianceItemsDeep.length} compliance item(s)...`,
     });
-    await applyComplianceTemplates(page, snapshot.complianceTemplates, results);
+    await applyComplianceItemsDeep(page, snapshot.complianceItemsDeep, results);
   }
 
   await page.screenshot({ path: `debug_apply_after_${Date.now()}.png`, fullPage: true }).catch(() => {});
