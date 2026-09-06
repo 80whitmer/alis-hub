@@ -80,6 +80,7 @@ function resolveWellnessRow(row, snapshot, communityId) {
     prior: trendBucket?.prior ?? '—',
     trend: trendBucket?.trend ?? '—',
     openDocsTotal: openDocsBucket?.total ?? 0,
+    openDocsReporters: openDocsBucket?.reporters ?? [],
   };
 }
 

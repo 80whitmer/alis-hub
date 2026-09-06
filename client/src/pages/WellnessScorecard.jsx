@@ -20,10 +20,13 @@ function BenchmarkBadge({ diff }) {
  * portfolio-only like BenchmarkBadge, since catching this up community by
  * community is the whole point.
  */
-function DocCompletionBadge({ openDocsTotal }) {
+function DocCompletionBadge({ openDocsTotal, openDocsReporters }) {
   if (!openDocsTotal) return null;
+  const title = openDocsReporters?.length
+    ? `Reported by: ${openDocsReporters.map((r) => `${r.name}${r.count > 1 ? ` x${r.count}` : ''}`).join(', ')}`
+    : 'Incidents this week still missing a completed form or intervention';
   return (
-    <span className="text-xs font-medium ml-2 text-error" title="Incidents this week still missing a completed form or intervention">
+    <span className="text-xs font-medium ml-2 text-error" title={title}>
       ⚠ {openDocsTotal} undocumented
     </span>
   );
@@ -74,7 +77,7 @@ function WellnessTable({ title, snapshot, communityId, description, hideUntracke
                   <td className="py-2 pr-4 text-neutral-800">
                     {row.label}
                     {!communityId && <BenchmarkBadge diff={diff} />}
-                    {row.hasDocCompletion && <DocCompletionBadge openDocsTotal={v.openDocsTotal} />}
+                    {row.hasDocCompletion && <DocCompletionBadge openDocsTotal={v.openDocsTotal} openDocsReporters={v.openDocsReporters} />}
                   </td>
                   <td className="py-2 pr-3 text-right">{v.al}</td>
                   <td className="py-2 pr-3 text-right">{v.mc}</td>

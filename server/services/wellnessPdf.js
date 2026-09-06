@@ -27,7 +27,10 @@ function trendCell(trend) {
 // incidents this week still have an incomplete form or intervention.
 function docCompletionNote(row, v) {
   if (!row.hasDocCompletion || !v.openDocsTotal) return '';
-  return ` <span class="doc-completion">⚠ ${v.openDocsTotal} undocumented</span>`;
+  const reporterNote = v.openDocsReporters?.length
+    ? ` (${v.openDocsReporters.map((r) => `${escapeHtml(r.name)}${r.count > 1 ? ` x${r.count}` : ''}`).join(', ')})`
+    : '';
+  return ` <span class="doc-completion">⚠ ${v.openDocsTotal} undocumented${reporterNote}</span>`;
 }
 
 function buildTable(title, snapshot, communityId) {

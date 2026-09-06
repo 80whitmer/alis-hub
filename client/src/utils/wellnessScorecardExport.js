@@ -49,8 +49,11 @@ function addScorecardSheet(workbook, sheetName, snapshot, communityId) {
     // unlike Status/Action/Owner/etc. below) — see wellnessNormalizer.js's
     // withOpenDocs and DocCompletionBadge in WellnessScorecard.jsx for the
     // same signal rendered on screen.
+    const reporterNote = v.openDocsReporters?.length
+      ? ` — reported by ${v.openDocsReporters.map((r) => `${r.name}${r.count > 1 ? ` x${r.count}` : ''}`).join(', ')}`
+      : '';
     const details = row.hasDocCompletion && v.openDocsTotal > 0
-      ? `${v.openDocsTotal} of ${v.total} incident report(s) missing a completed form or intervention`
+      ? `${v.openDocsTotal} of ${v.total} incident report(s) missing a completed form or intervention${reporterNote}`
       : '';
     sheet.addRow({
       category: row.category,

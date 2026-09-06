@@ -102,9 +102,34 @@ function matchIncidentType(incidentType, patterns) {
  * shows records marked complete that still carry incompleteForms/
  * incompleteTasks > 0, so the sub-item counts are the more accurate signal.
  */
-function withOpenDocs(result, scopedRows, allCommunityIds) {
+/**
+ * `staffNameByIncidentId` (from getIncidentsV2 — the only ALIS endpoint
+ * with staff attribution, see alisApiClient.js) turns the open-docs count
+ * into an actionable "who to follow up with" list, not just a number — a
+ * Wellness Director working the undocumented-incident list needs to know
+ * WHO still owes a form, not just how many are outstanding. Absent (empty
+ * object, the default) is a normal, expected state — `reporters` just
+ * comes back empty — since the v2 pull is best-effort (see
+ * wellnessExport.js's buildStaffNameByIncidentId).
+ */
+function reporterCounts(rows, staffNameByIncidentId) {
+  const counts = {};
+  for (const r of rows) {
+    const name = staffNameByIncidentId?.[r.incidentId];
+    if (!name) continue;
+    counts[name] = (counts[name] || 0) + 1;
+  }
+  return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+}
+
+function withOpenDocs(result, scopedRows, allCommunityIds, staffNameByIncidentId) {
   const openDocsRows = scopedRows.filter((r) => (Number(r.incompleteForms) || 0) > 0 || (Number(r.incompleteTasks) || 0) > 0);
-  return { ...result, openDocs: groupByCommunityAndProductType(openDocsRows, allCommunityIds) };
+  const openDocs = groupByCommunityAndProductType(openDocsRows, allCommunityIds);
+  openDocs.portfolio.reporters = reporterCounts(openDocsRows, staffNameByIncidentId);
+  for (const cid of Object.keys(openDocs.byCommunity)) {
+    openDocs.byCommunity[cid].reporters = reporterCounts(openDocsRows.filter((r) => String(r.communityId) === cid), staffNameByIncidentId);
+  }
+  return { ...result, openDocs };
 }
 
 /** The raw filtered incident rows behind normalizeIncidentRow's count — exported so a caller (wellnessExport.js) can fetch per-incident formData for exactly this week's matching incidents without re-deriving the same filter. */
@@ -114,19 +139,19 @@ function scopeIncidentsThisWeek(incidents, weekEndingDate, weekStartDate, patter
   );
 }
 
-function normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, patterns, allCommunityIds) {
+function normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, patterns, allCommunityIds, staffNameByIncidentId) {
   const scoped = scopeIncidentsThisWeek(incidents, weekEndingDate, weekStartDate, patterns);
-  return withOpenDocs(groupByCommunityAndProductType(scoped, allCommunityIds), scoped, allCommunityIds);
+  return withOpenDocs(groupByCommunityAndProductType(scoped, allCommunityIds), scoped, allCommunityIds, staffNameByIncidentId);
 }
 
-const normalizeFallsThisWeek = (incidents, weekEndingDate, weekStartDate, allCommunityIds) =>
-  normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, ['fall'], allCommunityIds);
+const normalizeFallsThisWeek = (incidents, weekEndingDate, weekStartDate, allCommunityIds, staffNameByIncidentId) =>
+  normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, ['fall'], allCommunityIds, staffNameByIncidentId);
 
-const normalizeElopementThisWeek = (incidents, weekEndingDate, weekStartDate, allCommunityIds) =>
-  normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, ['elopement'], allCommunityIds);
+const normalizeElopementThisWeek = (incidents, weekEndingDate, weekStartDate, allCommunityIds, staffNameByIncidentId) =>
+  normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, ['elopement'], allCommunityIds, staffNameByIncidentId);
 
-const normalizeBehavioralThisWeek = (incidents, weekEndingDate, weekStartDate, allCommunityIds) =>
-  normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, ['behavioral', 'aggressive act'], allCommunityIds);
+const normalizeBehavioralThisWeek = (incidents, weekEndingDate, weekStartDate, allCommunityIds, staffNameByIncidentId) =>
+  normalizeIncidentRow(incidents, weekEndingDate, weekStartDate, ['behavioral', 'aggressive act'], allCommunityIds, staffNameByIncidentId);
 
 /**
  * Leisure Care-only (see companyFeatures.js) — matches ALIS incident-type
@@ -149,11 +174,11 @@ const normalizeSentinelIncidentsThisWeek = (incidents, weekEndingDate, weekStart
 // dose), a different, non-overlapping event from a staff member logging an
 // actual medication-error incident report.
 const OTHER_INCIDENT_EXCLUDE = ['fall', 'elopement', 'behavioral', 'aggressive act', 'hospitalization'];
-function normalizeOtherIncidentsThisWeek(incidents, weekEndingDate, weekStartDate, allCommunityIds) {
+function normalizeOtherIncidentsThisWeek(incidents, weekEndingDate, weekStartDate, allCommunityIds, staffNameByIncidentId) {
   const scoped = incidents.filter(
     (r) => withinTrailingWeek(r.incidentDateTime, weekEndingDate, weekStartDate) && !matchIncidentType(r.incidentType, OTHER_INCIDENT_EXCLUDE)
   );
-  return withOpenDocs(groupByCommunityAndProductType(scoped, allCommunityIds), scoped, allCommunityIds);
+  return withOpenDocs(groupByCommunityAndProductType(scoped, allCommunityIds), scoped, allCommunityIds, staffNameByIncidentId);
 }
 
 /**

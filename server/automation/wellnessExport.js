@@ -1,6 +1,6 @@
 const {
   getCommunities, getIncidents, getEvaluations, getLeaves, getStaff, getResidents,
-  getOrderAdministration, getStaffComplianceDetails, getObservations, getIncidentFormData,
+  getOrderAdministration, getStaffComplianceDetails, getObservations, getIncidentFormData, getIncidentsV2,
 } = require('../services/alisApiClient');
 const {
   normalizeFallsThisWeek, normalizeElopementThisWeek, normalizeBehavioralThisWeek,
@@ -45,10 +45,10 @@ function getWeekWindow(weekEnding) {
 // to compare against, instead of silently missing from byCommunity (see
 // groupByCommunityAndProductType's doc comment).
 const ROW_CALCULATORS = {
-  falls: (data, weekStartDate, weekEndingDate, communityIds) => normalizeFallsThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds),
-  elopement: (data, weekStartDate, weekEndingDate, communityIds) => normalizeElopementThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds),
-  behavioral: (data, weekStartDate, weekEndingDate, communityIds) => normalizeBehavioralThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds),
-  otherIncidents: (data, weekStartDate, weekEndingDate, communityIds) => normalizeOtherIncidentsThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds),
+  falls: (data, weekStartDate, weekEndingDate, communityIds) => normalizeFallsThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds, data.staffNameByIncidentId),
+  elopement: (data, weekStartDate, weekEndingDate, communityIds) => normalizeElopementThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds, data.staffNameByIncidentId),
+  behavioral: (data, weekStartDate, weekEndingDate, communityIds) => normalizeBehavioralThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds, data.staffNameByIncidentId),
+  otherIncidents: (data, weekStartDate, weekEndingDate, communityIds) => normalizeOtherIncidentsThisWeek(data.incidents, weekEndingDate, weekStartDate, communityIds, data.staffNameByIncidentId),
   changeInCondition: (data, weekStartDate, weekEndingDate, communityIds) => normalizeChangeInConditionThisWeek(data.observations, weekEndingDate, weekStartDate, communityIds),
   hospitalCurrent: (data, weekStartDate, weekEndingDate, communityIds) => normalizeCurrentlyHospitalized(data.leaves, communityIds),
   evaluationsOverdue: (data, weekStartDate, weekEndingDate, communityIds) => normalizeEvaluationsOverdue(data.evaluations, communityIds),
@@ -258,27 +258,56 @@ async function runWellnessScorecardJob(jobId, payload) {
   const observations = filterByCommunity(pulled.observations, communityKeys);
 
   // ── Per-community pull: orderAdministration (has a communityId query
-  // param and a 1-month date-range cap — well within a 7-day window). ─────
+  // param and a 1-month date-range cap — well within a 7-day window), plus
+  // v2 incidents (Integration API — communityId + date-range required,
+  // unlike the account-wide v1 pull `incidents` above) purely for its staff
+  // attribution (staffFirstName/staffLastName), which the v1 export
+  // endpoint doesn't carry at all. Best-effort: a failed pull here just
+  // means that community's incidents show up with no reporter name, not a
+  // job failure. ────────────────────────────────────────────────────────
   const orderAdministration = [];
+  const staffNameByIncidentId = {};
   for (const community of communities) {
     const { name, communityId, host } = community;
     const itemName = multiHost ? `${name} [${host}]` : name;
     setItemStatus(jobId, itemName, 'running');
     emit('item_start', { name: itemName });
 
-    try {
-      const rows = await getOrderAdministration(host, { communityId, startDate: weekStart, endDate: weekEnding });
-      orderAdministration.push(...asArray(rows).map((r) => ({ ...r, _host: host })));
+    const [orderResult, incidentsV2Result] = await Promise.allSettled([
+      getOrderAdministration(host, { communityId, startDate: weekStart, endDate: weekEnding }),
+      getIncidentsV2(host, { communityId, startDate: weekStart, endDate: weekEnding }),
+    ]);
+
+    let failed = false;
+    if (orderResult.status === 'fulfilled') {
+      orderAdministration.push(...asArray(orderResult.value).map((r) => ({ ...r, _host: host })));
+    } else {
+      failed = true;
+      console.error(`[wellness-scorecard:${jobId}] "orderAdministration" pull failed for "${itemName}":`, orderResult.reason);
+    }
+    if (incidentsV2Result.status === 'fulfilled') {
+      for (const r of incidentsV2Result.value) {
+        if (r.incidentId != null && (r.staffFirstName || r.staffLastName)) {
+          staffNameByIncidentId[r.incidentId] = `${r.staffFirstName || ''} ${r.staffLastName || ''}`.trim();
+        }
+      }
+    } else {
+      // Not pushed to dataWarnings — staff attribution is a nice-to-have
+      // enrichment, not a data-completeness signal worth surfacing the way
+      // a failed orderAdministration pull is.
+      console.error(`[wellness-scorecard:${jobId}] "incidentsV2" (staff attribution) pull failed for "${itemName}":`, incidentsV2Result.reason);
+    }
+
+    if (failed) {
+      setItemStatus(jobId, itemName, 'failed', 'One or more per-community pulls failed for this community — see server logs.');
+      emit('item_fail', { name: itemName, error: 'Partial per-community pull failure' });
+    } else {
       setItemStatus(jobId, itemName, 'success');
       emit('item_done', { name: itemName });
-    } catch (err) {
-      console.error(`[wellness-scorecard:${jobId}] "orderAdministration" pull failed for "${itemName}":`, err);
-      setItemStatus(jobId, itemName, 'failed', err.message);
-      emit('item_fail', { name: itemName, error: err.message });
     }
   }
 
-  const data = { incidents, evaluations, leaves, staff, residents, staffComplianceDetails, orderAdministration, observations };
+  const data = { incidents, evaluations, leaves, staff, residents, staffComplianceDetails, orderAdministration, observations, staffNameByIncidentId };
 
   // ── Compute each automatable row, then per-community staffing activity
   // (not in ROW_CALCULATORS since normalizeStaffActivity's shape/inputs
