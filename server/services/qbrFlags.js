@@ -16,12 +16,18 @@ function pct(n) {
   return n == null ? '—' : `${(n * 100).toFixed(1)}%`;
 }
 
+function usd(n) {
+  return n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+
 /**
  * @param {object} normalized  Output of the kpiNormalizer functions, merged.
  * @param {object} diffs       Output of kpiNormalizer.computeBenchmarkDiffs.
  * @param {object|null} ticketSummary  Output of hubspotTickets.getTicketSummaryForCompany, or null if no HubSpot company was linked.
+ * @param {object|null} dealSummary  Output of hubspotTickets.getDealSummaryForCompany, or null if no HubSpot company was linked.
+ * @param {object|null} hubspotHealth  Output of the qbr-export skill import (see server/services/HUBSPOT_BRIDGE_SCHEMA.md), or null if nothing's been imported yet. Not available at job-run time — regenerated with this included when a health export is imported (see server/api/qbr.js).
  */
-function generateFlags(normalized, diffs, ticketSummary) {
+function generateFlags(normalized, diffs, ticketSummary, dealSummary, hubspotHealth = null) {
   const flags = [];
 
   // ── Occupancy ────────────────────────────────────────────────────────
@@ -77,13 +83,49 @@ function generateFlags(normalized, diffs, ticketSummary) {
     });
   }
 
-  if (diffs.sedativePrnPer1000ResidentDays && !diffs.sedativePrnPer1000ResidentDays.better) {
+  if (diffs.prnAdministrationPer1000ResidentDays && !diffs.prnAdministrationPer1000ResidentDays.better) {
     flags.push({
       severity: SEVERITY.WATCH,
       category: 'Clinical',
-      title: `Sedative/antipsychotic PRN administration at ${diffs.sedativePrnPer1000ResidentDays.actual.toFixed(1)} per 1,000 resident-days, above benchmark (${diffs.sedativePrnPer1000ResidentDays.benchmark})`,
-      detail: 'Elevated sedative PRN use is often a clinical-review and compliance conversation, not just an operational one.',
+      title: `PRN medication administration at ${diffs.prnAdministrationPer1000ResidentDays.actual.toFixed(1)} per 1,000 resident-days, above benchmark (${diffs.prnAdministrationPer1000ResidentDays.benchmark})`,
+      detail: 'Elevated PRN use is often a clinical-review and compliance conversation, not just an operational one — this is an overall rate, not broken down by drug class.',
       talkingPoint: 'Flag for the clinical team to review PRN administration patterns.',
+    });
+  }
+
+  // Incident completion has no ALIS 500 benchmark either — an absolute
+  // threshold, same reasoning as careCompletion/staffActivity below. Per
+  // client feedback (Gallaher, 2026-09-01), fall-related incidents are
+  // called out by name in the flag itself since a completed post-fall
+  // intervention is a specific compliance requirement, not just tidiness.
+  if (normalized.incidentCompletion?.hasData && normalized.incidentCompletion.overall.openItemCount > 0) {
+    const { overall, falls: fallCompletion, byCommunity } = normalized.incidentCompletion;
+    const fallNote = fallCompletion.openItemCount > 0
+      ? ` — includes ${fallCompletion.openItemCount} fall-related incident(s) with an incomplete form or intervention`
+      : '';
+    flags.push({
+      severity: overall.pctComplete < 0.80 || fallCompletion.openItemCount > 0 ? SEVERITY.RISK : SEVERITY.WATCH,
+      category: 'Clinical',
+      title: `${overall.openItemCount} of ${overall.total} incident report(s) this period still have open documentation${fallNote}`,
+      detail: `${overall.totalIncompleteForms} incomplete form(s) and ${overall.totalIncompleteTasks} incomplete task(s)/intervention(s) outstanding across ${byCommunity.length} ${byCommunity.length === 1 ? 'community' : 'communities'}.`,
+      talkingPoint: 'Review the open incident list by community — closing out documentation and interventions (required after every fall) is a compliance item, not just tidiness.',
+    });
+  }
+
+  // Sentinel incidents — Leisure Care only (see companyFeatures.js);
+  // `normalized.sentinelIncidents` is undefined for every other client, so
+  // this simply never fires elsewhere. No benchmark to diff against (this
+  // is Leisure Care's own incident-type tagging, not an ALIS 500 metric) —
+  // any count above zero is worth a flag, these are by definition the
+  // highest-severity incident types in their configuration.
+  if (normalized.sentinelIncidents?.hasData && normalized.sentinelIncidents.total > 0) {
+    const { total, byCommunity } = normalized.sentinelIncidents;
+    flags.push({
+      severity: SEVERITY.RISK,
+      category: 'Clinical',
+      title: `${total} Sentinel-tagged incident(s) this period across ${byCommunity.length} ${byCommunity.length === 1 ? 'community' : 'communities'}`,
+      detail: byCommunity.slice(0, 5).map((c) => `${c.name}: ${c.total}`).join(', '),
+      talkingPoint: 'Walk through each Sentinel-tagged incident individually — these are flagged by Leisure Care\'s own incident-type configuration as the highest-severity category.',
     });
   }
 
@@ -157,6 +199,150 @@ function generateFlags(normalized, diffs, ticketSummary) {
         title: `"${topCategory[0]}" is the most common ticket category this period (${topCategory[1].total} tickets)`,
         detail: 'Recurring friction in one area is often a config-review or training opportunity rather than a series of one-off issues.',
         talkingPoint: `Ask whether a config review or a short training session on ${topCategory[0]} would reduce recurrence.`,
+      });
+    }
+  }
+
+  // ── HubSpot deals (live pull, independent of any health-export import) ──
+  if (dealSummary && dealSummary.openDeals.length > 0) {
+    flags.push({
+      severity: SEVERITY.OPPORTUNITY,
+      category: 'Account growth',
+      title: `${dealSummary.openDeals.length} open deal(s) in HubSpot worth ${usd(dealSummary.totalOpenValue)}`,
+      detail: dealSummary.openDeals.map((d) => `${d.name} — ${d.stage}${d.amount ? ` (${usd(d.amount)})` : ''}`).join('; '),
+      talkingPoint: 'Surface directly in the QBR as a growth/expansion conversation.',
+    });
+  }
+
+  // ── Care-level evaluation compliance (summary-level; per-resident detail
+  // lives in the Levels of Care section) ──────────────────────────────────
+  if (normalized.careLevelEvaluations?.hasEvaluationData && normalized.careLevelEvaluations.pctNeedsAttention != null && normalized.careLevelEvaluations.pctNeedsAttention >= 0.15) {
+    flags.push({
+      severity: SEVERITY.WATCH,
+      category: 'Clinical',
+      title: `${pct(normalized.careLevelEvaluations.pctNeedsAttention)} of care-level evaluations need attention (expired, incomplete, or 12+ months overdue)`,
+      detail: `${normalized.careLevelEvaluations.needsAttention} of ${normalized.careLevelEvaluations.totalResidents} non-IL residents affected.`,
+      talkingPoint: 'Review the flagged residents in the Levels of Care section — a backlog here often mirrors a staffing or workflow gap, not one-off oversights.',
+    });
+  }
+
+  // ── Revenue leakage (fee billed below the evaluation's own recommendation) ─
+  if (normalized.careLevelEvaluations?.revenueLeakage?.affectedResidents > 0) {
+    const { affectedResidents, totalMonthlyGap } = normalized.careLevelEvaluations.revenueLeakage;
+    flags.push({
+      severity: SEVERITY.OPPORTUNITY,
+      category: 'Financial',
+      // Marks this as ALIS-native billing data specifically (not the
+      // separate HubSpot financial_health signals below) — lets the PPTX
+      // export's billing toggle exclude precisely this, not every
+      // "Financial"-category flag regardless of source.
+      billingRelated: true,
+      title: `${affectedResidents} resident(s) billed below their evaluation-recommended fee — ~${usd(totalMonthlyGap)}/mo potential`,
+      detail: 'ALIS-computed: preOverrideFee (what the evaluation recommended) exceeds the fee actually being charged. May be a legitimate exception (family agreement, promo rate) — not automatically a mistake.',
+      talkingPoint: 'Walk through the specific residents flagged in Levels of Care and confirm each override was intentional.',
+    });
+  }
+
+  // ── Accounts receivable aging ────────────────────────────────────────────
+  if (normalized.outstandingInvoiceSummary?.total > 0) {
+    const { total, aging } = normalized.outstandingInvoiceSummary;
+    const seriouslyPastDue = (aging.days61to90 || 0) + (aging.days90plus || 0);
+    if (seriouslyPastDue > 0) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Financial',
+        billingRelated: true,
+        title: `${usd(seriouslyPastDue)} in invoices 60+ days past due (${usd(total)} total outstanding)`,
+        detail: `Aging: current ${usd(aging.current)} · 1-30d ${usd(aging.days1to30)} · 31-60d ${usd(aging.days31to60)} · 61-90d ${usd(aging.days61to90)} · 90d+ ${usd(aging.days90plus)}`,
+        talkingPoint: 'Confirm collection status on the oldest balances before presenting — a growing 90+ bucket is worth a billing-team check-in regardless of QBR timing.',
+      });
+    }
+  }
+
+  // ── HubSpot import (service/financial/relationship health) ─────────────
+  // Only present once a qbr-export skill JSON has been imported for this
+  // job (see server/api/qbr.js's /health-import route, which regenerates
+  // flags with this included) — absent at initial job-run time.
+  if (hubspotHealth) {
+    const svc = hubspotHealth.service_health;
+    const fin = hubspotHealth.financial_health;
+    const rel = hubspotHealth.relationship_health;
+
+    if (svc?.tickets_over_45_days?.value > 0) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Service',
+        title: `${svc.tickets_over_45_days.value} HubSpot ticket(s) open past 45 days (avg open ticket age: ${svc.avg_open_ticket_age_days?.value ?? '—'} days)`,
+        detail: 'From the imported account health export, not the live ALIS ticket pull above — may reflect a different point in time.',
+        talkingPoint: 'Review each aged ticket and set a concrete next step or close date.',
+      });
+    }
+
+    if (svc?.escalation_count_this_quarter?.value > 0) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Service',
+        title: `${svc.escalation_count_this_quarter.value} escalation(s) logged this quarter`,
+        detail: svc.escalation_count_this_quarter.method || '',
+        talkingPoint: 'Confirm current status on each before the QBR — an open escalation shouldn\'t be a surprise in the room.',
+      });
+    }
+
+    const repeatIssues = svc?.repeat_issue_flags?.value || [];
+    if (repeatIssues.length > 0) {
+      const top = [...repeatIssues].sort((a, b) => (b.count ?? b.occurrences ?? 0) - (a.count ?? a.occurrences ?? 0))[0];
+      const label = top.category || top.pattern;
+      const count = top.count ?? top.occurrences;
+      flags.push({
+        severity: SEVERITY.WATCH,
+        category: 'Service',
+        title: `"${label}" is the largest repeat-issue cluster this period (${count} tickets)`,
+        detail: 'Estimated from ticket-category grouping, not confirmed root cause — a cluster can be one multi-community rollout rather than a recurring bug. Verify before presenting as a pattern.',
+        talkingPoint: `Confirm whether "${label}" tickets share a root cause or are separate one-off requests that happen to share a category.`,
+      });
+    }
+
+    if (fin?.rate_dispute_active?.value === true) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Financial',
+        title: 'Active rate dispute flagged in HubSpot',
+        detail: fin.rate_dispute_active.method || '',
+        talkingPoint: 'Get current status before the QBR — a live pricing dispute needs alignment before it comes up in the room.',
+      });
+    }
+
+    if (fin?.open_deals?.value?.length > 0) {
+      flags.push({
+        severity: SEVERITY.OPPORTUNITY,
+        category: 'Account growth',
+        title: `${fin.open_deals.value.length} open deal(s) in HubSpot`,
+        detail: fin.open_deals.value.map((d) => d.dealname || d.name).join('; '),
+        talkingPoint: 'Surface directly in the QBR as a growth/expansion conversation.',
+      });
+    }
+
+    // Speculative — the qbr-export skill currently only emits a placeholder
+    // note for relationship_health (no Calendar/Gmail source wired up
+    // yet). These checks are no-ops today but activate automatically the
+    // moment that skill starts populating real fields, per
+    // HUBSPOT_BRIDGE_SCHEMA.md's proposed shape.
+    if (rel?.daysSinceGrowthConversation != null && rel.daysSinceGrowthConversation >= 90) {
+      flags.push({
+        severity: SEVERITY.WATCH,
+        category: 'Relationship',
+        title: `${rel.daysSinceGrowthConversation} days since the last growth-focused conversation`,
+        detail: 'Reactive/support contact doesn\'t count — this tracks purely strategic touchpoints.',
+        talkingPoint: 'Worth booking a non-support-driven check-in regardless of what else is on the QBR agenda.',
+      });
+    }
+    if (rel?.contactTurnover?.flagged) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Relationship',
+        title: `Primary contact turnover: ${rel.contactTurnover.departedContact || 'a known contact'} has departed`,
+        detail: rel.contactTurnover.replacementContact ? `Replacement: ${rel.contactTurnover.replacementContact}` : 'No replacement contact identified yet.',
+        talkingPoint: 'Confirm the new relationship owner on the client side before the next touchpoint.',
       });
     }
   }
