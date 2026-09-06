@@ -7,6 +7,13 @@ Versioning is loose semver, pre-1.0:
 - **Minor** (0.x.0) — new features or workflows (a new dashboard section, a new job template, a new data source).
 - Bump with every PR/session that ships a user-visible change, however small. Don't batch bumps.
 
+## 0.5.0 — 2026-09-06
+
+- New "ALIS Audit History" tool: pulls the Audit History widget (Note/Updated At/Updated By) directly from ALIS's own Community Profile, Resident Profile, and Company pages — any mix of company-wide, one or more communities, one or more residents — with the same filters ALIS's own widget offers (date range, Updated By, Type, Notes search), combined into one timestamp-sorted feed for cross-referencing activity. On-screen dashboard (Combined + per-target tabs), Excel export, and PDF export. A new destination is a one-line registry addition, not new scraping code.
+- Weekly Wellness Scorecard: undocumented-incident rows (falls, elopement, behavioral, other incidents) now name who reported each open incident, not just a count — new use of the Integration API's staff attribution (previously unused this session).
+- Company/Community ALIS Usage Audit: Care Tracking's Enabled column now also checks the community's live Care Tracking page as corroboration (same idea as last week's Daily Stand-Up signal) — currently returns 0 for every community due to that page's DOM not being table-based like Daily Stand-Up's; documented as a known limitation rather than hidden, and provably harmless in the meantime (can only ever fail to help, never flip a correct answer to a wrong one).
+- New "Evaluation Lookup" tool (top-nav, not a job): search a resident by name within an ALIS host, see their current evaluation's CarePoints/Care Level/Fee plus a question-by-question answer breakdown where the underlying RET config version happens to be cached.
+
 ## 0.4.0 — 2026-09-06
 
 - Weekly Wellness Scorecard: new "Average CarePoints (acuity) per current evaluation" row, sourced from a `carePoints` field ALIS already populates on `/v1/export/residents/evaluations` (confirmed live — Memory Care residents average meaningfully higher than Assisted Living, as expected). "Falls with injury (head) / hospital transfer" flipped from always-manual to computed for the hospital-transfer half, reading the real `taken_to_hospital` flag off a completed Incident Report Form via the previously-unwired `/v1/export/residents/incidents/{id}/formData` endpoint — the "head injury" qualifier still isn't captured (no such field exists on the generic form template). A run where formData comes back empty despite a fall's forms being marked complete now surfaces as a data-quality warning rather than a silent, misleadingly-clean zero.
