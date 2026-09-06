@@ -32,8 +32,8 @@ const DESTINATIONS = {
   medication: {
     label: 'Medication Settings', scope: 'community',
     urlFor: (host, communityId) => `https://${host}.alisonline.com/Settings/Medication/${communityId}`,
-    readiness: 'needs-review',
-    notes: 'Largest page found (68 fields at one account: 58 selects). Most fields label/section correctly, but a dynamic TimeFrames[N].MealTime repeating-row section (Med Pass Time Shifts) still captures with blank labels — needs its own DOM pass before trusting a sync against it.',
+    readiness: 'ready',
+    notes: 'Largest page found (68 fields at one account: 58 selects) — all label/section correctly now. One real, permanent gap: "Med Pass Time Shifts" (TimeFrames[N].MealTime) is a completely separate embedded micro-frontend (<div id="MedTimePreferences"><app></app></div>), not the same Knockout/MVC form as the rest of the page — mounts asynchronously with inconsistent timing and doesn\'t follow this page\'s DOM conventions. Deliberately excluded from capture/apply (see residentSettingsPage.js\'s isExcludedControl) rather than guessed at — a capture logs a warning when this section is present so nobody assumes full coverage.',
   },
   billing: {
     label: 'Billing Settings', scope: 'community',

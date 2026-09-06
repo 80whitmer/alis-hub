@@ -90,7 +90,7 @@ async function captureFormFields(page) {
     }
 
     // Confirmed live across multiple settings pages (Resident, Medication,
-    // CRM/Prospect) — two classes of control that LOOK like settings but
+    // CRM/Prospect) — classes of control that LOOK like settings but
     // aren't, worth excluding everywhere, not just Resident Settings:
     //   1. "Select/check all" utility toggles — id/name varies per section
     //      ("CheckAll", "checkAllProspectSources", "checkAllTaskOutcomeTypes",
@@ -99,10 +99,25 @@ async function captureFormFields(page) {
     //      Settings' community switcher, name="Facility.ID") — these RELOAD
     //      the page to a different context on change; they're navigation,
     //      not a value this page is configuring.
+    //   3. Anything inside an <app> element (confirmed live: Medication
+    //      Settings' "Med Pass Time Shifts" section is a completely
+    //      separate embedded micro-frontend — `<div id="MedTimePreferences">
+    //      <app></app></div>` — not the same Knockout/MVC form as the rest
+    //      of the page). Its content mounts asynchronously with no
+    //      consistent timing (confirmed: present on one page load, entirely
+    //      absent on the next with the same wait), and even when present,
+    //      its DOM shape doesn't follow this page's label/section
+    //      conventions — capturing it would silently produce wrong or
+    //      blank data depending on load-timing luck, not a real value worth
+    //      syncing. Excluded outright rather than guessed at further; if
+    //      this section's settings ever need to sync, it needs its own
+    //      investigation into that embedded app specifically, not a fix
+    //      here.
     function isExcludedControl(el) {
       const key = `${el.id || ''} ${el.name || ''}`;
       if (/checkall/i.test(key)) return true;
       if (el.getAttribute('data-autopostback') === 'true') return true;
+      if (el.closest('app')) return true;
       return false;
     }
 
@@ -159,6 +174,11 @@ async function captureFormFields(page) {
       selects,
       textInputs,
       radios: Object.entries(radios).map(([name, value]) => ({ name, value })),
+      // Surfaced so a caller can warn that this page has a section outside
+      // this capture's reach (see isExcludedControl's <app> exclusion
+      // above) — a nonzero count means real settings may exist here that
+      // this snapshot simply cannot see, not that the page has none.
+      embeddedAppSectionCount: document.querySelectorAll('app').length,
     };
   });
 }
@@ -314,6 +334,13 @@ async function captureResidentSettings(page, url) {
     `[Settings] Fields captured — checkboxes: ${fields.checkboxes.length}, ` +
     `selects: ${fields.selects.length}, textInputs: ${fields.textInputs.length}`
   );
+  if (fields.embeddedAppSectionCount > 0) {
+    console.log(
+      `[Settings] WARNING — this page has ${fields.embeddedAppSectionCount} embedded <app> section(s) ` +
+      `(e.g. Medication Settings' "Med Pass Time Shifts") that this capture cannot see — ` +
+      'real settings may exist there that this snapshot does not cover.'
+    );
+  }
 
   const complianceTemplates = await captureComplianceTemplates(page);
   console.log(`[Settings] Compliance templates captured: ${complianceTemplates.length}`);
@@ -353,13 +380,43 @@ function nameOccurrenceIndex(fields, field) {
   return index;
 }
 
+/**
+ * Confirmed live (Sep 2026): a compliance item's own checkbox name embeds a
+ * numeric id that's unique PER COMMUNITY, not shared across an account —
+ * "Move in Checklist" is `ComplianceItemIds[106046]` on one community,
+ * `ComplianceItemIds[106043]` on another. Matching a checkbox by its
+ * literal captured name across two different communities' pages therefore
+ * finds nothing (a silent no-op skip, not an error) — every compliance-item
+ * checkbox sync target has been missing this way since before this fix.
+ * The name/section pattern (`collections_NN_item_id`, seen on Evacuation
+ * Statuses/Move Out Reasons/etc.) is different — the SAME literal name is
+ * reused across every item in one of those lists, distinguished only by
+ * DOM position, which nameOccurrenceIndex above already handles correctly.
+ * This is specific to ComplianceItemIds because each item there is a
+ * genuine per-community record (a real compliance document), not a shared
+ * global enum value.
+ */
+function isComplianceItemField(name) {
+  return /^ComplianceItemIds\[\d+\]$/.test(name || '');
+}
+
+/** Locates a checkbox by its containing table row's visible text (a compliance item's real, stable identity — its Document Name) rather than by field name. */
+function locateComplianceCheckboxByLabel(page, label) {
+  return page.locator('tr').filter({ hasText: label }).first().locator('input[type="checkbox"]').first();
+}
+
 async function applyFormFields(page, snapshot, results) {
   // Checkboxes
   for (const field of snapshot.checkboxes) {
     const key = field.id || field.name;
-    const locator = field.id
-      ? page.locator(`#${field.id}`)
-      : page.locator(`input[type="checkbox"][name="${field.name}"]`).nth(nameOccurrenceIndex(snapshot.checkboxes, field));
+    let locator;
+    if (field.id) {
+      locator = page.locator(`#${field.id}`);
+    } else if (isComplianceItemField(field.name) && field.label) {
+      locator = locateComplianceCheckboxByLabel(page, field.label);
+    } else {
+      locator = page.locator(`input[type="checkbox"][name="${field.name}"]`).nth(nameOccurrenceIndex(snapshot.checkboxes, field));
+    }
 
     try {
       const exists = await locator.count() > 0;
