@@ -1,6 +1,7 @@
 const {
   getCommunities, getIncidents, getEvaluations, getLeaves, getStaff, getResidents,
   getOrderAdministration, getStaffComplianceDetails, getObservations, getIncidentFormData, getIncidentsV2,
+  getOccupancy,
 } = require('../services/alisApiClient');
 const {
   normalizeFallsThisWeek, normalizeElopementThisWeek, normalizeBehavioralThisWeek,
@@ -8,7 +9,7 @@ const {
   normalizeCurrentlyHospitalized, normalizeEvaluationsOverdue, normalizeMoveInAssessmentsPending,
   normalizeMedicationExceptions, normalizeStaffTrainingGaps, normalizeCarePointsAverage,
   scopeIncidentsThisWeek, formDataIndicatesHospitalTransfer, normalizeFallsWithHospitalTransfer,
-  normalizeSentinelIncidentsThisWeek,
+  normalizeSentinelIncidentsThisWeek, normalizeOccupancySnapshot,
   withTrend, withCarePointsTrend,
 } = require('../services/wellnessNormalizer');
 const { shouldTrackSentinelIncidents } = require('../services/companyFeatures');
@@ -267,15 +268,22 @@ async function runWellnessScorecardJob(jobId, payload) {
   // job failure. ────────────────────────────────────────────────────────
   const orderAdministration = [];
   const staffNameByIncidentId = {};
+  // hqOccupancies only takes a whole-month `monthAndYear` and returns one
+  // row per resident per calendar day across that month (confirmed live) —
+  // pulling just weekEnding's month and filtering to that single date below
+  // avoids fetching a month of data to use one day of it twice.
+  const occupancyMonthAndYear = `${weekEnding.slice(0, 7)}-01`;
+  const occupancyRows = [];
   for (const community of communities) {
     const { name, communityId, host } = community;
     const itemName = multiHost ? `${name} [${host}]` : name;
     setItemStatus(jobId, itemName, 'running');
     emit('item_start', { name: itemName });
 
-    const [orderResult, incidentsV2Result] = await Promise.allSettled([
+    const [orderResult, incidentsV2Result, occupancyResult] = await Promise.allSettled([
       getOrderAdministration(host, { communityId, startDate: weekStart, endDate: weekEnding }),
       getIncidentsV2(host, { communityId, startDate: weekStart, endDate: weekEnding }),
+      getOccupancy(host, { communityId, monthAndYear: occupancyMonthAndYear }),
     ]);
 
     let failed = false;
@@ -296,6 +304,14 @@ async function runWellnessScorecardJob(jobId, payload) {
       // enrichment, not a data-completeness signal worth surfacing the way
       // a failed orderAdministration pull is.
       console.error(`[wellness-scorecard:${jobId}] "incidentsV2" (staff attribution) pull failed for "${itemName}":`, incidentsV2Result.reason);
+    }
+    if (occupancyResult.status === 'fulfilled') {
+      occupancyRows.push(...asArray(occupancyResult.value).filter((r) => r.date === weekEnding).map((r) => ({ ...r, communityId })));
+    } else {
+      // Same rationale as incidentsV2 above — occupancy is a supplementary
+      // breakdown row, a failed pull for one community shouldn't fail the
+      // whole job the way orderAdministration does.
+      console.error(`[wellness-scorecard:${jobId}] "occupancy" pull failed for "${itemName}":`, occupancyResult.reason);
     }
 
     if (failed) {
@@ -377,6 +393,11 @@ async function runWellnessScorecardJob(jobId, payload) {
   }
   const staffingPortfolio = normalizeStaffActivity(staff, { recencyDays: 7, referenceDate: weekEnding, residentCensus: Object.values(censusByCommunity).reduce((a, b) => a + b, 0) });
 
+  // Occupancy as of weekEnding — same point-in-time treatment as staffing
+  // just above (no trend arrow in this first pass; see
+  // normalizeOccupancySnapshot's doc comment).
+  const occupancy = normalizeOccupancySnapshot(occupancyRows, communities.map((c) => c.communityId));
+
   // ── Trend vs. prior week ────────────────────────────────────────────────
   // Staffing isn't run through withTrend — normalizeStaffActivity's shape
   // (totalEnabledStaff/activeInWindow/pct) doesn't match the
@@ -393,6 +414,7 @@ async function runWellnessScorecardJob(jobId, payload) {
     rowsWithTrend.sentinelIncidents = withTrend(rows.sentinelIncidents, prior?.summary?.rows?.sentinelIncidents);
   }
   rowsWithTrend.staffing = { portfolio: staffingPortfolio, byCommunity: staffingByCommunity };
+  rowsWithTrend.occupancy = occupancy;
 
   // CarePoints (acuity) — sourced from the `evaluations` pull already made
   // above for evaluationsOverdue/moveInAssessments, no extra API call. Not

@@ -90,8 +90,44 @@ function buildClosingPage(companyName) {
     </section>`;
 }
 
+/**
+ * Occupancy as of the week-ending date, by product type and
+ * classification — not part of the original mirrored spreadsheet
+ * (unlike buildTable above), so its own small section rather than forced
+ * into that fixed row shape. Portfolio-level only, matching what
+ * wellnessNormalizer.js's normalizeOccupancySnapshot computes today.
+ */
+function buildOccupancySection(snapshot) {
+  const occupancy = snapshot.rows?.occupancy;
+  if (!occupancy?.hasOccupancyData) return '';
+
+  const pctStr = (p) => (p != null ? `${(p * 100).toFixed(1)}%` : '—');
+  const breakdownTable = (title, rows, keyField) => rows?.length ? `
+    <div style="flex:1">
+      <h3 style="font-size:11px;margin:0 0 6px;">${escapeHtml(title)}</h3>
+      <table>
+        <thead><tr><th>${keyField === 'productType' ? 'Product Type' : 'Classification'}</th><th class="num">Occupancy %</th><th class="num">Occupied / Total</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `<tr><td>${escapeHtml(String(r[keyField]))}</td><td class="num">${pctStr(r.pct)}</td><td class="num">${r.occupied} / ${r.total}</td></tr>`).join('\n')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  return `
+  <div class="scorecard">
+    <h2>Occupancy — as of ${escapeHtml(snapshot.weekEnding)}</h2>
+    <div style="padding:10px; border:1px solid #e5e5e5; border-top:none;">
+      <p style="font-size:13px; margin:0 0 10px;"><strong>${pctStr(occupancy.pct)}</strong> overall — ${occupancy.occupied} / ${occupancy.total} occupied</p>
+      <div style="display:flex; gap:24px;">
+        ${breakdownTable('By Product Type', occupancy.byProductType, 'productType')}
+        ${breakdownTable('By Classification', occupancy.byClassification, 'classification')}
+      </div>
+    </div>
+  </div>`;
+}
+
 function buildHtml(snapshot) {
-  const sections = [buildTable('Portfolio', snapshot, null)]
+  const sections = [buildOccupancySection(snapshot), buildTable('Portfolio', snapshot, null)]
     .concat(snapshot.communities.map((c) => buildTable(c.name, snapshot, String(c.communityId))))
     .join('\n');
 

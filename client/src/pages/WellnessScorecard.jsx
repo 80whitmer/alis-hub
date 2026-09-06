@@ -94,6 +94,61 @@ function WellnessTable({ title, snapshot, communityId, description, hideUntracke
   );
 }
 
+/**
+ * Occupancy as of the report's week-ending date, broken out by resident
+ * product type and classification — not part of the original 25-row
+ * mirrored spreadsheet (this page's WellnessTable above is a deliberate
+ * digitization of that exact sheet), so it renders as its own section
+ * rather than forced into the AL/MC/Total row shape every other row uses.
+ * Same breakdown KpiDashboard.jsx's OccupancyByProductTypeSection shows,
+ * here as a point-in-time snapshot instead of a period average (see
+ * wellnessNormalizer.js's normalizeOccupancySnapshot).
+ */
+function OccupancySection({ occupancy }) {
+  if (!occupancy?.hasOccupancyData) return null;
+
+  const renderTable = (title, rows, keyField) => (
+    <div>
+      <h3 className="font-semibold text-primary-900 text-sm mb-2">{title}</h3>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-neutral-500 text-xs uppercase">
+            <th className="py-1">{keyField === 'productType' ? 'Product Type' : 'Classification'}</th>
+            <th className="py-1 text-right">Occupancy %</th>
+            <th className="py-1 text-right">Occupied / Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r[keyField]} className="border-t border-neutral-100">
+              <td className="py-1.5">{r[keyField]}</td>
+              <td className="py-1.5 text-right text-neutral-500">{r.pct != null ? `${(r.pct * 100).toFixed(1)}%` : '—'}</td>
+              <td className="py-1.5 text-right text-neutral-500">{r.occupied} / {r.total}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div className="card mb-8">
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-primary-900">Occupancy</h2>
+        <p className="text-xs text-neutral-500 mt-1">As of the week-ending date — a snapshot, not a weekly count like the rows below</p>
+      </div>
+      <div className="mb-4">
+        <span className="text-2xl font-bold text-primary-900">{(occupancy.pct * 100).toFixed(1)}%</span>
+        <span className="text-neutral-500 text-sm ml-2">{occupancy.occupied} / {occupancy.total} occupied</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {occupancy.byProductType?.length > 0 && renderTable('By product type', occupancy.byProductType, 'productType')}
+        {occupancy.byClassification?.length > 0 && renderTable('By classification', occupancy.byClassification, 'classification')}
+      </div>
+    </div>
+  );
+}
+
 const HIDE_UNTRACKED_KEY = 'wellness-scorecard:hide-untracked';
 
 export default function WellnessScorecard() {
@@ -206,6 +261,8 @@ export default function WellnessScorecard() {
       <p className="text-xs text-neutral-400 mb-6 max-w-3xl">
         Medication exceptions reflect ALIS's own order-administration status flags (a dose marked "exception" or never recorded) — a client has reported this flag being set incorrectly for a passed dose, so treat this row as a starting point for review, not a final tally.
       </p>
+
+      <OccupancySection occupancy={snapshot.rows?.occupancy} />
 
       <WellnessTable title="Portfolio" snapshot={snapshot} description="Portfolio-wide totals across every community in this report" hideUntracked={hideUntracked} />
 

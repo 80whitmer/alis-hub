@@ -78,11 +78,46 @@ function addScorecardSheet(workbook, sheetName, snapshot, communityId) {
   }
 }
 
+/**
+ * Occupancy as of the report's week-ending date, by product type and
+ * classification — not part of the original mirrored sheet (unlike
+ * addScorecardSheet above), so it gets its own sheet with its own simple
+ * layout rather than forced into the fixed AL/MC/Total/Status/... columns
+ * every other row uses. Portfolio-level only (no per-community cut,
+ * matching what wellnessNormalizer.js's normalizeOccupancySnapshot
+ * actually computes today).
+ */
+function addOccupancySheet(workbook, snapshot) {
+  const occupancy = snapshot.rows?.occupancy;
+  if (!occupancy?.hasOccupancyData) return;
+
+  const sheet = workbook.addWorksheet('Occupancy');
+  sheet.addRow(['Occupancy as of', snapshot.weekEnding]);
+  sheet.addRow(['Overall', `${(occupancy.pct * 100).toFixed(1)}%`, `${occupancy.occupied} / ${occupancy.total}`]);
+  sheet.addRow([]);
+
+  const addBreakdown = (title, rows, keyField) => {
+    const headerRow = sheet.addRow([title]);
+    headerRow.font = { bold: true };
+    sheet.addRow([keyField === 'productType' ? 'Product Type' : 'Classification', 'Occupancy %', 'Occupied', 'Total']).font = { bold: true };
+    for (const r of rows) {
+      sheet.addRow([r[keyField], r.pct != null ? `${(r.pct * 100).toFixed(1)}%` : '—', r.occupied, r.total]);
+    }
+    sheet.addRow([]);
+  };
+
+  if (occupancy.byProductType?.length > 0) addBreakdown('By Product Type', occupancy.byProductType, 'productType');
+  if (occupancy.byClassification?.length > 0) addBreakdown('By Classification', occupancy.byClassification, 'classification');
+
+  sheet.columns.forEach((col) => { col.width = 18; });
+}
+
 export async function exportWellnessScorecard(snapshot) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'alis-hub';
   workbook.created = new Date();
 
+  addOccupancySheet(workbook, snapshot);
   addScorecardSheet(workbook, 'Portfolio', snapshot, null);
   for (const c of snapshot.communities) {
     // Sheet names can't exceed 31 chars or contain :\/?*[] — trim and strip.

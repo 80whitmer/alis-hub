@@ -383,6 +383,71 @@ function withCarePointsTrend(current, priorCarePoints) {
   return { ...current, portfolioTrend: scopeTrend(current.portfolio.total, priorCarePoints?.portfolio?.total), byCommunityTrend: byCommunity };
 }
 
+/**
+ * Occupancy as of the week-ending date — a point-in-time snapshot, not a
+ * "this week" count like the other rows above, so (same reasoning as
+ * staffing in wellnessExport.js) it isn't run through withTrend/
+ * withCarePointsTrend, at least in this first pass. `occupancyRows` should
+ * already be pre-filtered to the single relevant day — hqOccupancies
+ * returns one row per resident per calendar day across the whole
+ * requested month (see wellnessExport.js's per-community pull), and a
+ * week's worth of the same residents/rooms repeated 7x would just dilute
+ * the count, not add information, for a single-snapshot figure like this.
+ * Same fields/shape as kpiNormalizer.js's normalizeOccupancy
+ * (byProductType/byClassification) — kept as a separate implementation
+ * rather than a shared import, matching how this file and kpiNormalizer.js
+ * have always mirrored rather than shared logic.
+ */
+function normalizeOccupancySnapshot(occupancyRows, allCommunityIds = []) {
+  const relevant = occupancyRows.filter((r) => r.dataSet === 'Occupied' || r.dataSet === 'Vacant');
+  if (relevant.length === 0) {
+    return { hasOccupancyData: occupancyRows.length > 0, pct: null, occupied: null, total: null, byCommunity: {}, byProductType: [], byClassification: [] };
+  }
+
+  const byCommunity = {};
+  for (const cid of allCommunityIds) byCommunity[String(cid)] = { occupied: 0, total: 0 };
+
+  const byProductType = {};
+  const byClassification = {};
+
+  for (const r of relevant) {
+    const cid = String(r.communityId ?? 'unknown');
+    byCommunity[cid] = byCommunity[cid] || { occupied: 0, total: 0 };
+    byCommunity[cid].total++;
+
+    const productType = (r.residentProductType || 'Unspecified').toString().trim() || 'Unspecified';
+    byProductType[productType] = byProductType[productType] || { occupied: 0, total: 0 };
+    byProductType[productType].total++;
+
+    const classification = (r.residentClassification || 'Unspecified').toString().trim() || 'Unspecified';
+    byClassification[classification] = byClassification[classification] || { occupied: 0, total: 0 };
+    byClassification[classification].total++;
+
+    if (r.dataSet === 'Occupied') {
+      byCommunity[cid].occupied++;
+      byProductType[productType].occupied++;
+      byClassification[classification].occupied++;
+    }
+  }
+
+  const totalOccupied = Object.values(byCommunity).reduce((s, c) => s + c.occupied, 0);
+  const total = Object.values(byCommunity).reduce((s, c) => s + c.total, 0);
+
+  return {
+    hasOccupancyData: true,
+    pct: total ? totalOccupied / total : null,
+    occupied: totalOccupied,
+    total,
+    byCommunity,
+    byProductType: Object.entries(byProductType)
+      .map(([productType, c]) => ({ productType, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .sort((a, b) => b.total - a.total),
+    byClassification: Object.entries(byClassification)
+      .map(([classification, c]) => ({ classification, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .sort((a, b) => b.total - a.total),
+  };
+}
+
 // ── Trend (this week vs. prior week) ────────────────────────────────────
 
 function trendArrow(current, prior) {
@@ -437,6 +502,7 @@ module.exports = {
   normalizeStaffTrainingGaps,
   normalizeCarePointsAverage,
   withCarePointsTrend,
+  normalizeOccupancySnapshot,
   withTrend,
   trendArrow,
 };
