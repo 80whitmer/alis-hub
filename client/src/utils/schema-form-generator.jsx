@@ -1,7 +1,17 @@
 /**
  * schema-form-generator.js
  * Generate form fields from JSON Schema
- * Supports: string, number, array of objects
+ * Supports: string, number, boolean, array of objects
+ *
+ * `number` and `boolean` were silently unrenderable until now (the switch
+ * below had no case for either, falling through to `default: return null`)
+ * — confirmed live (Sep 2026) as the root cause of a real audit-history
+ * job failure: its `includeCompany` boolean field never appeared on the
+ * form at all, so there was no way to check it, and the job failed with
+ * "At least one target... is required" despite the user's intent. The
+ * pre-existing `lookbackDays` (company-usage-audit, type: "number") had
+ * the same silent gap — it just happened to have a schema `default` that
+ * masked it.
  */
 
 export function generateFormFields(schema) {
@@ -69,6 +79,39 @@ export function renderFormField(field, value, onChange) {
           </div>
         );
       }
+
+    case 'number':
+      return (
+        <div key={key} className="input-group mb-6">
+          <label className="input-label">
+            {title}
+            {!required && <span className="text-neutral-400"> (optional)</span>}
+          </label>
+          <input
+            type="number"
+            placeholder={placeholder}
+            value={value ?? property.default ?? ''}
+            onChange={(e) => onChange(key, e.target.value === '' ? undefined : Number(e.target.value))}
+          />
+          {description && <p className="input-help">{description}</p>}
+        </div>
+      );
+
+    case 'boolean':
+      return (
+        <div key={key} className="input-group mb-6">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={Boolean(value)}
+              onChange={(e) => onChange(key, e.target.checked)}
+              className="w-4 h-4 rounded cursor-pointer accent-primary-600"
+            />
+            <span className="input-label mb-0">{title}</span>
+          </label>
+          {description && <p className="input-help">{description}</p>}
+        </div>
+      );
 
     case 'array':
       // Array of objects — render as expandable table/form
