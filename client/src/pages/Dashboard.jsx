@@ -108,6 +108,10 @@ function JobDrawer({ jobId, onClose }) {
             <GLSyncDetail job={job} pct={pct} glDetails={glDetails} />
           ) : job?.type === 'kpi-export' ? (
             <KpiExportDetail job={job} pct={pct} />
+          ) : job?.type === 'wellness-scorecard' ? (
+            <WellnessScorecardDetail job={job} pct={pct} />
+          ) : job?.type === 'company-usage-audit' ? (
+            <UsageAuditDetail job={job} pct={pct} />
           ) : (
             <p className="text-neutral-500 text-sm">No detail view for this job type.</p>
           )}
@@ -308,10 +312,69 @@ function KpiExportDetail({ job, pct }) {
   );
 }
 
+// ─── Wellness scorecard detail view ──────────────────────────────────────────
+function WellnessScorecardDetail({ job, pct }) {
+  return (
+    <div>
+      <div className="mb-5 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-neutral-600">
+            <strong className="text-primary-900">{job.completed || 0}</strong> of{' '}
+            <strong className="text-primary-900">{job.total}</strong> communities pulled
+          </span>
+          <span className="font-semibold text-primary-900">{pct}%</span>
+        </div>
+        <div className="progress-bar">
+          <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {(job.failed || 0) > 0 && (
+          <p className="text-xs text-red-600 mt-2">{job.failed} failed</p>
+        )}
+      </div>
+
+      {job.status === 'done' ? (
+        <Link to={`/wellness/${job.id}`} className="btn btn-accent">🩺 Open Wellness Scorecard →</Link>
+      ) : (
+        <p className="text-sm text-neutral-400">Wellness scorecard will be available once the job completes.</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Company/Community ALIS usage audit detail view ──────────────────────────
+function UsageAuditDetail({ job, pct }) {
+  return (
+    <div>
+      <div className="mb-5 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-neutral-600">
+            <strong className="text-primary-900">{job.completed || 0}</strong> of{' '}
+            <strong className="text-primary-900">{job.total}</strong> communities pulled
+          </span>
+          <span className="font-semibold text-primary-900">{pct}%</span>
+        </div>
+        <div className="progress-bar">
+          <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {(job.failed || 0) > 0 && (
+          <p className="text-xs text-red-600 mt-2">{job.failed} failed</p>
+        )}
+      </div>
+
+      {job.status === 'done' ? (
+        <Link to={`/usage-audit/${job.id}`} className="btn btn-accent">🔍 Open Usage Audit →</Link>
+      ) : (
+        <p className="text-sm text-neutral-400">Usage audit will be available once the job completes.</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [jobs,        setJobs]        = useState([]);
   const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState('');
   const [selected,    setSelected]    = useState(new Set());
   const [drawerJobId, setDrawerJobId] = useState(null);
   const [cancelling,  setCancelling]  = useState(null);
@@ -348,7 +411,7 @@ export default function Dashboard() {
 
   function toggleSelectAll() {
     setSelected(prev =>
-      prev.size === jobs.length ? new Set() : new Set(jobs.map(j => j.id))
+      prev.size === filteredJobs.length ? new Set() : new Set(filteredJobs.map(j => j.id))
     );
   }
 
@@ -428,7 +491,12 @@ export default function Dashboard() {
     );
   }
 
-  const allSelected = selected.size === jobs.length && jobs.length > 0;
+  const query = search.trim().toLowerCase();
+  const filteredJobs = query
+    ? jobs.filter(j => j.label?.toLowerCase().includes(query) || j.type?.toLowerCase().includes(query))
+    : jobs;
+
+  const allSelected = selected.size === filteredJobs.length && filteredJobs.length > 0;
 
   return (
     <div>
@@ -436,9 +504,32 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-3xl font-bold text-primary-900">Automation Jobs</h1>
-          <span className="badge badge-neutral">{jobs.length}</span>
+          <span className="badge badge-neutral">
+            {query ? `${filteredJobs.length} of ${jobs.length}` : jobs.length}
+          </span>
         </div>
         <Link to="/new-job" className="btn btn-accent">+ New Job</Link>
+      </div>
+
+      {/* Company search */}
+      <div className="relative mb-4">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">🔍</span>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search jobs by company... (e.g. Viva, Imagine)"
+          className="pl-9 pr-8 w-full max-w-sm"
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 text-sm px-1"
+            aria-label="Clear search"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Bulk action toolbar — appears when jobs are selected */}
@@ -479,8 +570,13 @@ export default function Dashboard() {
       </div>
 
       {/* Job cards */}
+      {filteredJobs.length === 0 ? (
+        <p className="text-sm text-neutral-500 py-8 text-center">
+          No jobs match "{search}".
+        </p>
+      ) : (
       <div className="space-y-3">
-        {jobs.map(job => {
+        {filteredJobs.map(job => {
           const config    = STATUS_CONFIG[job.status] || STATUS_CONFIG.queued;
           const pct       = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
           const isRunning = job.status === 'running' || job.status === 'queued';
@@ -557,12 +653,28 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
+
+                  {/* Why did this fail? — the job's fatal error, persisted
+                      server-side (see setJobStatus's error param) so it's
+                      still here after the run that produced it is long
+                      gone, not just a live SSE event nobody was watching. */}
+                  {job.status === 'failed' && job.error && (
+                    <details className="mt-2" onClick={e => e.stopPropagation()}>
+                      <summary className="text-xs text-error cursor-pointer select-none hover:underline">
+                        Why did this fail?
+                      </summary>
+                      <pre className="mt-2 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900 whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+                        {job.error}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+      )}
 
       {/* ── Job Detail Drawer ── */}
       {drawerJobId && (

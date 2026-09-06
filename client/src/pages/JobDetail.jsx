@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { formatLocalTime, formatLocalDate, formatLocalTimeOnly, getUserTimezone } from '../utils/timezone';
 import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvExport';
 
@@ -20,6 +20,7 @@ const JOB_STATUS_CONFIG = {
 
 export default function JobDetail() {
   const { id }                    = useParams();
+  const navigate                  = useNavigate();
   const [job, setJob]             = useState(null);
   const [log, setLog]             = useState([]);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -40,6 +41,21 @@ export default function JobDetail() {
     fetch(`/api/jobs/${id}`)
       .then(r => r.json())
       .then(data => {
+        // kpi-export jobs skip straight to the QBR dashboard once done —
+        // no need to render the job detail page at all in that case.
+        if (data.type === 'kpi-export' && data.status === 'done') {
+          navigate(`/qbr/${id}`, { replace: true });
+          return;
+        }
+        if (data.type === 'wellness-scorecard' && data.status === 'done') {
+          navigate(`/wellness/${id}`, { replace: true });
+          return;
+        }
+        if (data.type === 'company-usage-audit' && data.status === 'done') {
+          navigate(`/usage-audit/${id}`, { replace: true });
+          return;
+        }
+
         setJob(data);
 
         // Load GL sync details if this is a GL sync job
@@ -135,6 +151,17 @@ export default function JobDetail() {
       setJob(JSON.parse(e.data));
     });
 
+    // kpi-export jobs start with total: 0 and an empty items list until the
+    // job auto-resolves "all communities for this account" and backfills
+    // job_items — refetch here so total/items reflect the real count
+    // instead of staying frozen at 0 for the rest of the job's SSE session.
+    es.addEventListener('job_start', () => {
+      fetch(`/api/jobs/${id}`)
+        .then(r => r.json())
+        .then(data => setJob(data))
+        .catch(err => console.error('Failed to refresh job after job_start:', err));
+    });
+
     // Helper to prevent duplicate log entries (check last 5 entries for same text within ~2 seconds)
     const addUniqueLogEntry = (entry) => {
       setLog(l => {
@@ -183,6 +210,24 @@ export default function JobDetail() {
     });
 
     es.addEventListener('job_done', () => {
+      // kpi-export jobs jump straight to the QBR dashboard — no need to
+      // log completion or fetch anything else for the job detail page.
+      if (jobType === 'kpi-export') {
+        es.close();
+        navigate(`/qbr/${id}`, { replace: true });
+        return;
+      }
+      if (jobType === 'wellness-scorecard') {
+        es.close();
+        navigate(`/wellness/${id}`, { replace: true });
+        return;
+      }
+      if (jobType === 'company-usage-audit') {
+        es.close();
+        navigate(`/usage-audit/${id}`, { replace: true });
+        return;
+      }
+
       const newEntry = { ts: new Date().toISOString(), text: '══ Job complete ══' };
       addUniqueLogEntry(newEntry);
       setJob(j => ({ ...j, status: 'done' }));
