@@ -39,6 +39,18 @@ async function initDb() {
       updated_at  TEXT DEFAULT (datetime('now'))
     );
   `);
+  // A job that fails fatally (setJobStatus(id, 'failed', error)) used to
+  // only ever announce why over the live SSE job_error event — once the
+  // browser tab closed, the reason was gone for good, and diagnosing a
+  // failed run after the fact meant re-running live API calls by hand to
+  // guess at it. Persisting it here is the same fix as dataWarnings on the
+  // kpi_snapshots summary, just for the fatal (job never produced a
+  // snapshot at all) case instead of the partial-data case.
+  try {
+    db.run(`ALTER TABLE jobs ADD COLUMN error TEXT;`);
+  } catch {
+    // Column already exists (every run after the first on a given DB file) — fine.
+  }
 
   db.run(`
     CREATE TABLE IF NOT EXISTS job_items (
@@ -76,6 +88,139 @@ async function initDb() {
       benchmark_quarter TEXT,
       summary_json  TEXT NOT NULL,
       created_at    TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Remembers each account's ALIS export-API subdomain so it doesn't have
+  // to be hand-typed on every kpi-export job. Looked up by hubspot_company_id
+  // when available (stable even if the display name changes), falling back
+  // to name_key (lowercased company_name) for jobs run without a HubSpot
+  // link. Rows are written automatically the first time a companyHost is
+  // proven to work (see kpiExport.js), plus optionally seeded in bulk.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS company_hosts (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      name_key           TEXT NOT NULL,
+      company_name       TEXT NOT NULL,
+      hubspot_company_id TEXT,
+      company_host       TEXT NOT NULL,
+      created_at         TEXT DEFAULT (datetime('now')),
+      updated_at         TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_company_hosts_name_key ON company_hosts(name_key);`);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_company_hosts_hubspot_id ON company_hosts(hubspot_company_id);`);
+
+  // One row per wellness-scorecard job — kept separate from kpi_snapshots
+  // (different cadence: weekly vs quarterly) and different shape
+  // (per-community-structured JSON vs account-aggregate). The
+  // company_host/week_ending index is what lets a new run look up the prior
+  // week's snapshot for trend arrows without the user re-typing last week's
+  // counts by hand, the way ISL's own spreadsheet requires today.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS wellness_snapshots (
+      job_id            TEXT PRIMARY KEY,
+      company_host      TEXT NOT NULL,
+      company_name      TEXT,
+      week_ending       TEXT NOT NULL,
+      benchmark_quarter TEXT,
+      summary_json      TEXT NOT NULL,
+      created_at        TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_wellness_snapshots_host_week ON wellness_snapshots(company_host, week_ending);`);
+
+  // One row per company-usage-audit job — a point-in-time snapshot of the
+  // feature x community RAG grid (contracted/enabled/used), same
+  // one-blob-per-job shape as wellness_snapshots. company_host holds only
+  // the first host of a possibly-multi-host run (see usageAudit.js); the
+  // full host list lives inside summary_json.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usage_audit_snapshots (
+      job_id            TEXT PRIMARY KEY,
+      company_host      TEXT NOT NULL,
+      company_name      TEXT,
+      summary_json      TEXT NOT NULL,
+      created_at        TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // One row per (job, scope, scope_key) — 'company'/'region'/'community'
+  // rollups of a kpi-export job's DSO figures (see normalizeDso in
+  // kpiNormalizer.js). Unlike kpi_snapshots' one-blob-per-job model, this
+  // is real relational history: querying by company_name+scope+scope_key
+  // ordered by period_start gives a genuine month/quarter/year DSO trend
+  // as more jobs run over time, which a JSON blob with no cross-job query
+  // can't support. Resident-level DSO is intentionally NOT persisted here
+  // (high cardinality, little long-term trend value) — it stays live-only
+  // inside the job's kpi_snapshots summary_json.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS dso_snapshots (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id         TEXT NOT NULL,
+      company_name   TEXT NOT NULL,
+      scope          TEXT NOT NULL,
+      scope_key      TEXT NOT NULL,
+      scope_label    TEXT,
+      period_start   TEXT NOT NULL,
+      period_end     TEXT NOT NULL,
+      billed_revenue REAL,
+      ar_balance     REAL,
+      dso_days       REAL,
+      created_at     TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_dso_snapshots_lookup ON dso_snapshots(company_name, scope, scope_key, period_start);`);
+
+  // PPD (revenue per occupied/census day) rollups — same one-row-per-
+  // (job, scope, scope_key) shape and trend-query purpose as dso_snapshots
+  // above, just for a different KPI (normalizePpd in kpiNormalizer.js).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ppd_snapshots (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id         TEXT NOT NULL,
+      company_name   TEXT NOT NULL,
+      scope          TEXT NOT NULL,
+      scope_key      TEXT NOT NULL,
+      scope_label    TEXT,
+      period_start   TEXT NOT NULL,
+      period_end     TEXT NOT NULL,
+      billed_revenue REAL,
+      occupied_days  INTEGER,
+      census_days    INTEGER,
+      ppd_unit_days  REAL,
+      ppd_census     REAL,
+      created_at     TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_ppd_snapshots_lookup ON ppd_snapshots(company_name, scope, scope_key, period_start);`);
+
+  // Cache of RET (Resident Evaluation Tool) config XML, keyed by
+  // (host, config_id) — never overwritten once captured (see
+  // upsertEvaluationConfigVersion's INSERT OR IGNORE). Confirmed live (Sep
+  // 2026): the ALIS export API's evaluationConfiguration endpoint only ever
+  // returns each community's CURRENTLY-active config — once ALIS's admins
+  // revise an instrument, the old config's evaluationConfigurationId (and
+  // the CarePoints/answer catalog needed to score any evaluation answered
+  // against it) is gone from that endpoint for good. 75% of one real
+  // client's on-file evaluations already reference a config version older
+  // than whatever's currently live. This table is the only way CarePoints
+  // scoring (see evaluationScoring.js) stays possible for evaluations
+  // answered under a since-superseded config — every job that pulls
+  // evaluationConfiguration should upsert its rows here so future runs can
+  // still resolve them after ALIS moves on. Evaluations answered against a
+  // config version from BEFORE this cache existed can never be scored
+  // retroactively; that's a real gap, not a bug, unless ALIS can provide a
+  // historical export on request.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS evaluation_config_versions (
+      host          TEXT NOT NULL,
+      config_id     INTEGER NOT NULL,
+      version       TEXT,
+      name          TEXT,
+      xml           TEXT NOT NULL,
+      captured_at   TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (host, config_id)
     );
   `);
 
@@ -154,14 +299,14 @@ function getJob(id) {
 
 function listJobs() {
   return queryAll(
-    `SELECT id, type, label, status, total, completed, failed, created_at, updated_at
+    `SELECT id, type, label, status, total, completed, failed, error, created_at, updated_at
      FROM jobs ORDER BY created_at DESC`
   );
 }
 
-function setJobStatus(id, status) {
+function setJobStatus(id, status, error = null) {
   const now = new Date().toISOString();
-  run(`UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?`, [status, now, id]);
+  run(`UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?`, [status, error, now, id]);
 }
 
 function updateJobCounts(jobId) {
@@ -251,8 +396,229 @@ function getKpiSnapshot(jobId) {
   return row;
 }
 
+/**
+ * Overwrites an existing kpi_snapshot's summary wholesale. Used by callers
+ * that need to merge in new data (e.g. a qbr-export health import) AND
+ * recompute derived fields (e.g. flags) in one write — see
+ * server/api/qbr.js's /health-import route for the orchestration.
+ */
+function updateKpiSnapshotSummary(jobId, summary) {
+  run(`UPDATE kpi_snapshots SET summary_json = ? WHERE job_id = ?`, [JSON.stringify(summary), jobId]);
+}
+
+function addWellnessSnapshot(jobId, { companyHost, companyName, weekEnding, benchmarkQuarter, summary }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT OR REPLACE INTO wellness_snapshots (job_id, company_host, company_name, week_ending, benchmark_quarter, summary_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [jobId, companyHost, companyName, weekEnding, benchmarkQuarter, JSON.stringify(summary), now]
+  );
+}
+
+function getWellnessSnapshot(jobId) {
+  const row = queryOne('SELECT * FROM wellness_snapshots WHERE job_id = ?', [jobId]);
+  if (!row) return null;
+  row.summary = JSON.parse(row.summary_json);
+  delete row.summary_json;
+  return row;
+}
+
+/** Most recent wellness snapshot for this host strictly before weekEnding — the source for "Prior Week" counts and trend arrows. */
+function getPriorWellnessSnapshot(companyHost, weekEnding) {
+  const row = queryOne(
+    `SELECT * FROM wellness_snapshots WHERE company_host = ? AND week_ending < ? ORDER BY week_ending DESC LIMIT 1`,
+    [companyHost, weekEnding]
+  );
+  if (!row) return null;
+  row.summary = JSON.parse(row.summary_json);
+  delete row.summary_json;
+  return row;
+}
+
+/**
+ * Bulk-writes a job's DSO rollup rows (see kpiExport.js — one row each for
+ * 'company', every 'region', and every 'community' scope). Deletes any
+ * existing rows for this job_id first rather than INSERT OR REPLACE (no
+ * natural single-column primary key across scope/scope_key/job_id) — safe
+ * because a job_id is never reused for a different run.
+ */
+function addDsoSnapshots(jobId, rows) {
+  run(`DELETE FROM dso_snapshots WHERE job_id = ?`, [jobId]);
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    run(
+      `INSERT INTO dso_snapshots (job_id, company_name, scope, scope_key, scope_label, period_start, period_end, billed_revenue, ar_balance, dso_days, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [jobId, r.companyName, r.scope, r.scopeKey, r.scopeLabel ?? null, r.periodStart, r.periodEnd, r.billedRevenue ?? null, r.arBalance ?? null, r.dsoDays ?? null, now]
+    );
+  }
+}
+
+/** DSO history for one scope (e.g. scope='community', scopeKey='host::123'), oldest first — the data source for a MoM/QoQ/YoY trend chart. */
+function getDsoHistory({ companyName, scope, scopeKey, limit = 12 }) {
+  return queryAll(
+    `SELECT * FROM dso_snapshots WHERE company_name = ? AND scope = ? AND scope_key = ? ORDER BY period_start ASC LIMIT ?`,
+    [companyName, scope, scopeKey, limit]
+  );
+}
+
+/** Bulk-writes a job's PPD rollup rows — see addDsoSnapshots above for the delete-then-insert rationale (no natural single-column PK across scope/scope_key/job_id, and job_id is never reused). */
+function addPpdSnapshots(jobId, rows) {
+  run(`DELETE FROM ppd_snapshots WHERE job_id = ?`, [jobId]);
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    run(
+      `INSERT INTO ppd_snapshots (job_id, company_name, scope, scope_key, scope_label, period_start, period_end, billed_revenue, occupied_days, census_days, ppd_unit_days, ppd_census, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [jobId, r.companyName, r.scope, r.scopeKey, r.scopeLabel ?? null, r.periodStart, r.periodEnd, r.billedRevenue ?? null, r.occupiedDays ?? null, r.censusDays ?? null, r.ppdByUnitDays ?? null, r.ppdByCensus ?? null, now]
+    );
+  }
+}
+
+/** PPD history for one scope, oldest first — same shape/use as getDsoHistory. */
+function getPpdHistory({ companyName, scope, scopeKey, limit = 12 }) {
+  return queryAll(
+    `SELECT * FROM ppd_snapshots WHERE company_name = ? AND scope = ? AND scope_key = ? ORDER BY period_start ASC LIMIT ?`,
+    [companyName, scope, scopeKey, limit]
+  );
+}
+
+function normalizeNameKey(name) {
+  return (name || '').trim().toLowerCase();
+}
+
+/** Splits a (possibly comma-separated) companyHost string into a clean list — same shape as kpiExport.js's parseHosts, duplicated here to avoid a cross-module dependency for one string split. */
+function parseHostList(companyHost) {
+  return String(companyHost || '').split(',').map((h) => h.trim()).filter(Boolean);
+}
+
+/**
+ * Remembers (or updates) which ALIS subdomain a company uses. Matches by
+ * hubspot_company_id first (stable across a company being renamed in
+ * HubSpot), falling back to name_key for accounts run without a HubSpot
+ * link. Call this only once companyHost has been proven to work (see
+ * kpiExport.js) — upserting on every attempt would let a typo overwrite a
+ * previously-correct mapping.
+ */
+function upsertCompanyHost({ companyName, hubspotCompanyId, companyHost }) {
+  if (!companyName || !companyHost) return;
+  const nameKey = normalizeNameKey(companyName);
+  const now = new Date().toISOString();
+
+  let existing = null;
+  if (hubspotCompanyId) {
+    existing = queryOne('SELECT id FROM company_hosts WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  }
+  if (!existing) {
+    existing = queryOne('SELECT id FROM company_hosts WHERE name_key = ?', [nameKey]);
+  }
+
+  // A row matched by hubspot_company_id can belong to a different name_key
+  // than the one this call is about to write (e.g. an account onboarded
+  // once as "Hearth and Truss" and again, unlinked, as "Hearth & Truss" —
+  // real case that crashed a job here) — the UPDATE below would then
+  // collide with that other row's unique name_key index. Merge the
+  // duplicate's hosts into this row and remove it instead of letting that
+  // collision throw and take the whole job down over a data-hygiene issue.
+  if (existing) {
+    const duplicate = queryOne('SELECT * FROM company_hosts WHERE name_key = ? AND id != ?', [nameKey, existing.id]);
+    if (duplicate) {
+      const merged = Array.from(new Set([...parseHostList(companyHost), ...parseHostList(duplicate.company_host)]));
+      companyHost = merged.join(',');
+      run('DELETE FROM company_hosts WHERE id = ?', [duplicate.id]);
+    }
+  }
+
+  if (existing) {
+    run(
+      `UPDATE company_hosts SET name_key = ?, company_name = ?, hubspot_company_id = ?, company_host = ?, updated_at = ? WHERE id = ?`,
+      [nameKey, companyName, hubspotCompanyId || null, companyHost, now, existing.id]
+    );
+  } else {
+    run(
+      `INSERT INTO company_hosts (name_key, company_name, hubspot_company_id, company_host, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [nameKey, companyName, hubspotCompanyId || null, companyHost, now, now]
+    );
+  }
+}
+
+/** Looks up a remembered companyHost by hubspot_company_id first, then by company name. */
+function getCompanyHost({ companyName, hubspotCompanyId } = {}) {
+  if (hubspotCompanyId) {
+    const row = queryOne('SELECT * FROM company_hosts WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+    if (row) return row;
+  }
+  if (companyName) {
+    return queryOne('SELECT * FROM company_hosts WHERE name_key = ?', [normalizeNameKey(companyName)]);
+  }
+  return null;
+}
+
+/** Bulk-seed the mapping (e.g. from an exported client list). Returns the number of rows written. */
+function bulkImportCompanyHosts(rows) {
+  let imported = 0;
+  for (const row of rows) {
+    const { companyName, hubspotCompanyId, companyHost } = row;
+    if (!companyName || !companyHost) continue;
+    upsertCompanyHost({ companyName, hubspotCompanyId, companyHost });
+    imported++;
+  }
+  return imported;
+}
+
+function listCompanyHosts() {
+  return queryAll('SELECT * FROM company_hosts ORDER BY company_name');
+}
+
+function addUsageAuditSnapshot(jobId, { companyHost, companyName, summary }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT OR REPLACE INTO usage_audit_snapshots (job_id, company_host, company_name, summary_json, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [jobId, companyHost, companyName, JSON.stringify(summary), now]
+  );
+}
+
+function getUsageAuditSnapshot(jobId) {
+  const row = queryOne('SELECT * FROM usage_audit_snapshots WHERE job_id = ?', [jobId]);
+  if (!row) return null;
+  row.summary = JSON.parse(row.summary_json);
+  delete row.summary_json;
+  return row;
+}
+
+/**
+ * Upserts one evaluation config's XML into the historical cache —
+ * INSERT OR IGNORE so an already-captured (host, config_id) is never
+ * overwritten (see the table's doc comment above for why: we want the
+ * version that was live *when we first saw it*, not whatever's live now).
+ */
+function upsertEvaluationConfigVersion(host, configId, { version, name, xml }) {
+  run(
+    `INSERT OR IGNORE INTO evaluation_config_versions (host, config_id, version, name, xml, captured_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [host, configId, version ?? null, name ?? null, xml, new Date().toISOString()]
+  );
+}
+
+/** All cached config versions for a host — { evaluationConfigurationId, evaluationConfigurationName, evaluationConfigurationVersion, evaluationConfigurationXml } shaped to match a live getEvaluationConfigurations() row, so buildConfigCatalog() can consume either (or both, concatenated) without caring which. */
+function getEvaluationConfigVersions(host) {
+  return queryAll('SELECT * FROM evaluation_config_versions WHERE host = ?', [host]).map((row) => ({
+    evaluationConfigurationId: row.config_id,
+    evaluationConfigurationName: row.name,
+    evaluationConfigurationVersion: row.version,
+    evaluationConfigurationXml: row.xml,
+  }));
+}
+
 module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
   deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
-  addKpiSnapshot, getKpiSnapshot, syncJobItems
+  addKpiSnapshot, getKpiSnapshot, updateKpiSnapshotSummary, syncJobItems,
+  upsertCompanyHost, getCompanyHost, bulkImportCompanyHosts, listCompanyHosts,
+  addWellnessSnapshot, getWellnessSnapshot, getPriorWellnessSnapshot,
+  addDsoSnapshots, getDsoHistory,
+  addPpdSnapshots, getPpdHistory,
+  addUsageAuditSnapshot, getUsageAuditSnapshot,
+  upsertEvaluationConfigVersion, getEvaluationConfigVersions,
 };
