@@ -14,6 +14,49 @@
  * masked it.
  */
 
+/**
+ * Parses a bulk-paste block (comma AND/OR newline separated) into an array
+ * of partial item objects for an array-of-objects field — e.g. "952, 965,
+ * 1049" or one "Name:ID" / "ID:Name" pair per line. Guesses which sub-field
+ * is the "ID" one (name matching /id$/i — communityId, residentId, etc.)
+ * and which is the display-name one (matching /name$/i, else just the
+ * first declared property) rather than hardcoding either, so this works
+ * for any array field's sub-shape without per-template special-casing.
+ * A bare numeric token with no delimiter fills the ID field and defaults
+ * the name field to the same value, so a purely-IDs paste still produces
+ * usable (if unlabeled) rows instead of failing schema's `required: ["name"]`.
+ */
+function parseBulkEntries(text, itemProperties) {
+  const propKeys = Object.keys(itemProperties || {});
+  const idKey = propKeys.find((k) => /id$/i.test(k));
+  const nameKey = propKeys.find((k) => /name$/i.test(k)) || propKeys[0];
+
+  return text
+    .split(/[\n,]/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((token) => {
+      const parts = token.split(/[:|]/).map((p) => p.trim()).filter(Boolean);
+      const item = {};
+      if (parts.length >= 2) {
+        const numericPart = parts.find((p) => /^\d+$/.test(p));
+        const otherPart = parts.find((p) => p !== numericPart);
+        if (idKey && numericPart) item[idKey] = numericPart;
+        if (nameKey && otherPart) item[nameKey] = otherPart;
+      } else if (parts.length === 1) {
+        const [only] = parts;
+        if (idKey && /^\d+$/.test(only)) {
+          item[idKey] = only;
+          if (nameKey) item[nameKey] = only;
+        } else if (nameKey) {
+          item[nameKey] = only;
+        }
+      }
+      return item;
+    })
+    .filter((item) => Object.keys(item).length > 0);
+}
+
 export function generateFormFields(schema) {
   if (!schema || schema.type !== 'object' || !schema.properties) {
     return [];
@@ -129,6 +172,31 @@ export function renderFormField(field, value, onChange) {
           </div>
 
           {description && <p className="input-help mb-3">{description}</p>}
+
+          {property.items?.properties && (
+            <div className="mb-4 p-3 bg-neutral-50 rounded-lg border border-neutral-200">
+              <label className="input-label text-xs">Bulk add (optional)</label>
+              <textarea
+                id={`bulk-add-${key}`}
+                rows={2}
+                className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 mb-2"
+                placeholder="Paste IDs, comma or newline separated (e.g. 952, 965, 1049) — or Name:ID / ID:Name pairs, one per line"
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => {
+                  const el = document.getElementById(`bulk-add-${key}`);
+                  const entries = parseBulkEntries(el.value, property.items.properties);
+                  if (entries.length === 0) return;
+                  onChange(key, [...(value || []), ...entries]);
+                  el.value = '';
+                }}
+              >
+                + Add all from list
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4">
             {(value || []).map((item, idx) => (
