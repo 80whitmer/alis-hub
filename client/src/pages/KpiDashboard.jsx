@@ -703,6 +703,57 @@ function LosDrawer({ lengthOfStay, companyName, onClose }) {
   );
 }
 
+/**
+ * Occupancy broken out by resident product type (AL/MC/IL/etc.) and by
+ * resident classification — same treatment as LosByProductTypeSection
+ * below, since ALIS's own occupancy export already carries both fields
+ * per resident (residentProductType, residentClassification), it just
+ * wasn't being read before. Classification is frequently blank at
+ * accounts that don't use that field at all (confirmed live) — an
+ * "Unspecified" row dominating the classification table is expected
+ * there, not a bug.
+ */
+function OccupancyByProductTypeSection({ occupancy }) {
+  if (!occupancy?.byProductType?.length && !occupancy?.byClassification?.length) {
+    return (
+      <p className="text-xs text-neutral-400 mt-3 italic">
+        Product-type/classification breakdown isn't available for this job — re-run the kpi-export job to pick it up.
+      </p>
+    );
+  }
+
+  const renderTable = (title, rows, keyField) => (
+    <div>
+      <h4 className="font-semibold text-primary-900 text-sm mb-2">{title}</h4>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-neutral-500 text-xs uppercase">
+            <th className="py-1">{keyField === 'productType' ? 'Product Type' : 'Classification'}</th>
+            <th className="py-1 text-right">Occupancy %</th>
+            <th className="py-1 text-right">Occupied / Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r[keyField]} className="border-t border-neutral-100">
+              <td className="py-1.5">{r[keyField]}</td>
+              <td className="py-1.5 text-right text-neutral-500">{pctStr(r.pct)}</td>
+              <td className="py-1.5 text-right text-neutral-500">{r.occupied} / {r.total}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
+      {occupancy.byProductType?.length > 0 && renderTable('Occupancy by product type', occupancy.byProductType, 'productType')}
+      {occupancy.byClassification?.length > 0 && renderTable('Occupancy by classification', occupancy.byClassification, 'classification')}
+    </div>
+  );
+}
+
 /** Rolled-up + by-product-type LOS breakdown, per client feedback wanting more than a single blended LOS number. Community detail (and community x product-type detail, Excel-only) lives behind LosDrawer. */
 function LosByProductTypeSection({ lengthOfStay, companyName }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1576,6 +1627,7 @@ export default function KpiDashboard() {
             <p className="text-xs text-neutral-400 mt-4">
               Occupancy % mirrors ALIS's own floor-plan/occupancy report exactly — it isn't independently reconciled, so a data-entry issue there (a move-in date discrepancy, a room marked occupied that shouldn't be) will show up here too.
             </p>
+            <OccupancyByProductTypeSection occupancy={normalized.occupancy} />
           </>
         )}
       </SectionCard>

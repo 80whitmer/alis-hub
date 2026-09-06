@@ -95,19 +95,37 @@ function filterByDateRange(rows, dateKeys, periodStart, periodEnd) {
  */
 function normalizeOccupancy(rawRows = [], { billedResidentIds } = {}) {
   const relevant = rawRows.filter((r) => r.dataSet === 'Occupied' || r.dataSet === 'Vacant');
-  if (relevant.length === 0) return { hasOccupancyData: rawRows.length > 0, pct: null, occupiedRoomDays: null, totalRoomDays: null, byCommunity: [], billedOccupiedRoomDays: null, unbilledResidentCount: null };
+  if (relevant.length === 0) return { hasOccupancyData: rawRows.length > 0, pct: null, occupiedRoomDays: null, totalRoomDays: null, byCommunity: [], byProductType: [], byClassification: [], billedOccupiedRoomDays: null, unbilledResidentCount: null };
 
   const hasBillingSignal = billedResidentIds instanceof Set && billedResidentIds.size > 0;
   const unbilledResidents = new Set();
 
+  // residentProductType/residentClassification are already present on every
+  // hqOccupancies row (confirmed live, ALIS_EXPORT_API_REFERENCE.md) — this
+  // just wasn't reading them yet. Same {occupied,total} bucket shape as
+  // byCommunity below, mirroring normalizeLengthOfStayAndMoveOuts'
+  // byProductType pattern (above) rather than inventing a new one.
   const byCommunity = {};
+  const byProductType = {};
+  const byClassification = {};
   let billedOccupied = 0;
   for (const r of relevant) {
     const cid = r.communityId ?? 'unknown';
     byCommunity[cid] = byCommunity[cid] || { occupied: 0, total: 0 };
     byCommunity[cid].total++;
+
+    const productType = (firstDefined(r, ['residentProductType']) || 'Unspecified').toString().trim() || 'Unspecified';
+    byProductType[productType] = byProductType[productType] || { occupied: 0, total: 0 };
+    byProductType[productType].total++;
+
+    const classification = (firstDefined(r, ['residentClassification']) || 'Unspecified').toString().trim() || 'Unspecified';
+    byClassification[classification] = byClassification[classification] || { occupied: 0, total: 0 };
+    byClassification[classification].total++;
+
     if (r.dataSet === 'Occupied') {
       byCommunity[cid].occupied++;
+      byProductType[productType].occupied++;
+      byClassification[classification].occupied++;
       const isBilled = !hasBillingSignal || billedResidentIds.has(String(r.residentId));
       if (isBilled) {
         billedOccupied++;
@@ -131,6 +149,12 @@ function normalizeOccupancy(rawRows = [], { billedResidentIds } = {}) {
       communityId,
       pct: c.total ? c.occupied / c.total : null,
     })),
+    byProductType: Object.entries(byProductType)
+      .map(([productType, c]) => ({ productType, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .sort((a, b) => b.total - a.total),
+    byClassification: Object.entries(byClassification)
+      .map(([classification, c]) => ({ classification, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .sort((a, b) => b.total - a.total),
   };
 }
 

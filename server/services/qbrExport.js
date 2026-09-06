@@ -378,6 +378,31 @@ function addResidentMovementSlide(pptx, { admissionsDischarges, demographics, le
   }
 }
 
+/**
+ * Only called when there's a real breakdown to show (more than one
+ * product type or classification value — see buildQbrDeck's gating).
+ * Its own slide rather than appended to Key Stats, which is already full
+ * (three rows of stat cards) — same two-doughnut-side-by-side layout as
+ * addFinancialSlide's payer/product-type revenue doughnuts, but by
+ * OCCUPIED ROOM COUNT here (a meaningful "share of census by type" figure)
+ * rather than dollars. Classification is frequently blank at accounts
+ * that don't use that ALIS field at all — an all-"Unspecified" doughnut
+ * there is expected, not a bug.
+ */
+function addOccupancySlide(pptx, occupancy) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Occupancy Detail');
+
+  const toMap = (rows, key) => Object.fromEntries(rows.map((r) => [r[key], r.occupied]));
+
+  if (occupancy.byProductType?.length > 0) {
+    addBreakdownDoughnut(pptx, slide, 0.5, 1.3, 4.3, 3.4, 'Occupied by Product Type', toMap(occupancy.byProductType, 'productType'));
+  }
+  if (occupancy.byClassification?.length > 0) {
+    addBreakdownDoughnut(pptx, slide, 5.2, 1.3, 4.3, 3.4, 'Occupied by Classification', toMap(occupancy.byClassification, 'classification'));
+  }
+}
+
 /** Only called when hasEvaluationData is true — see buildQbrDeck's gating. `includeBilling` suppresses the revenue-leakage dollar callout (a billing-derived figure) without touching the compliance stats, which aren't billing. */
 function addLevelsOfCareSlide(pptx, careLevelEvaluations, includeBilling) {
   const slide = pptx.addSlide();
@@ -1041,6 +1066,8 @@ async function buildQbrDeck(snapshot, options = {}) {
   // HubSpot-sourced ones among these are additionally gated on
   // includeHubspot.)
   const hasResidentMovement = normalized.admissionsDischarges && (normalized.admissionsDischarges.totalAdmissions > 0 || normalized.admissionsDischarges.totalDischarges > 0);
+  const hasOccupancyBreakdown = Boolean(normalized.occupancy?.hasOccupancyData)
+    && ((normalized.occupancy.byProductType?.length > 1) || (normalized.occupancy.byClassification?.length > 1));
   const hasLevelsOfCareData = normalized.careLevelEvaluations?.hasEvaluationData && normalized.careLevelEvaluations.totalResidents > 0;
   const hasSentinelIncidents = Boolean(normalized.sentinelIncidents?.hasData && normalized.sentinelIncidents.total > 0);
   const hasFinancialData = includeBilling && Boolean(normalized.billedRevenue?.hasBillingData || normalized.recurringRevenue?.hasBillingData || normalized.outstandingInvoiceSummary?.hasBillingData);
@@ -1093,6 +1120,7 @@ async function buildQbrDeck(snapshot, options = {}) {
     { label: 'Key Stats', populated: true },
   ];
   for (const [label, has] of [
+    ['Occupancy Detail', hasOccupancyBreakdown],
     ['Resident Movement', hasResidentMovement],
     ['Levels of Care', hasLevelsOfCareData],
     ['Sentinel Incidents', hasSentinelIncidents],
@@ -1126,6 +1154,7 @@ async function buildQbrDeck(snapshot, options = {}) {
   addAgendaSlide(pptx, agendaItems);
   addClientOverviewSlide(pptx, { companyName, communities, periodStart, periodEnd, benchmarkQuarter });
   addKeyStatsSlide(pptx, { normalized, diffs });
+  if (hasOccupancyBreakdown) addOccupancySlide(pptx, normalized.occupancy);
   if (hasResidentMovement) addResidentMovementSlide(pptx, { admissionsDischarges: normalized.admissionsDischarges, demographics: normalized.demographics, lengthOfStay: normalized.lengthOfStay });
   if (hasLevelsOfCareData) addLevelsOfCareSlide(pptx, normalized.careLevelEvaluations, includeBilling);
   if (hasSentinelIncidents) addSentinelIncidentsSlide(pptx, normalized.sentinelIncidents);
