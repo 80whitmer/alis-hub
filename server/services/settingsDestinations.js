@@ -33,7 +33,7 @@ const DESTINATIONS = {
     label: 'Medication Settings', scope: 'community',
     urlFor: (host, communityId) => `https://${host}.alisonline.com/Settings/Medication/${communityId}`,
     readiness: 'ready',
-    notes: 'Largest page found (68 fields at one account: 58 selects) — all label/section correctly now. One real, permanent gap: "Med Pass Time Shifts" (TimeFrames[N].MealTime) is a completely separate embedded micro-frontend (<div id="MedTimePreferences"><app></app></div>), not the same Knockout/MVC form as the rest of the page — mounts asynchronously with inconsistent timing and doesn\'t follow this page\'s DOM conventions. Deliberately excluded from capture/apply (see residentSettingsPage.js\'s isExcludedControl) rather than guessed at — a capture logs a warning when this section is present so nobody assumes full coverage.',
+    notes: 'Largest page found (74 fields: 57 selects, 11 checkboxes, 6 text inputs) — all label/section correctly extracted now, including "Variance Threshold" (48 fields, a div-grid row layout with no <tr>/<td> at all) and "Med Pass Time Shifts"/"Medication Carts" (Vue-rendered rows whose row name is itself a live editable "...Name" input value, not static text anywhere) — see residentSettingsPage.js\'s getLabel for the three DOM patterns this required. No known gaps remain on this page; an earlier note here claiming "Med Pass Time Shifts" was an unreachable embedded micro-frontend was wrong (confirmed live: it\'s ordinary page DOM, just Vue-rendered) and has been retired.',
   },
   billing: {
     label: 'Billing Settings', scope: 'community',

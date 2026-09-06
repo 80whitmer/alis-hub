@@ -18,6 +18,20 @@ async function navigateToSettings(page, url) {
 
 async function captureFormFields(page) {
   return page.evaluate(() => {
+    // A cell/column's real static label text, ignoring any form controls
+    // nested inside it — confirmed live as a necessary distinction, not a
+    // hypothetical: Medication Settings' "Med Pass Time Shifts" row has a
+    // <td> containing only a <select> of times, and a bare `.textContent`
+    // read on it returns every <option>'s text concatenated ("12:00
+    // AM12:30 AM...") since a select's rendered/selected text isn't what
+    // textContent reflects — that garbage was then mistaken for a real
+    // label on the row's other fields.
+    function staticText(el) {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('input, select, textarea, button, option').forEach((n) => n.remove());
+      return clone.textContent.trim();
+    }
+
     function getLabel(el) {
       if (el.id) {
         const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
@@ -36,6 +50,18 @@ async function captureFormFields(page) {
         // branch matches), but that label only contains the checkbox +
         // icon, no text at all — the item's real name is a sibling <td>'s.
       }
+      // A field named "...[N].Name" is, by construction, itself the row's
+      // display name — its own current value IS the label, full stop.
+      // Must be checked before the table-row scan below: that scan looks
+      // at LATER sibling cells for visible text, but on rows like
+      // Medication Settings' "Med Pass Time Shifts" every cell is itself
+      // a form control (a text input here, selects elsewhere) — a select
+      // widget (e.g. select2) can leave its own rendered current-value
+      // span as real static text in a later cell, which the scan would
+      // otherwise mistake for this field's label (confirmed live: without
+      // this early check, TimeFrames[0].Name's "label" came back as
+      // TimeFrames[0].StartTime's rendered time instead of "Morning").
+      if (/\[\d+\]\.Name$/.test(el.name || '') && el.value) return el.value;
       // Table-row pattern (confirmed live on the same page): checkbox's own
       // <td> has no text — the row's name lives in the first LATER <td>
       // that actually has text (there's usually a drag-handle <td> with an
@@ -46,7 +72,7 @@ async function captureFormFields(page) {
         const ownCell = el.closest('td');
         const ownIndex = cells.indexOf(ownCell);
         for (let i = ownIndex + 1; i < cells.length; i++) {
-          const text = cells[i].textContent.trim();
+          const text = staticText(cells[i]);
           if (text) return text;
         }
       }
@@ -54,6 +80,35 @@ async function captureFormFields(page) {
       if (container) {
         const lbl = container.querySelector('label, .label, .field-label');
         if (lbl && !lbl.contains(el)) return lbl.textContent.trim();
+      }
+      // Grid-row pattern (confirmed live, Settings/Medication/{id}'s
+      // "Variance Threshold" section — 48 of the 52 blank fields there
+      // turned out to be this, not the <app> embed as first assumed): a
+      // plain-text <label> describing the row ("1 x a day") lives in a
+      // sibling .mt-grid-col div at the same .mt-grid level, with no
+      // `for` attribute tying it to the field at all — a table-row-style
+      // layout built with div grids instead of <tr>/<td>.
+      const gridRow = el.closest('.mt-grid');
+      if (gridRow) {
+        const cols = Array.from(gridRow.querySelectorAll(':scope > .mt-grid-col'));
+        for (const col of cols) {
+          if (col.contains(el)) continue;
+          const text = staticText(col);
+          if (text) return text;
+        }
+      }
+      // Editable-name-per-row pattern (confirmed live — Medication
+      // Settings' "Med Pass Time Shifts", a Vue-rendered <tr> with no
+      // static label cell at all): a sibling field (e.g.
+      // TimeFrames[0].MealTime) takes its label from the SAME row's own
+      // `Prefix[N].Name` input value ("Morning") by matching array index,
+      // since that's the row's real display name and nothing static
+      // names it anywhere else in the row.
+      const indexMatch = (el.name || '').match(/^(.+)\[(\d+)\]\.\w+$/);
+      if (indexMatch) {
+        const [, prefix, idx] = indexMatch;
+        const nameInput = document.querySelector(`[name="${prefix}[${idx}].Name"]`);
+        if (nameInput && nameInput.value) return nameInput.value;
       }
       return el.getAttribute('placeholder') || '';
     }
@@ -99,25 +154,36 @@ async function captureFormFields(page) {
     //      Settings' community switcher, name="Facility.ID") — these RELOAD
     //      the page to a different context on change; they're navigation,
     //      not a value this page is configuring.
-    //   3. Anything inside an <app> element (confirmed live: Medication
-    //      Settings' "Med Pass Time Shifts" section is a completely
-    //      separate embedded micro-frontend — `<div id="MedTimePreferences">
-    //      <app></app></div>` — not the same Knockout/MVC form as the rest
-    //      of the page). Its content mounts asynchronously with no
-    //      consistent timing (confirmed: present on one page load, entirely
-    //      absent on the next with the same wait), and even when present,
-    //      its DOM shape doesn't follow this page's label/section
-    //      conventions — capturing it would silently produce wrong or
-    //      blank data depending on load-timing luck, not a real value worth
-    //      syncing. Excluded outright rather than guessed at further; if
-    //      this section's settings ever need to sync, it needs its own
-    //      investigation into that embedded app specifically, not a fix
-    //      here.
+    //   3. Anything inside an <app> element. NOTE: an earlier version of
+    //      this comment guessed this would catch Medication Settings'
+    //      "Med Pass Time Shifts" section as a separate embedded
+    //      micro-frontend — confirmed WRONG on closer live inspection:
+    //      that section is Vue-rendered <tr>s in the ordinary page DOM
+    //      (see the "editable-name-per-row" label fallback in getLabel
+    //      for how its labels are actually extracted), and the one real
+    //      <app> element found on Settings/Resident/{id} is just the
+    //      shared page-header notifications widget
+    //      (#headerNotificationsViewerContainer) — unrelated to any
+    //      settings section. Kept as a defensive exclusion (a genuine
+    //      embedded micro-frontend settings section may exist on some
+    //      other page not yet surveyed) but the specific example is
+    //      retired; don't rely on this line to explain any particular
+    //      page's blank labels without re-confirming live first.
+    //   4. Fields inside an "Add new ___" or "Edit ___" modal (id starting
+    //      with "add" or "edit", e.g. #addAttendanceStatusModal /
+    //      #editAttendanceStatusModal on Settings/Resident/{id}'s
+    //      "Mealtime Attendance" section) — confirmed live, both are
+    //      blank templates at page-load time regardless of whether real
+    //      rows already exist (the edit modal only gets populated
+    //      dynamically once a user clicks Edit on a specific row), not a
+    //      setting with a captured value to sync.
     function isExcludedControl(el) {
       const key = `${el.id || ''} ${el.name || ''}`;
       if (/checkall/i.test(key)) return true;
       if (el.getAttribute('data-autopostback') === 'true') return true;
       if (el.closest('app')) return true;
+      const modal = el.closest('.mt-modal');
+      if (modal && /^(add|edit)/i.test(modal.id)) return true;
       return false;
     }
 
@@ -178,7 +244,13 @@ async function captureFormFields(page) {
       // this capture's reach (see isExcludedControl's <app> exclusion
       // above) — a nonzero count means real settings may exist here that
       // this snapshot simply cannot see, not that the page has none.
-      embeddedAppSectionCount: document.querySelectorAll('app').length,
+      // The shared page-header notifications widget
+      // (#headerNotificationsViewerContainer) is itself an <app> element
+      // present on every Settings page — confirmed live, unrelated to
+      // any settings content — so it's excluded from this count to keep
+      // the count meaningful for whatever else might turn up.
+      embeddedAppSectionCount: Array.from(document.querySelectorAll('app'))
+        .filter((el) => el.parentElement?.id !== 'headerNotificationsViewerContainer').length,
     };
   });
 }
@@ -337,8 +409,8 @@ async function captureResidentSettings(page, url) {
   if (fields.embeddedAppSectionCount > 0) {
     console.log(
       `[Settings] WARNING — this page has ${fields.embeddedAppSectionCount} embedded <app> section(s) ` +
-      `(e.g. Medication Settings' "Med Pass Time Shifts") that this capture cannot see — ` +
-      'real settings may exist there that this snapshot does not cover.'
+      '(beyond the shared header notifications widget, already excluded from this count) that this ' +
+      'capture cannot see — real settings may exist there that this snapshot does not cover.'
     );
   }
 
