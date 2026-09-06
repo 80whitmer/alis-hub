@@ -14,7 +14,7 @@ const {
   normalizeStaffActivity, normalizePrnAdministration, estimateResidentDays, computeBenchmarkDiffs,
   filterByDateRange,
 } = require('../services/kpiNormalizer');
-const { isSentinelIncidentTrackingEnabled } = require('../services/companyFeatures');
+const { shouldTrackSentinelIncidents } = require('../services/companyFeatures');
 
 /**
  * 'YYYY-MM-01' for each calendar month between two ISO dates, inclusive.
@@ -723,10 +723,12 @@ async function runKpiExportJob(jobId, payload) {
   const residentDays = occupancy.billedOccupiedRoomDays ?? occupancy.occupiedRoomDays ?? estimateResidentDays({ avgCensus: occupancy.pct, periodStart, periodEnd });
   const falls = normalizeFalls(scopedIncidents, residentDays);
   const incidentCompletion = normalizeIncidentCompletion(scopedIncidents, { communities });
-  // Leisure Care-only (see companyFeatures.js) — left undefined for every
-  // other client so downstream consumers (qbrFlags.js, qbrExport.js's PPT)
-  // gate on "does this exist" rather than re-checking companyName themselves.
-  const sentinelIncidents = isSentinelIncidentTrackingEnabled(companyName)
+  // Leisure Care (by name) OR any account whose own incident-type config
+  // already tags "(Sentinel)" types (see companyFeatures.js) — left
+  // undefined for every other client so downstream consumers (qbrFlags.js,
+  // qbrExport.js's PPT) gate on "does this exist" rather than re-checking
+  // companyName themselves.
+  const sentinelIncidents = shouldTrackSentinelIncidents(companyName, scopedIncidents)
     ? normalizeSentinelIncidents(scopedIncidents, { communities })
     : undefined;
   const hospitalVisits = normalizeHospitalVisits(scopedLeaves, residentDays);

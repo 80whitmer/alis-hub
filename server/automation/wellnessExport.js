@@ -11,7 +11,7 @@ const {
   normalizeSentinelIncidentsThisWeek,
   withTrend, withCarePointsTrend,
 } = require('../services/wellnessNormalizer');
-const { isSentinelIncidentTrackingEnabled } = require('../services/companyFeatures');
+const { shouldTrackSentinelIncidents } = require('../services/companyFeatures');
 const { normalizeStaffActivity, diffMetric, estimateResidentDays } = require('../services/kpiNormalizer');
 const { getLatestBenchmarks } = require('../services/alis500Benchmarks');
 const { setJobStatus, setItemStatus, syncJobItems, addWellnessSnapshot, getPriorWellnessSnapshot } = require('../db/database');
@@ -351,10 +351,12 @@ async function runWellnessScorecardJob(jobId, payload) {
   }
   rows.fallsWithInjury = normalizeFallsWithHospitalTransfer(fallsThisWeek, hospitalTransferByIncidentId, communities.map((c) => c.communityId));
 
-  // Sentinel incidents — Leisure Care only (see companyFeatures.js). The row
-  // itself is hidden entirely for every other client (see wellnessRows.js's
-  // requiresFlag + featureFlags below), not just shown as a 0.
-  const sentinelIncidentTrackingEnabled = isSentinelIncidentTrackingEnabled(companyName);
+  // Sentinel incidents — Leisure Care by name, OR any account whose own
+  // incident-type config already tags "(Sentinel)" types (see
+  // companyFeatures.js). The row itself is hidden entirely for every other
+  // client (see wellnessRows.js's requiresFlag + featureFlags below), not
+  // just shown as a 0.
+  const sentinelIncidentTrackingEnabled = shouldTrackSentinelIncidents(companyName, incidents);
   if (sentinelIncidentTrackingEnabled) {
     rows.sentinelIncidents = normalizeSentinelIncidentsThisWeek(incidents, weekEndingDate, weekStartDate, communities.map((c) => c.communityId));
   }
