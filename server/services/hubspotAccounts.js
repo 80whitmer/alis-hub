@@ -77,7 +77,7 @@ async function hubspotRequest(method, path, body, attempt = 1) {
   return res;
 }
 
-const COMPANY_PROPERTIES = ['name', 'hubspot_owner_id', 'lifecyclestage', 'createdate'];
+const COMPANY_PROPERTIES = ['name', 'hubspot_owner_id', 'lifecyclestage', 'createdate', 'arr'];
 
 // Owner ID essentially never changes for a running process — cached in
 // memory (not the DB) rather than re-resolved on every refresh.
@@ -149,6 +149,12 @@ async function getOwnedCompanies(ownerId) {
       name: c.properties.name,
       lifecycleStage: c.properties.lifecyclestage || null,
       createdAt: c.properties.createdate || null,
+      // Confirmed live against a real company (Viva Senior Living, "arr":
+      // "410082.00") — HubSpot's own company-level ARR figure, not
+      // something computed here from deals; deliberately not derived from
+      // deal line items, which would need a far heavier historical pull
+      // across the whole portfolio for the same number.
+      arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
     })));
     after = body.paging?.next?.after;
   } while (after);

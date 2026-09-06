@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const { getOwnerId, getOwnedCompanies } = require('../services/hubspotAccounts');
-const { getTicketSummaryForCompany, getDealSummaryForCompany } = require('../services/hubspotTickets');
+const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal } = require('../services/hubspotTickets');
 const { computeHealthScore } = require('../services/accountHealthScoring');
 const {
   upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
@@ -52,8 +52,26 @@ function mapLiveServiceHealth(ticketSummary) {
  * exists on a HubSpot deal in this portal); accountHealthScoring.js's
  * "bridgeOnlyFieldsAbsent" branch is what activates a lighter-touch signal
  * from expansionPipeline alone in that case.
+ *
+ * expansionPipeline.deals covers open + recently-closed (last 90 days —
+ * whatever getDealSummaryForCompany already scoped closedDeals to), each
+ * tagged `isOpen`, with per-deal open tasks fetched — bounded to this same
+ * open+recent-closed set (confirmed live: ~19 open deals portfolio-wide
+ * today), not the company's full deal history, which is what keeps this
+ * affordable at 371 accounts. `dealsByType` still aggregates over EVERY
+ * deal ever (dealSummary.deals) since that's just counting already-fetched
+ * properties, no extra calls.
  */
-function mapLiveFinancialHealth(dealSummary) {
+async function mapLiveFinancialHealth(dealSummary) {
+  const dealsForView = [
+    ...dealSummary.openDeals.map((d) => ({ ...d, isOpen: true })),
+    ...dealSummary.closedDeals.map((d) => ({ ...d, isOpen: false })),
+  ];
+  const dealsWithTasks = await Promise.all(dealsForView.map(async (d) => ({
+    ...d,
+    tasks: await getOpenTasksForDeal(d.id),
+  })));
+
   return {
     unbilledAddendumBacklog: null,
     renewal: null,
@@ -62,13 +80,15 @@ function mapLiveFinancialHealth(dealSummary) {
     expansionPipeline: {
       openDealsCount: dealSummary.open,
       totalPipelineValueCents: Math.round((dealSummary.totalOpenValue || 0) * 100),
-      deals: dealSummary.openDeals.map((d) => ({
-        name: d.name, stage: d.stage, valueCents: Math.round((d.amount || 0) * 100), expectedCloseDate: d.closeDate,
+      deals: dealsWithTasks.map((d) => ({
+        name: d.name, stage: d.stage, pipeline: d.pipeline, dealType: d.dealType,
+        valueCents: Math.round((d.amount || 0) * 100), expectedCloseDate: d.closeDate,
+        isOpen: d.isOpen, nextStep: d.nextStep, nextActivityDate: d.nextActivityDate,
+        tasks: d.tasks, url: d.url,
       })),
     },
     // Extras for the drill-down UI, outside the scored shape:
     totalDeals: dealSummary.total,
-    closedDeals: dealSummary.closedDeals,
     dealsByType: dealSummary.deals.reduce((acc, d) => {
       const key = d.dealType || 'unspecified';
       acc[key] = (acc[key] || 0) + 1;
@@ -117,7 +137,7 @@ router.post('/refresh', async (req, res) => {
           getDealSummaryForCompany(company.id),
         ]);
         const serviceHealth = mapLiveServiceHealth(ticketSummary);
-        const financialHealth = mapLiveFinancialHealth(dealSummary);
+        const financialHealth = await mapLiveFinancialHealth(dealSummary);
         const { score, band } = computeHealthScore({ serviceHealth, financialHealth });
 
         upsertAccountHealthSnapshot({
@@ -130,6 +150,7 @@ router.post('/refresh', async (req, res) => {
           closedTicketCount: ticketSummary.closed,
           openDealCount: dealSummary.open,
           openDealValueCents: Math.round((dealSummary.totalOpenValue || 0) * 100),
+          arrCents: company.arrCents,
           healthScore: score,
           healthBand: band?.label || null,
         });

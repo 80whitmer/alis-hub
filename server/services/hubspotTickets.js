@@ -308,6 +308,13 @@ const DEAL_PROPERTIES = [
   'hs_lastmodifieddate',
   'hs_is_closed',
   'hs_is_closed_won',
+  // "Next step" (free text) and "Next Activity Date" (auto-set by HubSpot
+  // whenever a task/call/meeting is logged against the deal) — confirmed
+  // live via this portal's own property definitions. closedate doubles as
+  // "projected close date" for a still-open deal (that's its literal
+  // meaning), so no separate due-date property is needed for that.
+  'hs_next_step',
+  'notes_next_activity_date',
 ];
 
 /** Deal IDs associated with a company, via the v4 associations API — same cursor pagination as getTicketIdsForCompany above, for the same reason. */
@@ -412,6 +419,8 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
       lastModifiedAt: p.hs_lastmodifieddate,
       isClosed: p.hs_is_closed === 'true',
       isWon: p.hs_is_closed_won === 'true',
+      nextStep: p.hs_next_step || null,
+      nextActivityDate: p.notes_next_activity_date || null,
       url: hubspotRecordUrl('deal', d.id),
     };
   });
@@ -465,6 +474,75 @@ async function batchReadLineItems(lineItemIds) {
     results.push(...(body.results || []));
   }
   return results;
+}
+
+const TASK_PROPERTIES = ['hs_task_subject', 'hs_task_status', 'hs_timestamp', 'hs_task_is_overdue'];
+
+/** Task IDs associated with one deal, via the v4 associations API — same pagination pattern as getLineItemIdsForDeal. */
+async function getTaskIdsForDeal(dealId) {
+  const ids = [];
+  let after;
+  do {
+    const path = `/crm/v4/objects/deals/${dealId}/associations/tasks${after ? `?after=${encodeURIComponent(after)}` : ''}`;
+    const { status, body } = await hubspotRequest('GET', path);
+    if (status !== 200) {
+      throw new Error(`HubSpot task associations lookup failed for deal ${dealId} (${status}): ${JSON.stringify(body)}`);
+    }
+    ids.push(...(body.results || []).map((r) => r.toObjectId));
+    after = body.paging?.next?.after;
+  } while (after);
+  return ids;
+}
+
+/** Batch-read full task properties, chunked to HubSpot's 100-input cap — same reasoning as batchReadLineItems. */
+async function batchReadTasks(taskIds) {
+  if (taskIds.length === 0) return [];
+
+  const results = [];
+  for (const batch of chunk(taskIds, 100)) {
+    const { status, body } = await hubspotRequest('POST', '/crm/v3/objects/tasks/batch/read', {
+      properties: TASK_PROPERTIES,
+      inputs: batch.map((id) => ({ id })),
+    });
+    if (status !== 200) {
+      throw new Error(`HubSpot task batch read failed (${status}): ${JSON.stringify(body)}`);
+    }
+    results.push(...(body.results || []));
+  }
+  return results;
+}
+
+/**
+ * Open tasks associated with one deal — for the Account Health Dashboard's
+ * Deals view ("associated tasks to the deal", so a deal's status is
+ * visible without leaving alis-hub). Scoped to open (not-completed) tasks
+ * only, since a deal can accumulate a long history of already-done tasks
+ * that aren't useful for "what's next." Deliberately swallows its own
+ * errors and returns `null` (not `[]` — a real empty list of tasks reads
+ * as "confirmed, none open"; a failed lookup should read as "unknown", not
+ * "there are definitely no tasks") — this portal's private app token has
+ * already been confirmed missing one HubSpot scope this session
+ * (crm.objects.owners.read); tasks read access is unverified, and a
+ * missing scope here shouldn't fail the whole portfolio refresh over
+ * ancillary task visibility on one deal.
+ */
+async function getOpenTasksForDeal(dealId) {
+  try {
+    const taskIds = await getTaskIdsForDeal(dealId);
+    const raw = await batchReadTasks(taskIds);
+    return raw
+      .filter((t) => (t.properties.hs_task_status || '').toUpperCase() !== 'COMPLETED')
+      .map((t) => ({
+        id: t.id,
+        subject: t.properties.hs_task_subject,
+        status: t.properties.hs_task_status,
+        dueDate: t.properties.hs_timestamp || null,
+        isOverdue: t.properties.hs_task_is_overdue === 'true',
+      }));
+  } catch (err) {
+    console.error(`[hubspotTickets] Failed to fetch tasks for deal ${dealId} — showing no tasks for it:`, err.message);
+    return null;
+  }
 }
 
 /**
@@ -635,4 +713,4 @@ function enrichOpenTickets(serviceHealth) {
   };
 }
 
-module.exports = { getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets };
+module.exports = { getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, getOpenTasksForDeal, enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets };

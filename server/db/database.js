@@ -258,11 +258,21 @@ async function initDb() {
       closed_ticket_count  INTEGER DEFAULT 0,
       open_deal_count      INTEGER DEFAULT 0,
       open_deal_value_cents INTEGER DEFAULT 0,
+      arr_cents             INTEGER,
       health_score         INTEGER,
       health_band          TEXT,
       refreshed_at          TEXT DEFAULT (datetime('now'))
     );
   `);
+  // arr_cents was added after this table's first release — a plain CREATE
+  // TABLE IF NOT EXISTS above won't retrofit it onto a DB file created
+  // before this column existed (confirmed: this session's own earlier
+  // verification run already created the table without it).
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN arr_cents INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
 
   saveToDisk();
 }
@@ -670,19 +680,19 @@ function getAuditHistorySnapshot(jobId) {
 
 function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
-  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, healthScore, healthBand,
+  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, healthScore, healthBand,
 }) {
   const now = new Date().toISOString();
   run(
     `INSERT OR REPLACE INTO account_health_snapshots (
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
-       open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents,
+       open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents,
        health_score, health_band, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       hubspotCompanyId, companyName, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
-      openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0,
+      openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null,
       healthScore ?? null, healthBand || null, now,
     ]
   );
