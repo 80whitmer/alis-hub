@@ -76,7 +76,25 @@ async function captureFormFields(page) {
           if (text) return text;
         }
       }
-      const container = el.closest('.form-group, .field-row, .setting-row, li');
+      // Own-column label pattern (confirmed live, Billing Settings'
+      // "Invoice Due Date" section): the field's real static label is a
+      // SIBLING <label> in the SAME .mt-grid-col, just not connected via
+      // `for` (its `for` points at a stale/renamed id — "Invoice_Due_Date"
+      // vs. the select's real id "dueDatesMode" — a genuine markup bug in
+      // this ALIS page, not something to "fix" by matching on id here).
+      // Checked before the cross-column grid-row scan below on purpose:
+      // without this, that scan skips the field's OWN column (by design,
+      // to avoid matching a field against itself) and wanders into an
+      // unrelated LATER sibling column's label+help text instead — e.g.
+      // "DueDatesMode" was coming back labeled with "Billing Day of the
+      // Month"'s full label-plus-help-paragraph, a completely different
+      // field three columns over. An empty own-column label (seen on
+      // this same section's alternately-toggled DueDateDay/
+      // DueDateDaysCount fields, which carry only a blank spacer label
+      // for vertical alignment) is treated as a deliberate "no label
+      // here" signal and stops here too, rather than risk the same
+      // wrong-neighbor mismatch by continuing on to the grid-row scan.
+      const container = el.closest('.form-group, .field-row, .setting-row, li, .mt-grid-col');
       if (container) {
         const lbl = container.querySelector('label, .label, .field-label');
         if (lbl && !lbl.contains(el)) return lbl.textContent.trim();
@@ -87,7 +105,9 @@ async function captureFormFields(page) {
       // plain-text <label> describing the row ("1 x a day") lives in a
       // sibling .mt-grid-col div at the same .mt-grid level, with no
       // `for` attribute tying it to the field at all — a table-row-style
-      // layout built with div grids instead of <tr>/<td>.
+      // layout built with div grids instead of <tr>/<td>. Only reached
+      // when the field's own column (just above) has no label element at
+      // all, which is what makes wandering to a sibling column safe here.
       const gridRow = el.closest('.mt-grid');
       if (gridRow) {
         const cols = Array.from(gridRow.querySelectorAll(':scope > .mt-grid-col'));
@@ -109,6 +129,23 @@ async function captureFormFields(page) {
         const [, prefix, idx] = indexMatch;
         const nameInput = document.querySelector(`[name="${prefix}[${idx}].Name"]`);
         if (nameInput && nameInput.value) return nameInput.value;
+      }
+      // Composed multi-part control pattern (confirmed live, Billing
+      // Settings' "Invoice Date"): two selects together form one sentence
+      // ("Invoice Date: [1st] of the [Month Following Billing Day]") —
+      // only the FIRST select (InvoiceDay) gets its own `label[for]`; the
+      // second (InvoiceNextMonth) has no label anywhere, static or
+      // sibling — it only means anything in combination with the first,
+      // under that one shared label. `.mt-fieldset` marks this container;
+      // its label is a preceding sibling of the fieldset itself, one
+      // level up, not inside it (so the earlier grid-row fallback, which
+      // only looks at cols WITHIN a .mt-grid, doesn't reach it — and
+      // .mt-fieldset carries the .mt-grid class too, so that fallback
+      // does run first here, correctly finding nothing).
+      const fieldset = el.closest('.mt-fieldset');
+      if (fieldset) {
+        const sharedLabel = fieldset.parentElement?.querySelector(':scope > label');
+        if (sharedLabel) return sharedLabel.textContent.trim();
       }
       return el.getAttribute('placeholder') || '';
     }
