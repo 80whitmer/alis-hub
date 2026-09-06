@@ -12,6 +12,7 @@ const companyHostsRouter = require('./api/companyHosts');
 const usageAuditRouter = require('./api/usageAudit');
 const auditHistoryRouter = require('./api/auditHistory');
 const evaluationsRouter = require('./api/evaluations');
+const accountHealthRouter = require('./api/accountHealth');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,7 @@ app.use('/api/company-hosts', companyHostsRouter);
 app.use('/api/usage-audit', usageAuditRouter);
 app.use('/api/audit-history', auditHistoryRouter);
 app.use('/api/evaluations', evaluationsRouter);
+app.use('/api/account-health', accountHealthRouter);
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Error handler middleware — must be last

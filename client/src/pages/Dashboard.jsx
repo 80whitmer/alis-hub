@@ -534,7 +534,7 @@ export default function Dashboard() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-3xl font-bold text-primary-900">Automation Jobs</h1>
+          <h1 className="text-3xl font-bold text-primary-900">Job Board</h1>
           <span className="badge badge-neutral">
             {query ? `${filteredJobs.length} of ${jobs.length}` : jobs.length}
           </span>

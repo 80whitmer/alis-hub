@@ -238,6 +238,32 @@ async function initDb() {
     );
   `);
 
+  // One row per HubSpot company in the Account Health Dashboard's owned
+  // portfolio — replaced wholesale on each manual refresh (POST
+  // /api/account-health/refresh), not appended to, since this is always a
+  // "current state" snapshot, not a trend history. Flat summary columns
+  // (open/closed ticket counts, open deal value, health_score) exist
+  // alongside the JSON blobs so the roll-up view can read/sort/aggregate
+  // without parsing every row's JSON — same reasoning as kpi_snapshots'
+  // sibling trend tables (dso_snapshots/ppd_snapshots) needing their own
+  // flat columns for the same kind of query.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS account_health_snapshots (
+      hubspot_company_id TEXT PRIMARY KEY,
+      company_name       TEXT NOT NULL,
+      lifecycle_stage     TEXT,
+      service_health_json  TEXT,
+      financial_health_json TEXT,
+      open_ticket_count    INTEGER DEFAULT 0,
+      closed_ticket_count  INTEGER DEFAULT 0,
+      open_deal_count      INTEGER DEFAULT 0,
+      open_deal_value_cents INTEGER DEFAULT 0,
+      health_score         INTEGER,
+      health_band          TEXT,
+      refreshed_at          TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -642,6 +668,79 @@ function getAuditHistorySnapshot(jobId) {
   return row;
 }
 
+function upsertAccountHealthSnapshot({
+  hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
+  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, healthScore, healthBand,
+}) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT OR REPLACE INTO account_health_snapshots (
+       hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
+       open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents,
+       health_score, health_band, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      hubspotCompanyId, companyName, lifecycleStage,
+      JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
+      openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0,
+      healthScore ?? null, healthBand || null, now,
+    ]
+  );
+}
+
+function listAccountHealthSnapshots() {
+  return queryAll('SELECT * FROM account_health_snapshots ORDER BY company_name').map((row) => ({
+    ...row,
+    serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
+    financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
+  }));
+}
+
+function getAccountHealthSnapshot(hubspotCompanyId) {
+  const row = queryOne('SELECT * FROM account_health_snapshots WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  if (!row) return null;
+  return {
+    ...row,
+    serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
+    financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
+  };
+}
+
+/**
+ * Best-effort "you've already run a QBR for this account" signal for the
+ * Account Health drill-down — deliberately NOT fed into the health score
+ * (see accountHealthScoring.js's comments on why): a kpi-export job's
+ * summary_json stores hubspotCompanyId and flags in whatever shape
+ * kpiNormalizer/qbrFlags actually produce today, which doesn't line up
+ * field-for-field with HUBSPOT_BRIDGE_SCHEMA.md's aspirational shape.
+ * Rather than guess at a mapping, this just surfaces "N flags from the
+ * most recent QBR, run on this date" plus a link to that job's own
+ * dashboard, where the real detail already renders correctly. Reads the
+ * whole (typically small) kpi_snapshots table once per portfolio refresh,
+ * not once per company.
+ */
+function findRecentKpiSnapshotsByHubspotCompanyId() {
+  const rows = queryAll('SELECT job_id, company_name, summary_json, created_at FROM kpi_snapshots ORDER BY created_at DESC');
+  const byCompanyId = new Map();
+  for (const row of rows) {
+    let summary;
+    try {
+      summary = JSON.parse(row.summary_json);
+    } catch {
+      continue;
+    }
+    const hubspotCompanyId = summary?.hubspotCompanyId;
+    if (!hubspotCompanyId || byCompanyId.has(hubspotCompanyId)) continue; // rows are DESC by created_at — first hit per id is the latest
+    byCompanyId.set(hubspotCompanyId, {
+      jobId: row.job_id,
+      companyName: row.company_name,
+      createdAt: row.created_at,
+      flagCount: Array.isArray(summary.flags) ? summary.flags.length : 0,
+    });
+  }
+  return byCompanyId;
+}
+
 module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
   deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
@@ -653,4 +752,6 @@ module.exports = {
   addUsageAuditSnapshot, getUsageAuditSnapshot,
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,
+  upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
+  findRecentKpiSnapshotsByHubspotCompanyId,
 };

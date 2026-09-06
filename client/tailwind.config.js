@@ -81,7 +81,19 @@ export default {
         panel: '#f9f9f9',
         border: '#e5e5e5',
         muted: '#909295',
-        blue: '#3b82f6',
+        // Full shade scale (not just the bare 500), restoring Tailwind's
+        // default blue-50..blue-900 utilities — a flat `blue: '#3b82f6'`
+        // string here previously shadowed the whole default scale (extend
+        // merges per color name, and a plain string for an existing name
+        // fully replaces it, shades included), breaking every blue-N class
+        // in the app (confirmed live: .alert-info's `bg-blue-50` failed to
+        // build, along with blue-* usages in JobDetail.jsx/
+        // FormMarkupApproval.jsx/FormAnalyzer.jsx) — pre-existing, not
+        // something introduced by this session's changes.
+        blue: {
+          50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa',
+          500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a', 950: '#172554',
+        },
       },
 
       fontSize: {

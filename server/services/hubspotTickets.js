@@ -46,7 +46,11 @@ const TICKET_PROPERTIES = [
 // have more than one — the label is the stable, human-meaningful signal.
 const TOP_3_STATUS_LABEL = 'Top 3 Enhancements';
 
-function hubspotRequest(method, path, body) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hubspotRequestOnce(method, path, body) {
   const token = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
   if (!token) {
     return Promise.reject(new Error('HUBSPOT_PRIVATE_APP_TOKEN is not set in server/.env'));
@@ -72,7 +76,7 @@ function hubspotRequest(method, path, body) {
       res.on('data', (chunk) => { raw += chunk; });
       res.on('end', () => {
         try {
-          resolve({ status: res.statusCode, body: raw ? JSON.parse(raw) : {} });
+          resolve({ status: res.statusCode, headers: res.headers, body: raw ? JSON.parse(raw) : {} });
         } catch {
           reject(new Error('Non-JSON response from HubSpot'));
         }
@@ -84,6 +88,30 @@ function hubspotRequest(method, path, body) {
     if (bodyStr) req.write(bodyStr);
     req.end();
   });
+}
+
+/**
+ * Retries on HubSpot's 429 (confirmed live, Sep 2026: a full-portfolio
+ * Account Health refresh across 371 companies hit `ten_secondly_rolling`
+ * rate limiting hard — 311 of 371 companies failed outright with no retry
+ * at all, since nothing here previously expected a 429). Every other
+ * caller in this app has always been single-company/on-demand, low enough
+ * volume that this was never hit before; a 371-company bulk pull is a
+ * genuinely different load pattern. Honors a `Retry-After` header when
+ * HubSpot sends one, otherwise backs off 1s/2s/4s/8s; gives up after 5
+ * total attempts and surfaces the last error as-is.
+ */
+async function hubspotRequest(method, path, body, attempt = 1) {
+  const res = await hubspotRequestOnce(method, path, body);
+  if (res.status === 429 && attempt < 5) {
+    const retryAfterHeader = Number(res.headers?.['retry-after']);
+    const delayMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+      ? retryAfterHeader * 1000
+      : 1000 * 2 ** (attempt - 1);
+    await sleep(delayMs);
+    return hubspotRequest(method, path, body, attempt + 1);
+  }
+  return res;
 }
 
 /** Splits `arr` into chunks of at most `size` items — HubSpot's batch/read endpoints reject more than 100 inputs per call. */
@@ -273,6 +301,7 @@ const DEAL_PROPERTIES = [
   'dealname',
   'pipeline',
   'dealstage',
+  'dealtype',
   'amount',
   'closedate',
   'createdate',
@@ -376,6 +405,7 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
       name: p.dealname,
       pipeline: labels?.pipeline || p.pipeline,
       stage: labels?.stage || p.dealstage,
+      dealType: p.dealtype || null,
       amount: p.amount != null ? Number(p.amount) : null,
       closeDate: p.closedate || null,
       createdAt: p.createdate,
