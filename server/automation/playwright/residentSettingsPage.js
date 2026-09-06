@@ -89,6 +89,23 @@ async function captureFormFields(page) {
       return '';
     }
 
+    // Confirmed live across multiple settings pages (Resident, Medication,
+    // CRM/Prospect) — two classes of control that LOOK like settings but
+    // aren't, worth excluding everywhere, not just Resident Settings:
+    //   1. "Select/check all" utility toggles — id/name varies per section
+    //      ("CheckAll", "checkAllProspectSources", "checkAllTaskOutcomeTypes",
+    //      ...), always a page convenience, never a real setting.
+    //   2. Auto-postback pickers (data-autopostback="true", e.g. Medication
+    //      Settings' community switcher, name="Facility.ID") — these RELOAD
+    //      the page to a different context on change; they're navigation,
+    //      not a value this page is configuring.
+    function isExcludedControl(el) {
+      const key = `${el.id || ''} ${el.name || ''}`;
+      if (/checkall/i.test(key)) return true;
+      if (el.getAttribute('data-autopostback') === 'true') return true;
+      return false;
+    }
+
     const checkboxes = [];
     const selects    = [];
     const textInputs = [];
@@ -96,11 +113,7 @@ async function captureFormFields(page) {
 
     document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       if (!cb.id && !cb.name) return;
-      // "Select all" utility checkboxes (id="CheckAll" confirmed live) are a
-      // page convenience, not a real setting — applying one across
-      // communities doesn't mean anything and would just toggle whatever
-      // else happens to be checked at apply time.
-      if (cb.id === 'CheckAll' && !cb.name) return;
+      if (isExcludedControl(cb)) return;
       checkboxes.push({
         id:      cb.id   || '',
         name:    cb.name || '',
@@ -112,6 +125,7 @@ async function captureFormFields(page) {
 
     document.querySelectorAll('select').forEach(sel => {
       if (!sel.id && !sel.name) return;
+      if (isExcludedControl(sel)) return;
       selects.push({
         id:      sel.id   || '',
         name:    sel.name || '',
@@ -125,6 +139,7 @@ async function captureFormFields(page) {
       'input[type="text"], input[type="number"], input[type="email"], input:not([type])'
     ).forEach(inp => {
       if (!inp.id && !inp.name) return;
+      if (isExcludedControl(inp)) return;
       if (inp.type === 'hidden') return;
       textInputs.push({
         id:    inp.id   || '',
@@ -317,13 +332,34 @@ async function captureResidentSettings(page, url) {
  * Apply a snapshot's checkbox + select states to the current page.
  * Text inputs are intentionally skipped (too risky without knowing which are safe).
  */
+/**
+ * Confirmed live (Sep 2026, Medication/Billing Settings): the same `name`
+ * (no `id` at all) can legitimately appear more than once on one page —
+ * e.g. `name="IncludeDisabled"` used independently under both "Payer
+ * Types" and "Payment Methods". `.first()` would apply every such field to
+ * the SAME (first) element, silently never touching the later ones.
+ * Returns each field's 0-based position among entries sharing its name,
+ * in capture order — `querySelectorAll` and Playwright's `.nth()` both
+ * return elements in DOM document order, so as long as the page's DOM
+ * hasn't changed shape between capture and apply, the Nth same-named entry
+ * captured is the Nth same-named element on the page.
+ */
+function nameOccurrenceIndex(fields, field) {
+  let index = 0;
+  for (const f of fields) {
+    if (f === field) break;
+    if (!f.id && f.name === field.name) index++;
+  }
+  return index;
+}
+
 async function applyFormFields(page, snapshot, results) {
   // Checkboxes
   for (const field of snapshot.checkboxes) {
     const key = field.id || field.name;
     const locator = field.id
       ? page.locator(`#${field.id}`)
-      : page.locator(`input[type="checkbox"][name="${field.name}"]`).first();
+      : page.locator(`input[type="checkbox"][name="${field.name}"]`).nth(nameOccurrenceIndex(snapshot.checkboxes, field));
 
     try {
       const exists = await locator.count() > 0;
@@ -362,7 +398,7 @@ async function applyFormFields(page, snapshot, results) {
     const key = field.id || field.name;
     const locator = field.id
       ? page.locator(`#${field.id}`)
-      : page.locator(`select[name="${field.name}"]`).first();
+      : page.locator(`select[name="${field.name}"]`).nth(nameOccurrenceIndex(snapshot.selects, field));
 
     try {
       const exists = await locator.count() > 0;
