@@ -1865,6 +1865,76 @@ export default function KpiDashboard() {
         </div>
       </SectionCard>
 
+      {/* TOP 3 ENHANCEMENT REQUESTS — deliberately its own section (not a
+          Support & Context grid cell): per Aaron (Sep 2026), these are the
+          client's own highest-priority asks and need to be impossible to
+          miss, both when present and — just as importantly — when absent
+          (an account with nothing tagged/staged Top 3 should read as a
+          real gap to close, not a silently-empty section). Two independent
+          HubSpot signals (see hubspotTickets.js): the "Top 3" tag property
+          (rank 1/2/3) and the "Top 3 Enhancements" pipeline stage — a
+          ticket can drift to having only one, which is exactly what
+          `misaligned` calls out. */}
+      <SectionCard title="Top 3 Enhancement Requests">
+        {!ticketSummary ? (
+          <p className="text-sm text-neutral-500">No HubSpot company was linked for this pull.</p>
+        ) : !ticketSummary.topThreeEnhancements?.hasAny ? (
+          <div className="alert alert-warning">
+            <span>⚠️</span>
+            <p className="text-sm">No tickets are currently tagged (Top 3 rank) or staged (&ldquo;Top 3 Enhancements&rdquo;) as a Top 3 enhancement request for this account. Worth confirming with the client whether that&rsquo;s accurate, or whether their asks just haven&rsquo;t been captured in HubSpot yet.</p>
+          </div>
+        ) : (
+          <div>
+            {ticketSummary.topThreeEnhancements.misaligned.length > 0 && (
+              <div className="alert alert-warning mb-4">
+                <span>⚠️</span>
+                <div>
+                  <p className="text-sm font-semibold mb-1">
+                    {ticketSummary.topThreeEnhancements.misaligned.length} ticket(s) have only one of the two Top 3 signals set — worth reconciling:
+                  </p>
+                  {ticketSummary.topThreeEnhancements.misaligned.map((t) => (
+                    <p key={t.id} className="text-sm">
+                      {t.url ? (
+                        <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline font-medium">{t.subject || `Ticket #${t.id}`}</a>
+                      ) : (
+                        <span className="font-medium">{t.subject || `Ticket #${t.id}`}</span>
+                      )}
+                      {' — '}
+                      {t.taggedTop3 && !t.statusTop3 && `tagged Top ${t.topThreeRank}, but stage is "${t.pipelineStageLabel}" (not "Top 3 Enhancements")`}
+                      {!t.taggedTop3 && t.statusTop3 && 'stage is "Top 3 Enhancements", but no Top 3 rank tag is set'}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              {ticketSummary.topThreeEnhancements.items.map((t) => (
+                <div key={t.id} className="flex items-start justify-between gap-4 text-sm py-2 border-b border-neutral-100 last:border-0">
+                  <div>
+                    {t.url ? (
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline font-medium break-words">{t.subject || `Ticket #${t.id}`}</a>
+                    ) : (
+                      <span className="font-medium text-neutral-700 break-words">{t.subject || `Ticket #${t.id}`}</span>
+                    )}
+                    <div className="text-xs text-neutral-500">
+                      {t.category} · {t.pipelineStageLabel}{t.isOpen ? '' : ' (closed)'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {t.taggedTop3 && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-primary-100 text-primary-800">Top {t.topThreeRank}</span>
+                    )}
+                    {!t.aligned && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded bg-warning/20 text-warning" title="Only one of the two Top 3 signals is set">⚠ unaligned</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
       <AccountHealthImport
         jobId={jobId}
         hubspotHealth={hubspotHealth}

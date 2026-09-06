@@ -774,6 +774,57 @@ function addEnhancementRequestsSlide(pptx, ticketSummary, hubspotHealth) {
 }
 
 /**
+ * Distinct from addEnhancementRequestsSlide above (which lists every
+ * enhancement-CATEGORY ticket) — this is specifically the client's own
+ * ranked Top 3 asks, tracked via two independent HubSpot signals (see
+ * hubspotTickets.js): the "Top 3" tag property (rank 1/2/3) and a ticket
+ * sitting in the "Top 3 Enhancements" pipeline stage. Always shown when a
+ * HubSpot company is linked (see showTopThreeEnhancements in buildQbrDeck —
+ * deliberately not gated by truncateEmptySlides), including the "none
+ * found" case, since that absence is itself the signal worth surfacing to
+ * the account team.
+ */
+function addTopThreeEnhancementsSlide(pptx, ticketSummary) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Top 3 Enhancement Requests');
+
+  const top3 = ticketSummary?.topThreeEnhancements;
+  if (!top3?.hasAny) {
+    slide.addText(
+      'No tickets are currently tagged (Top 3 rank) or staged ("Top 3 Enhancements") as a Top 3 enhancement request for this account. Worth confirming with the client whether that’s accurate, or whether their asks just haven’t been captured in HubSpot yet.',
+      { x: 0.7, y: 1.5, w: 8.5, h: 1, fontFace: FONT_BODY, fontSize: 12, italic: true, color: BRAND.flame }
+    );
+    return;
+  }
+
+  let y = 1.3;
+  if (top3.misaligned.length > 0) {
+    slide.addText(
+      `⚠ ${top3.misaligned.length} ticket(s) have only one of the two Top 3 signals set — worth reconciling.`,
+      { x: 0.7, y, w: 8.5, h: 0.3, fontFace: FONT_BODY, fontSize: 11, bold: true, color: BRAND.flame }
+    );
+    y += 0.45;
+  }
+
+  for (const t of top3.items.slice(0, 8)) {
+    const rankLabel = t.taggedTop3 ? `Top ${t.topThreeRank}` : '(no rank tag)';
+    slide.addText([
+      { text: `${rankLabel}  `, options: { bold: true, color: BRAND.glacier } },
+      { text: t.subject || `Ticket #${t.id}`, options: { bold: true, color: BRAND.onyx, hyperlink: t.url ? { url: t.url } : undefined } },
+      { text: t.aligned ? '' : '  ⚠ unaligned', options: { color: BRAND.flame, bold: true } },
+    ], { x: 0.7, y, w: 8.5, h: 0.24, fontFace: FONT_BODY, fontSize: 11 });
+    y += 0.24;
+    slide.addText(`${t.category} · ${t.pipelineStageLabel}${t.isOpen ? '' : ' (closed)'}`, {
+      x: 0.9, y, w: 8.3, h: 0.2, fontFace: FONT_BODY, fontSize: 9, italic: true, color: BRAND.slate,
+    });
+    y += 0.32;
+  }
+  if (top3.items.length > 8) {
+    slide.addText(`+ ${top3.items.length - 8} more not shown`, { x: 0.7, y, w: 8.5, h: 0.2, fontFace: FONT_BODY, fontSize: 9, italic: true, color: BRAND.slate });
+  }
+}
+
+/**
  * Populated from the health-export's `open_tickets` entries with
  * `next_step_type: "project"` (or no type at all — "project" is the
  * catch-all default per the schema). Extracted for the same reason as
@@ -1023,6 +1074,12 @@ async function buildQbrDeck(snapshot, options = {}) {
   // includeHubspot is a hard override on top regardless of truncate mode.
   const keep = (hasData) => !truncateEmptySlides || hasData;
   const showSupportReview = includeHubspot && keep(hasSupportReviewData);
+  // Deliberately NOT gated by keep()/truncateEmptySlides like the others —
+  // per Aaron (Sep 2026), an account with nothing tagged/staged Top 3 needs
+  // that absence called out explicitly, in every deck variant, not hidden
+  // in the lighter truncated one. Only requires a HubSpot company to be
+  // linked at all (same base gate as Support Review).
+  const showTopThreeEnhancements = includeHubspot && hasSupportReviewData;
   const showProjectStatus = includeHubspot && keep(hasProjectStatusData);
   const showEnhancementRequests = includeHubspot && keep(hasEnhancementRequestsData);
   const showDiscussionPoints = keep(hasDiscussionPointsData); // spans clinical/financial too, not HubSpot-only — unaffected by includeHubspot
@@ -1048,6 +1105,7 @@ async function buildQbrDeck(snapshot, options = {}) {
   }
   for (const [label, show, populated] of [
     ['Support Review', showSupportReview, hasSupportReviewData],
+    ['Top 3 Enhancement Requests', showTopThreeEnhancements, Boolean(ticketSummary?.topThreeEnhancements?.hasAny)],
     ['HubSpot Deals', showHubspotDeals, true],
     ['Project Status', showProjectStatus, hasProjectStatusData],
     ['Enhancement Requests', showEnhancementRequests, hasEnhancementRequestsData],
@@ -1073,6 +1131,7 @@ async function buildQbrDeck(snapshot, options = {}) {
   if (hasSentinelIncidents) addSentinelIncidentsSlide(pptx, normalized.sentinelIncidents);
   if (hasFinancialData) addFinancialSlide(pptx, { billedRevenue: normalized.billedRevenue, recurringRevenue: normalized.recurringRevenue, outstandingInvoiceSummary: normalized.outstandingInvoiceSummary, dso: normalized.dso, ppd: normalized.ppd });
   if (showSupportReview) addSupportReviewSlide(pptx, ticketSummary, hubspotHealth);
+  if (showTopThreeEnhancements) addTopThreeEnhancementsSlide(pptx, ticketSummary);
   if (showHubspotDeals) addDealActivitySlide(pptx, dealSummary);
   if (hasHubspotHealth) addAccountHealthImportSlide(pptx, hubspotHealth);
   if (hasReleaseRecommendations) addReleaseRecommendationsSlide(pptx, releaseRecommendations, companyName);
