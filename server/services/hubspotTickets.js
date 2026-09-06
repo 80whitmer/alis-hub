@@ -35,7 +35,16 @@ const TICKET_PROPERTIES = [
   'createdate',
   'hs_lastmodifieddate',
   'closed_date',
+  'top_3',
 ];
+
+// The literal HubSpot pipeline-stage label a ticket must resolve to for it
+// to count as "status-flagged Top 3" — confirmed live (Sep 2026) via
+// get_properties on TICKET.hs_pipeline_stage: stage id "1372980771" carries
+// this exact label. Matched by label (via getPipelineStageLabels), not the
+// raw stage id, since a stage id is scoped to one pipeline and a portal can
+// have more than one — the label is the stable, human-meaningful signal.
+const TOP_3_STATUS_LABEL = 'Top 3 Enhancements';
 
 function hubspotRequest(method, path, body) {
   const token = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
@@ -155,22 +164,41 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   const ticketIds = await getTicketIdsForCompany(hubspotCompanyId);
   const raw = await batchReadTickets(ticketIds);
 
-  const tickets = raw.map((t) => ({
-    id: t.id,
-    subject: t.properties.subject,
-    category: ticketCategory(t.properties),
-    pipelineStage: t.properties.hs_pipeline_stage,
-    priority: t.properties.hs_ticket_priority,
-    createdAt: t.properties.createdate,
-    closedAt: t.properties.closed_date || null,
-    isOpen: !t.properties.closed_date,
-    daysOpen: daysOpen(t),
-    // Needs nothing but HUBSPOT_PORTAL_ID (no extra API call) — same
-    // ticketUrl() used by enrichRepeatIssueFlags/enrichOpenTickets below,
-    // now attached to every live-pulled ticket so the Support Review /
-    // dashboard listings can link straight to the record.
-    url: ticketUrl(t.id),
-  }));
+  // Needed to tell a "Top 3 Enhancements" pipeline STAGE apart from every
+  // other stage a ticket could sit in — degrades to leaving
+  // pipelineStageLabel unresolved (raw id) rather than losing the rest of
+  // the ticket over a failed pipeline lookup.
+  let stageLabels = new Map();
+  try {
+    stageLabels = await getPipelineStageLabels('tickets');
+  } catch (err) {
+    console.error('[hubspotTickets] Failed to resolve ticket stage labels — Top 3 status matching and displayed status will fall back to raw pipeline-stage IDs:', err.message);
+  }
+
+  const tickets = raw.map((t) => {
+    const stageLabel = stageLabels.get(`${t.properties.hs_pipeline}:${t.properties.hs_pipeline_stage}`)?.stage;
+    return {
+      id: t.id,
+      subject: t.properties.subject,
+      category: ticketCategory(t.properties),
+      pipelineStage: t.properties.hs_pipeline_stage,
+      pipelineStageLabel: stageLabel || t.properties.hs_pipeline_stage,
+      priority: t.properties.hs_ticket_priority,
+      createdAt: t.properties.createdate,
+      closedAt: t.properties.closed_date || null,
+      isOpen: !t.properties.closed_date,
+      daysOpen: daysOpen(t),
+      // The "1"/"2"/"3" tag property (label "Top 3" in HubSpot) — a client's
+      // own ranking of their top enhancement asks, independent of pipeline
+      // stage (see topThreeEnhancements below for why both are tracked).
+      topThreeRank: t.properties.top_3 || null,
+      // Needs nothing but HUBSPOT_PORTAL_ID (no extra API call) — same
+      // ticketUrl() used by enrichRepeatIssueFlags/enrichOpenTickets below,
+      // now attached to every live-pulled ticket so the Support Review /
+      // dashboard listings can link straight to the record.
+      url: ticketUrl(t.id),
+    };
+  });
 
   const byCategory = {};
   for (const t of tickets) {
@@ -182,12 +210,47 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   const openTickets = tickets.filter((t) => t.isOpen);
   const agingOpenTickets = openTickets.filter((t) => (t.daysOpen || 0) > 90);
 
+  // Two independent signals for "this is a Top 3 enhancement," per Aaron
+  // (Sep 2026): the `top_3` tag property (rank 1/2/3) and a ticket sitting
+  // in the "Top 3 Enhancements" pipeline STAGE — these should normally
+  // travel together but nothing enforces that in HubSpot itself, so a
+  // ticket can drift to having only one. Every ticket with EITHER signal is
+  // surfaced.
+  //
+  // Confirmed live (Sep 2026, real portal data): a CLOSED/completed ticket
+  // naturally moves out of the "Top 3 Enhancements" stage into "Completed"
+  // while still keeping its top_3 rank (e.g. "Scheduled v. Actual Leave
+  // End" — top_3="2", stage="Completed") — that's normal workflow, not a
+  // data-quality problem, so alignment is only checked for still-open
+  // tickets. The real misalignment case this catches (confirmed live:
+  // "Communities: Community Information", top_3="1" but stage="Client
+  // Submitted") is an OPEN ticket the client ranked #1 that never actually
+  // got moved into the Top 3 stage — that one is worth flagging.
+  const hasTag = (t) => t.topThreeRank != null && t.topThreeRank !== '';
+  const hasStage = (t) => t.pipelineStageLabel === TOP_3_STATUS_LABEL;
+  const topThreeItems = tickets
+    .filter((t) => hasTag(t) || hasStage(t))
+    .map((t) => ({
+      ...t,
+      taggedTop3: hasTag(t),
+      statusTop3: hasStage(t),
+      aligned: !t.isOpen || hasTag(t) === hasStage(t),
+    }))
+    .sort((a, b) => (a.topThreeRank || '9').localeCompare(b.topThreeRank || '9'));
+
+  const topThreeEnhancements = {
+    items: topThreeItems,
+    hasAny: topThreeItems.length > 0,
+    misaligned: topThreeItems.filter((t) => !t.aligned),
+  };
+
   return {
     total: tickets.length,
     open: openTickets.length,
     closed: tickets.length - openTickets.length,
     byCategory,
     agingOpenTickets,
+    topThreeEnhancements,
     tickets,
   };
 }
