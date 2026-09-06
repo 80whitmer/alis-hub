@@ -6,6 +6,7 @@ const {
 const { newPage, ensureLoggedIn } = require('./playwright/browser');
 const { captureEntitlements } = require('./playwright/entitlementsPage');
 const { captureDailyStandUp } = require('./playwright/dailyStandUpPage');
+const { captureCareTracking } = require('./playwright/careTrackingPage');
 const { computeUsageSignals, setUsageCount } = require('../services/usageSignals');
 const { getSignalDescriptions } = require('../services/usageAuditCatalog');
 const { buildAuditGrid } = require('../services/usageAuditNormalizer');
@@ -282,14 +283,16 @@ async function runCompanyUsageAuditJob(jobId, payload) {
   }
 
   // ── Used, per-community: Daily Stand-Up (live page-scrape — no export
-  // endpoint or entitlement flag exists for this feature, see
-  // usageAuditCatalog.js). Confirmed live (Sep 2026): a community's ALIS
+  // endpoint or entitlement flag exists for this feature) + Care Tracking
+  // page confirmation (corroborates the recordedCare export signal — see
+  // usageAuditNormalizer.js). Confirmed live (Sep 2026): a community's ALIS
   // subdomain does NOT share admin.alisonline.com's login session (the one
   // captureEntitlements above uses) — logging in once per distinct host via
   // ensureLoggedIn(page, targetUrl) covers every community under that host,
   // so this only re-logs-in when the host actually changes.
-  emit('progress', { message: 'Confirming Daily Stand-Up activity directly on each community\'s ALIS page…' });
+  emit('progress', { message: 'Confirming Daily Stand-Up and Care Tracking activity directly on each community\'s ALIS page…' });
   const dailyStandUpByKey = {};
+  const careTrackingByKey = {};
   {
     let page;
     let loggedInHost = null;
@@ -325,9 +328,15 @@ async function runCompanyUsageAuditJob(jobId, payload) {
         } catch (err) {
           console.error(`[company-usage-audit:${jobId}] Daily Stand-Up capture failed for community ${communityId} [${host}]:`, err);
         }
+        try {
+          const capture = await captureCareTracking(page, host, communityId);
+          careTrackingByKey[`${host}::${communityId}`] = capture.rowCount;
+        } catch (err) {
+          console.error(`[company-usage-audit:${jobId}] Care Tracking page capture failed for community ${communityId} [${host}]:`, err);
+        }
       }
     } catch (err) {
-      const msg = `Daily Stand-Up page confirmation skipped entirely — could not launch a browser page: ${err.message}`;
+      const msg = `Daily Stand-Up/Care Tracking page confirmation skipped entirely — could not launch a browser page: ${err.message}`;
       console.error(`[company-usage-audit:${jobId}] ${msg}`, err);
       dataWarnings.push(msg);
     } finally {
@@ -368,6 +377,7 @@ async function runCompanyUsageAuditJob(jobId, payload) {
     deals,
     dealsAvailable,
     usageMap,
+    careTrackingPageConfirmedByCommunity: careTrackingByKey,
   });
   summary.hubspotCompanyId = hubspotCompanyId || null;
   summary.lookbackDays = lookbackDays;

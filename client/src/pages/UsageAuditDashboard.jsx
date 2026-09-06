@@ -38,7 +38,9 @@ function CommunityCell({ cell }) {
     ? 'Enabled: not scraped for this host'
     : cell.used === true && cell.enabled === true && cell.usageCount != null
       ? `Enabled: on (inferred from ${cell.usageCount} real usage record(s) — see Used)`
-      : `Enabled: ${cell.enabled ? 'on' : 'off'}`;
+      : cell.pageConfirmedRowCount != null && cell.pageConfirmedRowCount > 0
+        ? `Enabled: on (confirmed live — ${cell.pageConfirmedRowCount} resident row(s) on the actual Care Tracking page)`
+        : `Enabled: ${cell.enabled ? 'on' : 'off'}`;
   const usedTitle = cell.usageCount === null ? 'Used: no usage signal defined for this feature yet' : `Used: ${cell.usageCount} record(s) in the lookback window`;
 
   return (

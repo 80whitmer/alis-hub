@@ -71,7 +71,7 @@ function findContractedLineItems(matchedDeals, aliases) {
  * @param {object} args.usageMap - result of computeUsageSignals
  * @returns {object} the full audit snapshot summary
  */
-function buildAuditGrid({ companyName, communities, entitlementsByHost, deals, dealsAvailable, usageMap }) {
+function buildAuditGrid({ companyName, communities, entitlementsByHost, deals, dealsAvailable, usageMap, careTrackingPageConfirmedByCommunity = {} }) {
   const catalog = getCatalog();
   const hosts = [...new Set(communities.map((c) => c.host))];
 
@@ -101,6 +101,25 @@ function buildAuditGrid({ companyName, communities, entitlementsByHost, deals, d
       const usageCount = getUsageCount(usageMap, c.host, c.communityId, feature.usageSignal);
       const used = usageCount === null ? null : usageCount > 0;
 
+      // Care Tracking only — a live Playwright scrape of the community's
+      // own Care Tracking page (careTrackingPage.js), corroborating
+      // (not replacing) the `recordedCare` export-API signal above. Kept
+      // as a SEPARATE confirmation rather than folded into `usageCount`
+      // itself, since it's a different kind of number (today's resident
+      // row count, a point-in-time snapshot) from what `usageCount`
+      // documents (a lookback-window record count, per
+      // usageAuditCatalog.js's SIGNAL_DESCRIPTIONS) — mixing the two would
+      // make "Used" mean two different things depending on which source
+      // fired. Its only job is the same "real usage overrides a
+      // false/unscraped Enabled reading" logic just above: a community
+      // that just turned Care Tracking on this week (zero export-API
+      // records yet, but real residents already on the live page) should
+      // still read Enabled=true.
+      const pageConfirmedRowCount = feature.id === 'careTracking'
+        ? (careTrackingPageConfirmedByCommunity[key] ?? null)
+        : null;
+      const pageConfirmedActive = pageConfirmedRowCount != null ? pageConfirmedRowCount > 0 : null;
+
       byCommunity[key] = {
         contracted: (!dealsAvailable || feature.hubspotProductAliases.length === 0) ? null : contractedLineItems.length > 0,
         contractedDetail: contractedLineItems,
@@ -112,9 +131,10 @@ function buildAuditGrid({ companyName, communities, entitlementsByHost, deals, d
         // catalog mapping (see mappingConfidence) self-correct in the
         // common case instead of showing a contradictory enabled=false/
         // used=true cell (exactly what happened with RET on company 353).
-        enabled: used === true ? true : entitlementState[c.host],
+        enabled: (used === true || pageConfirmedActive === true) ? true : entitlementState[c.host],
         used,
         usageCount,
+        pageConfirmedRowCount,
       };
     }
 
