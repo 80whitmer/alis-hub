@@ -7,11 +7,13 @@ import KpiDashboard from './pages/KpiDashboard';
 import WellnessScorecard from './pages/WellnessScorecard';
 import UsageAuditDashboard from './pages/UsageAuditDashboard';
 import AuditHistory from './pages/AuditHistory';
+import EvaluationDetail from './pages/EvaluationDetail';
 import { version } from '../package.json';
 
 const nav = [
   { to: '/',        label: 'Dashboard' },
   { to: '/new-job', label: '+ New Job'  },
+  { to: '/evaluation-detail', label: 'Evaluation Lookup' },
 ];
 
 export default function App() {
@@ -60,6 +62,7 @@ export default function App() {
             <Route path="/wellness/:jobId"     element={<WellnessScorecard />} />
             <Route path="/usage-audit/:jobId"  element={<UsageAuditDashboard />} />
             <Route path="/audit-history/:jobId" element={<AuditHistory />} />
+            <Route path="/evaluation-detail" element={<EvaluationDetail />} />
           </Routes>
         </div>
       </main>
