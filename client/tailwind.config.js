@@ -8,63 +8,79 @@ export default {
   theme: {
     extend: {
       colors: {
-        // ALIS Brand Colors — Professional, Modern, Inviting
-        // Primary: Navy (trust, professionalism)
+        // ALIS Brand Colors — per ALIS_BrandGuide_2025.pdf.
+        // Primary: Onyx/White foundation, Slate/Smoke for the mid-scale —
+        // every text-primary-900/bg-primary-600/etc. across the app renders
+        // from this scale, so re-deriving it is what re-skins the whole UI.
         primary: {
-          50: '#f0f4fa',
-          100: '#d9e5f5',
-          200: '#b3cbeb',
-          300: '#7da8d8',
-          400: '#4a85c5',
-          500: '#2c5aa0',   // Main primary
-          600: '#1a3a52',   // Dark primary (headers)
-          700: '#152d3f',
-          800: '#0f1e2e',
-          900: '#0a1420',
+          50:  '#f7f7f7',
+          100: '#eeeeee',
+          200: '#d9d9da',
+          300: '#c4c4c5',
+          400: '#909295',   // Smoke
+          500: '#6d6e71',   // Slate — body/neutral text per the guide
+          600: '#4a4a4c',
+          700: '#2e2e30',
+          800: '#1a1a1b',
+          900: '#000000',   // Onyx
         },
 
-        // Accent: Teal (modern, inviting, action)
+        // Accent: warm ALIS palette (Marigold -> Flame), used for CTAs,
+        // highlights, borders — per the guide, never a dominant background.
         accent: {
-          50: '#f0fffe',
-          100: '#ccf7f5',
-          200: '#99efeb',
-          300: '#26d0ce',
-          400: '#00a896',   // Main accent
-          500: '#008878',
-          600: '#006b5f',
-          700: '#005347',
-          800: '#003d33',
-          900: '#002b24',
+          50:  '#fff7e8',
+          100: '#ffedc7',
+          200: '#fdd98a',
+          300: '#fbb219',   // Marigold
+          400: '#f77c02',   // Tangerine
+          500: '#f06022',   // Amber — main accent
+          600: '#ec4303',   // Flame
+          700: '#e22405',   // Scarlet
+          800: '#b81d04',
+          900: '#8f1603',
         },
 
-        // Status Colors
+        // Cool secondary accent (Glacier / Mint) — for places that want a
+        // secondary accent distinct from the warm CTA color.
+        cool: {
+          glacier: '#56a5c9',
+          mint:    '#7cc7a6',
+        },
+
+        // Status colors — success/warning/info stay conventional (no brand
+        // green exists, and universal red/green/yellow status semantics are
+        // worth more to usability than strict brand-color purism here).
+        // error adopts Scarlet, since the guide explicitly calls it out as
+        // "an accent/alert shade only" — a real, intentional brand fit.
         success: '#10b981',   // Green
         warning: '#f59e0b',   // Amber
-        error: '#ef4444',     // Red
+        error: '#e22405',     // Scarlet
         info: '#3b82f6',      // Blue
 
-        // Neutral Scale (grays)
+        // Neutral Scale (grays) — Slate/Smoke-tinted rather than the
+        // previous cool blue-grays, so borders/backgrounds read as part of
+        // the same warm-neutral family as primary.
         neutral: {
-          50: '#f9fafb',
-          100: '#f3f4f6',
-          150: '#eeeff2',
-          200: '#e5e7eb',
-          300: '#d1d5db',
-          400: '#9ca3af',
-          500: '#6b7280',
-          600: '#4b5563',
-          700: '#374151',
-          800: '#1f2937',
-          850: '#1a202d',
-          900: '#111827',
-          950: '#030712',
+          50: '#f9f9f9',
+          100: '#f3f3f3',
+          150: '#ececec',
+          200: '#e5e5e5',
+          300: '#d4d4d4',
+          400: '#a8a8aa',
+          500: '#909295',   // Smoke
+          600: '#6d6e71',   // Slate
+          700: '#4a4a4c',
+          800: '#2e2e30',
+          850: '#1f1f20',
+          900: '#000000',   // Onyx
+          950: '#000000',
         },
 
         // Legacy color names (for backward compatibility)
-        ink: '#111827',
-        panel: '#f9fafb',
-        border: '#e5e7eb',
-        muted: '#9ca3af',
+        ink: '#000000',
+        panel: '#f9f9f9',
+        border: '#e5e5e5',
+        muted: '#909295',
         blue: '#3b82f6',
       },
 
@@ -81,9 +97,16 @@ export default {
       },
 
       fontFamily: {
-        // Modern system fonts with good readability
-        sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'sans-serif'],
-        display: ['"Inter"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        // Primary: Lexend Exa (real Google Font, loaded in index.html) for
+        // headlines/headings/CTAs per the brand guide.
+        sans: ['"Lexend Exa"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        display: ['"Lexend Exa"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        // Secondary: Gotham Rounded is a commercial license with no font
+        // files in this project — listed first so real files (if ever
+        // added) are picked up automatically, falling back to Poppins (a
+        // similarly rounded, friendly geometric sans, free on Google
+        // Fonts) in the meantime.
+        secondary: ['"Gotham Rounded"', '"Poppins"', '-apple-system', 'sans-serif'],
         mono: ['"Fira Code"', '"Courier New"', 'monospace'],
       },
 

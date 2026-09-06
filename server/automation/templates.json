@@ -230,13 +230,13 @@
           "companyHost": {
             "type": "string",
             "title": "ALIS Company Host (subdomain)",
-            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"viva\" for viva.alisonline.com) — used to build the export API auth username",
-            "examples": ["viva"]
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"viva\" for viva.alisonline.com) — used to build the export API auth username. If this account spans more than one ALIS host (e.g. after a portfolio merge), comma-separate them (e.g. \"viva, viva-secondary\") — data from every host is pulled and combined into one QBR.",
+            "examples": ["viva", "viva, viva-secondary"]
           },
           "communities": {
             "type": "array",
             "title": "Communities (optional)",
-            "description": "Leave empty to automatically pull every community for this account, excluding any with \"Training\" in the name",
+            "description": "Leave empty to automatically pull every community from every configured host, excluding any with \"Training\" in the name",
             "items": {
               "type": "object",
               "properties": {
@@ -249,6 +249,12 @@
                   "type": "string",
                   "title": "ALIS Community ID",
                   "examples": ["1069"]
+                },
+                "host": {
+                  "type": "string",
+                  "title": "ALIS Host (optional)",
+                  "description": "Only needed for a multi-host account — which of the comma-separated Company Hosts above this community belongs to. Defaults to the first host if omitted.",
+                  "examples": ["viva-secondary"]
                 }
               },
               "required": ["name", "communityId"]
@@ -272,6 +278,144 @@
           }
         },
         "required": ["companyName", "companyHost", "periodStart", "periodEnd"]
+      }
+    },
+    {
+      "id": "wellness-scorecard",
+      "name": "Weekly Wellness Scorecard",
+      "description": "Pull clinical-risk indicators (falls, elopement, behavioral incidents, med exceptions, overdue evaluations, staff compliance) for the past week, broken out by AL/MC and community, with trend vs. prior week and ALIS 500 benchmark comparison where published",
+      "category": "reporting",
+      "icon": "🩺",
+      "timeout": 900000,
+      "scriptPath": "./wellnessExport.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Weekly Wellness Scorecard",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Imagine Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"imagineseniorliving\" for imagineseniorliving.alisonline.com). Comma-separate multiple hosts for a multi-host account.",
+            "examples": ["imagineseniorliving"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities (optional)",
+            "description": "Leave empty to automatically pull every community from every configured host, excluding any with \"Training\" in the name",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Community Name",
+                  "examples": ["The Gardens at Shadow Hills"]
+                },
+                "communityId": {
+                  "type": "string",
+                  "title": "ALIS Community ID",
+                  "examples": ["952"]
+                },
+                "host": {
+                  "type": "string",
+                  "title": "ALIS Host (optional)",
+                  "description": "Only needed for a multi-host account — defaults to the first host if omitted.",
+                  "examples": ["imagineseniorliving"]
+                }
+              },
+              "required": ["name", "communityId"]
+            }
+          },
+          "weekEnding": {
+            "type": "string",
+            "title": "Week Ending (YYYY-MM-DD)",
+            "description": "The last day of the 7-day window this report covers (e.g. the most recent Sunday)",
+            "examples": ["2026-08-30"]
+          },
+          "hubspotCompanyId": {
+            "type": "string",
+            "title": "HubSpot Company ID (optional)",
+            "examples": ["28652046383"]
+          }
+        },
+        "required": ["companyName", "companyHost", "weekEnding"]
+      }
+    },
+    {
+      "id": "company-usage-audit",
+      "name": "Company/Community ALIS Usage Audit",
+      "description": "For a company (and optionally its communities), compare what was Contracted (HubSpot deal line items), what's Enabled (ALIS Entitlements page), and what's actually Used (ALIS export API activity) feature-by-feature — a visual RAG grid replacing the old manually-maintained roadmap spreadsheet",
+      "category": "reporting",
+      "icon": "🔍",
+      "timeout": 900000,
+      "scriptPath": "./usageAudit.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Company/Community ALIS Usage Audit",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Imagine Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host(s) (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"imagineseniorliving\" for imagineseniorliving.alisonline.com). Comma-separate multiple hosts if this company has communities split across more than one ALIS account/URL — communities from every host are compared side by side in one grid.",
+            "examples": ["imagineseniorliving"]
+          },
+          "alisAdminCompanyIds": {
+            "type": "string",
+            "title": "ALIS Admin Company ID(s) (optional)",
+            "description": "The numeric company ID from admin.alisonline.com/Customers/EntitlementSets/EditCompany/{id} for each host above, in the SAME ORDER as ALIS Company Host(s) — e.g. \"353\" or \"353,412\" for two hosts. Leave a position blank (\"353,\") to skip the Entitlements scrape for that host. Leave the whole field empty to skip Enabled entirely.",
+            "examples": ["353"]
+          },
+          "hubspotCompanyId": {
+            "type": "string",
+            "title": "HubSpot Company ID (optional)",
+            "description": "Leave empty to skip the Contracted column entirely.",
+            "examples": ["28652046383"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities (optional)",
+            "description": "Leave empty to automatically pull every non-training, non-canceled community from every configured host",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Community Name",
+                  "examples": ["The Gardens at Lake Wellington Assisted Living"]
+                },
+                "communityId": {
+                  "type": "string",
+                  "title": "ALIS Community ID",
+                  "examples": ["952"]
+                },
+                "host": {
+                  "type": "string",
+                  "title": "ALIS Host (optional)",
+                  "description": "Only needed for a multi-host account — defaults to the first host if omitted.",
+                  "examples": ["imagineseniorliving"]
+                }
+              },
+              "required": ["name", "communityId"]
+            }
+          },
+          "lookbackDays": {
+            "type": "number",
+            "title": "Usage Lookback Window (days)",
+            "description": "How far back to check for real activity (billing, med administration, care tracking, evaluations, staff compliance, observations) when determining whether a feature is actually Used, not just Enabled.",
+            "default": 90,
+            "examples": [90]
+          }
+        },
+        "required": ["companyName", "companyHost"]
       }
     }
   ]

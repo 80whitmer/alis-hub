@@ -6,6 +6,8 @@ const { setJobStatus, setItemStatus }      = require('../db/database');
 const { broadcast }                        = require('../api/broadcaster');
 const { getTemplate }                      = require('./templates-loader');
 const { runKpiExportJob }                  = require('./kpiExport');
+const { runWellnessScorecardJob }          = require('./wellnessExport');
+const { runCompanyUsageAuditJob }          = require('./usageAudit');
 
 /**
  * Run the create-communities job.
@@ -85,12 +87,24 @@ async function runTemplateJob(jobId, template, payload) {
       case 'kpi-export':
         return await runKpiExportJob(jobId, payload);
 
-      default:
-        setJobStatus(jobId, 'failed');
-        emit('job_error', { error: `No handler for template: ${template.id}` });
+      case 'wellness-scorecard':
+        return await runWellnessScorecardJob(jobId, payload);
+
+      case 'company-usage-audit':
+        return await runCompanyUsageAuditJob(jobId, payload);
+
+      default: {
+        const error = `No handler for template: ${template.id}`;
+        setJobStatus(jobId, 'failed', error);
+        emit('job_error', { error });
+      }
     }
   } catch (err) {
-    setJobStatus(jobId, 'failed');
+    // This is the catch-all for a genuine unhandled exception escaping a
+    // template handler (as opposed to a handler's own clean "failed" exit
+    // with a specific message) — the stack trace is what makes this one
+    // debuggable after the fact instead of just "something threw."
+    setJobStatus(jobId, 'failed', err.stack || err.message);
     emit('job_error', { error: err.message });
   }
 }

@@ -4,6 +4,9 @@ import NewJob    from './pages/NewJob';
 import JobDetail from './pages/JobDetail';
 import FormMarkupApproval from './pages/FormMarkupApproval';
 import KpiDashboard from './pages/KpiDashboard';
+import WellnessScorecard from './pages/WellnessScorecard';
+import UsageAuditDashboard from './pages/UsageAuditDashboard';
+import { version } from '../package.json';
 
 const nav = [
   { to: '/',        label: 'Dashboard' },
@@ -15,8 +18,11 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-neutral-50">
       {/* Top bar — Clean, professional header */}
       <header className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center gap-8 shadow-sm">
-        <span className="font-bold text-xl text-primary-600">
-          alis<span className="text-accent-500">-hub</span>
+        <span className="flex items-center gap-1.5">
+          {/* Light-background horizontal wordmark per the brand guide —
+              true aspect ratio (1970x928, 2.123:1), scaled by height only. */}
+          <img src="/logo-horizontal.png" alt="alis" className="h-7 w-auto" />
+          <span className="font-bold text-xl text-accent-500">hub</span>
         </span>
         <nav className="flex gap-8">
           {nav.map(({ to, label }) => (
@@ -37,7 +43,7 @@ export default function App() {
           ))}
         </nav>
         <div className="ml-auto text-xs text-neutral-500">
-          v0.1.0
+          v{version}
         </div>
       </header>
 
@@ -50,6 +56,8 @@ export default function App() {
             <Route path="/jobs/:id"            element={<JobDetail />} />
             <Route path="/form-markup/:jobId"  element={<FormMarkupApproval />} />
             <Route path="/qbr/:jobId"          element={<KpiDashboard />} />
+            <Route path="/wellness/:jobId"     element={<WellnessScorecard />} />
+            <Route path="/usage-audit/:jobId"  element={<UsageAuditDashboard />} />
           </Routes>
         </div>
       </main>

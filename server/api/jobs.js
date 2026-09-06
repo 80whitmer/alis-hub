@@ -48,6 +48,11 @@ function enhanceLabelWithCompanyName(label, payload) {
     companyName = extractCompanyNameFromUrl(payload.companyUrl);
   }
 
+  // kpi-export supplies the company name directly, no URL to parse
+  if (!companyName && payload.companyName) {
+    companyName = payload.companyName;
+  }
+
   // Build enhanced label
   let enhancedLabel = label;
 
@@ -285,6 +290,30 @@ router.post('/:id/resume', (req, res) => {
     res.json({ success: true, message: 'Job resumed' });
   } catch (err) {
     console.error('[jobs POST /:id/resume] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/jobs/:id/progress — get job progress for loading bar
+router.get('/:id/progress', (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    const percentage = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
+
+    res.json({
+      jobId: req.params.id,
+      status: job.status,
+      percentage: Math.min(percentage, 100), // Cap at 100%
+      completed: job.completed || 0,
+      total: job.total || 0,
+      failed: job.failed || 0,
+      label: job.label,
+      updated_at: job.updated_at
+    });
+  } catch (err) {
+    console.error('[jobs GET /:id/progress] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
