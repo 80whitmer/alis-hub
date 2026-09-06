@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateFormFields, renderFormField } from '../utils/schema-form-generator';
 import BillingItemsInput from '../components/BillingItemsInput';
+import AdvancedJsonEditor from '../components/AdvancedJsonEditor';
+import CompanyLookup from '../components/CompanyLookup';
+import { getLastCompletedQuarter, formatQuarterLabel, getMostRecentSunday } from '../utils/quarter';
 
 export default function NewJob() {
   const navigate = useNavigate();
@@ -14,6 +17,15 @@ export default function NewJob() {
   const [loading, setLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [advancedJson, setAdvancedJson] = useState('');
+  const [hostAutoFilled, setHostAutoFilled] = useState(false);
+  const [healthImportText, setHealthImportText] = useState('');
+  const [healthImportParsed, setHealthImportParsed] = useState(null);
+  const [healthImportError, setHealthImportError] = useState('');
+  const [healthImportWarning, setHealthImportWarning] = useState('');
+  const [releaseImportText, setReleaseImportText] = useState('');
+  const [releaseImportParsed, setReleaseImportParsed] = useState(null);
+  const [releaseImportError, setReleaseImportError] = useState('');
+  const [releaseImportWarning, setReleaseImportWarning] = useState('');
 
   // Load templates on mount
   useEffect(() => {
@@ -46,9 +58,38 @@ export default function NewJob() {
               }
             });
           }
+
+          // Pre-populate period dates for kpi-export
+          if (selectedTemplate === 'kpi-export') {
+            const quarter = getLastCompletedQuarter();
+            initialFormData.periodStart = quarter.start;
+            initialFormData.periodEnd = quarter.end;
+          }
+
+          // Default Week Ending to the most recent Sunday for wellness-scorecard
+          if (selectedTemplate === 'wellness-scorecard') {
+            initialFormData.weekEnding = getMostRecentSunday();
+          }
+
           setFormData(initialFormData);
-          setAdvancedJson('');
           setError('');
+          setHealthImportText('');
+          setHealthImportParsed(null);
+          setHealthImportError('');
+          setHealthImportWarning('');
+          setReleaseImportText('');
+          setReleaseImportParsed(null);
+          setReleaseImportError('');
+          setReleaseImportWarning('');
+
+          // create-communities: always use Advanced JSON mode (dynamic form has wrong field names)
+          if (selectedTemplate === 'create-communities') {
+            setShowAdvanced(true);
+            setAdvancedJson(''); // AdvancedJsonEditor handles its own pre-population
+          } else {
+            setShowAdvanced(false);
+            setAdvancedJson('');
+          }
         } catch (err) {
           setError(`Error processing template: ${err.message}`);
         }
@@ -61,6 +102,87 @@ export default function NewJob() {
       ...prev,
       [key]: value,
     }));
+    if (key === 'companyHost') setHostAutoFilled(false);
+  }
+
+  function handleHealthImportChange(text) {
+    setHealthImportText(text);
+    setHealthImportWarning('');
+
+    if (!text.trim()) {
+      setHealthImportParsed(null);
+      setHealthImportError('');
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      setHealthImportParsed(null);
+      setHealthImportError(`Invalid JSON: ${err.message}`);
+      return;
+    }
+
+    if (typeof parsed !== 'object' || (!parsed.service_health && !parsed.financial_health)) {
+      setHealthImportParsed(null);
+      setHealthImportError('This does not look like an account-health-export JSON — expected top-level service_health and/or financial_health keys.');
+      return;
+    }
+
+    setHealthImportError('');
+    setHealthImportParsed(parsed);
+
+    // Auto-fill company info from the export if the form doesn't have it yet
+    // — the skill's JSON doesn't include the ALIS subdomain or period dates,
+    // so the form is still required for those, but this saves retyping the
+    // account name.
+    const importedName = parsed.account?.name;
+    const importedHubspotId = parsed.account?.hubspot_company_id;
+    setFormData(prev => {
+      const next = { ...prev };
+      if (importedName && !prev.companyName) next.companyName = importedName;
+      if (importedHubspotId && !prev.hubspotCompanyId) next.hubspotCompanyId = String(importedHubspotId);
+      return next;
+    });
+
+    if (importedName && formData.companyName && importedName.trim().toLowerCase() !== formData.companyName.trim().toLowerCase()) {
+      setHealthImportWarning(`Company name mismatch: this health export is for "${importedName}", but the form above is set to "${formData.companyName}" — double-check before running.`);
+    }
+  }
+
+  function handleReleaseImportChange(text) {
+    setReleaseImportText(text);
+    setReleaseImportWarning('');
+
+    if (!text.trim()) {
+      setReleaseImportParsed(null);
+      setReleaseImportError('');
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      setReleaseImportParsed(null);
+      setReleaseImportError(`Invalid JSON: ${err.message}`);
+      return;
+    }
+
+    if (typeof parsed !== 'object' || !Array.isArray(parsed.releases)) {
+      setReleaseImportParsed(null);
+      setReleaseImportError('This does not look like a release-recommendations JSON — expected a top-level "releases" array.');
+      return;
+    }
+
+    setReleaseImportError('');
+    setReleaseImportParsed(parsed);
+
+    const importedName = parsed.account?.name;
+    if (importedName && formData.companyName && importedName.trim().toLowerCase() !== formData.companyName.trim().toLowerCase()) {
+      setReleaseImportWarning(`Company name mismatch: this release-recommendations export is for "${importedName}", but the form above is set to "${formData.companyName}" — double-check before running.`);
+    }
   }
 
   function handleBillingItemsChange(items) {
@@ -88,29 +210,71 @@ export default function NewJob() {
   async function handleSubmit() {
     setError('');
 
-    let payload = showAdvanced ? validateAdvancedJson() : formData;
+    let payload = showAdvanced ? validateAdvancedJson() : { ...formData };
 
     if (!payload) {
       return;
     }
 
+    // The health-export JSON is additive to the form, never a replacement —
+    // it doesn't carry the ALIS subdomain or period dates, so the form
+    // fields above are validated normally on top of it.
+    if (isKpiExport && !showAdvanced && healthImportText.trim()) {
+      if (healthImportError) {
+        setError(`Fix the Health Export JSON before running this job: ${healthImportError}`);
+        return;
+      }
+      if (!healthImportParsed) {
+        setError('Health Export JSON is present but has not finished validating — check it before running this job.');
+        return;
+      }
+      payload.pendingHealthImport = healthImportParsed;
+    }
+
+    if (isKpiExport && !showAdvanced && releaseImportText.trim()) {
+      if (releaseImportError) {
+        setError(`Fix the Release Recommendations JSON before running this job: ${releaseImportError}`);
+        return;
+      }
+      if (!releaseImportParsed) {
+        setError('Release Recommendations JSON is present but has not finished validating — check it before running this job.');
+        return;
+      }
+      payload.pendingReleaseImport = releaseImportParsed;
+    }
+
     setLoading(true);
+    const requestBody = {
+      templateId: selectedTemplate,
+      label: undefined, // Use template default
+      payload,
+    };
+
+    console.log('📤 Submitting job with payload:', requestBody);
+
     try {
       const res = await fetch('/api/jobs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          templateId: selectedTemplate,
-          label: undefined, // Use template default
-          payload,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
+      console.log('📥 Response status:', res.status, res.statusText);
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Server error');
+      console.log('📥 Response body:', data);
+
+      if (!res.ok) {
+        const errorMsg = data.error || data.message || `Server error (${res.status})`;
+        console.error('❌ API Error:', errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      console.log('✅ Job created successfully:', data.id);
       navigate(`/jobs/${data.id}`);
     } catch (err) {
-      setError(err.message);
+      console.error('❌ Error submitting job:', err);
+      setError(err.message || 'Failed to submit job');
       setLoading(false);
     }
   }
@@ -126,6 +290,31 @@ export default function NewJob() {
   const fields = generateFormFields(templateData.inputSchema);
   const currentTemplate = templates.find(t => t.id === selectedTemplate);
   const isGLSync = selectedTemplate === 'sync-gl-accounts';
+  const isKpiExport = selectedTemplate === 'kpi-export';
+  const isWellnessScorecard = selectedTemplate === 'wellness-scorecard';
+  // Both report templates share the same "look up the account, auto-fill
+  // its known ALIS host" flow — only the QBR-specific Health/Release Import
+  // JSON blocks further down stay gated to isKpiExport alone.
+  const usesCompanyLookup = isKpiExport || isWellnessScorecard;
+
+  function handleCompanySelect({ name, hubspotId }) {
+    setFormData(prev => ({ ...prev, companyName: name, hubspotCompanyId: hubspotId }));
+    setHostAutoFilled(false);
+
+    // A real dropdown pick (not free typing) — check whether we've already
+    // seen a working companyHost for this account and save the user from
+    // retyping the ALIS subdomain.
+    if (!hubspotId) return;
+    fetch(`/api/company-hosts/lookup?hubspotCompanyId=${encodeURIComponent(hubspotId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (data?.companyHost) {
+          setFormData(prev => ({ ...prev, companyHost: data.companyHost }));
+          setHostAutoFilled(true);
+        }
+      })
+      .catch(() => {}); // best-effort — a miss here just means manual entry
+  }
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -160,7 +349,7 @@ export default function NewJob() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-primary-900">Configuration</h2>
-          {!isGLSync && (
+          {!isGLSync && selectedTemplate !== 'create-communities' && (
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="text-sm text-accent-600 hover:text-accent-700 font-medium"
@@ -244,23 +433,122 @@ export default function NewJob() {
             </div>
           </div>
         ) : showAdvanced ? (
-          // Advanced JSON mode
-          <div className="input-group mb-6">
-            <label className="input-label">Payload (JSON)</label>
-            <textarea
-              value={advancedJson}
-              onChange={e => setAdvancedJson(e.target.value)}
-              placeholder={JSON.stringify(templateData.inputSchema.examples?.[0] || {}, null, 2)}
-              rows={20}
-              className="font-mono text-sm"
-              spellCheck={false}
-            />
-            <p className="input-help">Paste your JSON payload directly</p>
+          // Advanced JSON mode — use rich editor for create-communities, plain textarea otherwise
+          <div className="mb-6">
+            {selectedTemplate === 'create-communities' ? (
+              <AdvancedJsonEditor
+                value={advancedJson}
+                onChange={setAdvancedJson}
+              />
+            ) : (
+              <div className="input-group">
+                <label className="input-label">Payload (JSON)</label>
+                <textarea
+                  value={advancedJson}
+                  onChange={e => setAdvancedJson(e.target.value)}
+                  placeholder={JSON.stringify(templateData.inputSchema.examples?.[0] || {}, null, 2)}
+                  rows={20}
+                  className="font-mono text-sm"
+                  spellCheck={false}
+                />
+                <p className="input-help">Paste your JSON payload directly</p>
+              </div>
+            )}
           </div>
         ) : (
           // Dynamic form mode (for non-GL-sync templates)
           <div className="space-y-1">
-            {fields.map(field => renderFormField(field, formData[field.key], handleFormChange))}
+            {usesCompanyLookup && (
+              <CompanyLookup
+                companyName={formData.companyName}
+                hubspotCompanyId={formData.hubspotCompanyId}
+                onSelect={handleCompanySelect}
+              />
+            )}
+            {usesCompanyLookup && hostAutoFilled && (
+              <p className="text-xs text-success -mt-4 mb-4">
+                ✓ ALIS subdomain auto-filled from a previous job for this account — double-check it before running.
+              </p>
+            )}
+            {fields
+              .filter(field => !usesCompanyLookup || (field.key !== 'companyName' && field.key !== 'hubspotCompanyId'))
+              .map(field => renderFormField(field, formData[field.key], handleFormChange))}
+          </div>
+        )}
+
+        {/* Health Export JSON — additive to the form above, never a replacement.
+            The skill's export has no ALIS subdomain or period dates, so the
+            configuration fields are always still required alongside it. */}
+        {isKpiExport && !showAdvanced && (
+          <div className="mt-8 pt-6 border-t border-neutral-200">
+            <h3 className="text-lg font-semibold text-primary-900 mb-1">
+              Also attach Health Export JSON <span className="text-sm font-normal text-neutral-500">(optional)</span>
+            </h3>
+            <p className="text-sm text-neutral-600 mb-4">
+              Paste the JSON output from the <span className="font-mono text-xs">qbr-export</span> Claude skill to include HubSpot Service &amp; Financial health data in this QBR from the start. This adds to the configuration above — it doesn't replace it, since the skill's export can't supply the ALIS subdomain or reporting period. You can also skip this and import it later from the QBR dashboard once the job finishes.
+            </p>
+
+            {healthImportWarning && (
+              <div className="alert alert-warning mb-3">
+                <span>⚠️</span>
+                <p className="text-sm">{healthImportWarning}</p>
+              </div>
+            )}
+
+            <div className="input-group">
+              <textarea
+                value={healthImportText}
+                onChange={(e) => handleHealthImportChange(e.target.value)}
+                placeholder='Paste account-health-export JSON here (e.g. { "service_health": {...}, "financial_health": {...} })'
+                rows={8}
+                className="font-mono text-xs"
+                spellCheck={false}
+              />
+              {healthImportError && <p className="text-xs text-danger mt-2">{healthImportError}</p>}
+              {healthImportParsed && !healthImportError && (
+                <p className="text-xs text-success mt-2">
+                  ✓ Parsed — health data for {healthImportParsed.account?.name || 'this account'} will be attached when the job completes.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Release Recommendations JSON — same "additive, optional, can also
+            import later from the QBR dashboard" pattern as Health Export
+            above. See server/services/RELEASE_RECOMMENDATIONS_SCHEMA.md. */}
+        {isKpiExport && !showAdvanced && (
+          <div className="mt-8 pt-6 border-t border-neutral-200">
+            <h3 className="text-lg font-semibold text-primary-900 mb-1">
+              Also attach Release Recommendations JSON <span className="text-sm font-normal text-neutral-500">(optional)</span>
+            </h3>
+            <p className="text-sm text-neutral-600 mb-4">
+              Paste the JSON output from the release-recommendations Claude Project to include a "Recent ALIS Platform Releases" slide curated for this account. You can also skip this and import it later from the QBR dashboard once the job finishes.
+            </p>
+
+            {releaseImportWarning && (
+              <div className="alert alert-warning mb-3">
+                <span>⚠️</span>
+                <p className="text-sm">{releaseImportWarning}</p>
+              </div>
+            )}
+
+            <div className="input-group">
+              <textarea
+                value={releaseImportText}
+                onChange={(e) => handleReleaseImportChange(e.target.value)}
+                placeholder='Paste release-recommendations JSON here (e.g. { "releases": [{ "title": "...", "description": "..." }] })'
+                rows={8}
+                className="font-mono text-xs"
+                spellCheck={false}
+              />
+              {releaseImportError && <p className="text-xs text-danger mt-2">{releaseImportError}</p>}
+              {releaseImportParsed && !releaseImportError && (
+                <p className="text-xs text-success mt-2">
+                  ✓ Parsed — {releaseImportParsed.releases.length} release(s) will be attached when the job completes.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>
