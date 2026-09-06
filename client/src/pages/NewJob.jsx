@@ -292,10 +292,12 @@ export default function NewJob() {
   const isGLSync = selectedTemplate === 'sync-gl-accounts';
   const isKpiExport = selectedTemplate === 'kpi-export';
   const isWellnessScorecard = selectedTemplate === 'wellness-scorecard';
-  // Both report templates share the same "look up the account, auto-fill
-  // its known ALIS host" flow — only the QBR-specific Health/Release Import
-  // JSON blocks further down stay gated to isKpiExport alone.
-  const usesCompanyLookup = isKpiExport || isWellnessScorecard;
+  const isAuditHistory = selectedTemplate === 'audit-history';
+  // All three report templates share the same "look up the account,
+  // auto-fill its known ALIS host" flow — only the QBR-specific
+  // Health/Release Import JSON blocks further down stay gated to
+  // isKpiExport alone.
+  const usesCompanyLookup = isKpiExport || isWellnessScorecard || isAuditHistory;
 
   function handleCompanySelect({ name, hubspotId }) {
     setFormData(prev => ({ ...prev, companyName: name, hubspotCompanyId: hubspotId }));

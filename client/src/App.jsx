@@ -6,6 +6,7 @@ import FormMarkupApproval from './pages/FormMarkupApproval';
 import KpiDashboard from './pages/KpiDashboard';
 import WellnessScorecard from './pages/WellnessScorecard';
 import UsageAuditDashboard from './pages/UsageAuditDashboard';
+import AuditHistory from './pages/AuditHistory';
 import { version } from '../package.json';
 
 const nav = [
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/qbr/:jobId"          element={<KpiDashboard />} />
             <Route path="/wellness/:jobId"     element={<WellnessScorecard />} />
             <Route path="/usage-audit/:jobId"  element={<UsageAuditDashboard />} />
+            <Route path="/audit-history/:jobId" element={<AuditHistory />} />
           </Routes>
         </div>
       </main>

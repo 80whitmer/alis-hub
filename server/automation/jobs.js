@@ -8,6 +8,7 @@ const { getTemplate }                      = require('./templates-loader');
 const { runKpiExportJob }                  = require('./kpiExport');
 const { runWellnessScorecardJob }          = require('./wellnessExport');
 const { runCompanyUsageAuditJob }          = require('./usageAudit');
+const { runAuditHistoryJob }               = require('./auditHistoryJob');
 
 /**
  * Run the create-communities job.
@@ -92,6 +93,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'company-usage-audit':
         return await runCompanyUsageAuditJob(jobId, payload);
+
+      case 'audit-history':
+        return await runAuditHistoryJob(jobId, payload);
 
       default: {
         const error = `No handler for template: ${template.id}`;

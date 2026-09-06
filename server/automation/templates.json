@@ -417,6 +417,92 @@
         },
         "required": ["companyName", "companyHost"]
       }
+    },
+    {
+      "id": "audit-history",
+      "name": "ALIS Audit History",
+      "description": "Pull ALIS's own Audit History log (who changed what, when) across a company, one or more communities, and/or one or more residents — unified into one filterable, timestamp-sorted feed instead of visiting each ALIS page by hand. Filters mirror ALIS's own (date range, Updated By, Type, Notes search).",
+      "category": "reporting",
+      "icon": "🕵",
+      "timeout": 600000,
+      "scriptPath": "./auditHistoryJob.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "ALIS Audit History",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Imagine Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS URL (e.g. \"imagineseniorliving\" for imagineseniorliving.alisonline.com). One host per run — Audit History is pulled directly from that ALIS instance's own pages, not the export API.",
+            "examples": ["imagineseniorliving"]
+          },
+          "includeCompany": {
+            "type": "boolean",
+            "title": "Include company-wide Audit History",
+            "description": "Pulls the Communities > Company tab's own Audit History (role/settings changes, company-level activity)."
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities (optional)",
+            "description": "Each community's own Audit History (deposits, contacts, closed periods, etc.).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Community Name", "examples": ["The Gardens at Lake Wellington Assisted Living"] },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["1188"] }
+              },
+              "required": ["communityId"]
+            }
+          },
+          "residents": {
+            "type": "array",
+            "title": "Residents (optional)",
+            "description": "Each resident's own Audit History (incidents, observations, billing/invoice activity, leaves, etc.) — this is the level to target for \"triangulate what happened to this specific resident.\"",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Resident Name", "examples": ["Albin, Vaunciel"] },
+                "residentId": { "type": "string", "title": "ALIS Resident ID", "examples": ["394656"] }
+              },
+              "required": ["residentId"]
+            }
+          },
+          "startDate": {
+            "type": "string",
+            "title": "Start Date (MM/DD/YYYY, optional)",
+            "description": "Same date-range filter as ALIS's own Audit History widget. Leave both dates empty to pull unfiltered (capped at 500 rows per target as a safety limit).",
+            "examples": ["09/01/2026"]
+          },
+          "endDate": {
+            "type": "string",
+            "title": "End Date (MM/DD/YYYY, optional)",
+            "examples": ["09/06/2026"]
+          },
+          "staffId": {
+            "type": "string",
+            "title": "Updated By — ALIS Staff ID (optional)",
+            "description": "The numeric staffId from ALIS's own \"Updated By\" dropdown for this account — not yet looked up automatically, check the account's Audit History page directly for the right ID.",
+            "examples": ["394738"]
+          },
+          "category": {
+            "type": "string",
+            "title": "Type / Category (optional)",
+            "description": "Matches ALIS's own \"Type\" dropdown values exactly (e.g. \"Compliance\", \"Care\", \"Deposits\", \"Profile\", \"Settings\") — case-sensitive, must match one of that account's real options.",
+            "examples": ["Compliance"]
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes search (optional)",
+            "description": "Free-text search within the audit note itself — same as ALIS's own \"Notes\" filter field."
+          }
+        },
+        "required": ["companyName", "companyHost"]
+      }
     }
   ]
 }

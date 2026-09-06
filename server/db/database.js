@@ -224,6 +224,20 @@ async function initDb() {
     );
   `);
 
+  // One row per audit-history job — a point-in-time snapshot of every
+  // Audit History row pulled across this job's targets (company page,
+  // community profile(s), resident profile(s)), same one-blob-per-job shape
+  // as usage_audit_snapshots/wellness_snapshots.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS audit_history_snapshots (
+      job_id       TEXT PRIMARY KEY,
+      company_host TEXT NOT NULL,
+      company_name TEXT,
+      summary_json TEXT NOT NULL,
+      created_at   TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -611,6 +625,23 @@ function getEvaluationConfigVersions(host) {
   }));
 }
 
+function addAuditHistorySnapshot(jobId, { companyHost, companyName, summary }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT OR REPLACE INTO audit_history_snapshots (job_id, company_host, company_name, summary_json, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [jobId, companyHost, companyName, JSON.stringify(summary), now]
+  );
+}
+
+function getAuditHistorySnapshot(jobId) {
+  const row = queryOne('SELECT * FROM audit_history_snapshots WHERE job_id = ?', [jobId]);
+  if (!row) return null;
+  row.summary = JSON.parse(row.summary_json);
+  delete row.summary_json;
+  return row;
+}
+
 module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
   deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
@@ -621,4 +652,5 @@ module.exports = {
   addPpdSnapshots, getPpdHistory,
   addUsageAuditSnapshot, getUsageAuditSnapshot,
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
+  addAuditHistorySnapshot, getAuditHistorySnapshot,
 };

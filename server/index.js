@@ -10,6 +10,7 @@ const qbrRouter     = require('./api/qbr');
 const wellnessRouter = require('./api/wellness');
 const companyHostsRouter = require('./api/companyHosts');
 const usageAuditRouter = require('./api/usageAudit');
+const auditHistoryRouter = require('./api/auditHistory');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,7 @@ app.use('/api/qbr',     qbrRouter);
 app.use('/api/wellness', wellnessRouter);
 app.use('/api/company-hosts', companyHostsRouter);
 app.use('/api/usage-audit', usageAuditRouter);
+app.use('/api/audit-history', auditHistoryRouter);
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Error handler middleware — must be last
