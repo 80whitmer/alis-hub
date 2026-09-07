@@ -11,10 +11,6 @@ function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 }
 
-function pctStr(p) {
-  return p != null ? `${(p * 100).toFixed(1)}%` : '—';
-}
-
 const BAND_COLOR = { red: '#dc2626', orange: '#ea580c', blue: '#2563eb', green: '#16a34a' };
 const BAND_LABEL_TO_COLOR = { Unhealthy: 'red', 'At Risk': 'orange', Stable: 'blue', Healthy: 'green' };
 
@@ -634,7 +630,6 @@ export default function TeamAmDashboard() {
     const scored = accounts.filter((a) => a.health_score != null);
     const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
     const distinctAms = new Set(accounts.map((a) => a.account_manager_name).filter((n) => n && !n.startsWith('Other AM') && n !== 'Unassigned'));
-    const occupancyEligible = accounts.filter((a) => a.total_capacity != null);
     return {
       totalAms: distinctAms.size,
       totalAccounts: accounts.length,
@@ -643,9 +638,6 @@ export default function TeamAmDashboard() {
       closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
       arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
       arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
-      totalCapacity: occupancyEligible.reduce((s, a) => s + a.total_capacity, 0),
-      currentCensus: occupancyEligible.reduce((s, a) => s + (a.current_census || 0), 0),
-      occupancyAccountCount: occupancyEligible.length,
       avgScore,
     };
   }, [accounts]);
@@ -690,16 +682,6 @@ export default function TeamAmDashboard() {
             <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
-            <StatCard
-              label="Total Capacity"
-              value={rollup.occupancyAccountCount > 0 ? rollup.totalCapacity : '—'}
-              sub={rollup.occupancyAccountCount > 0 ? `${rollup.occupancyAccountCount} of ${rollup.totalAccounts} known` : 'No occupancy data cached yet'}
-            />
-            <StatCard
-              label="Current Census"
-              value={rollup.occupancyAccountCount > 0 ? rollup.currentCensus : '—'}
-              sub={rollup.totalCapacity > 0 ? `${pctStr(rollup.currentCensus / rollup.totalCapacity)} occupied` : undefined}
-            />
           </div>
 
           <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team">
@@ -737,6 +719,7 @@ export default function TeamAmDashboard() {
                   <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
                     <SortableHeader label="Account" column="company_name" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Account Manager" column="account_manager_name" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Total Community" column="active_community_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Health" column="health_score" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Open Tickets" column="open_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Closed Tickets" column="closed_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
@@ -753,6 +736,7 @@ export default function TeamAmDashboard() {
                         <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
                       </td>
                       <td className="py-2 pr-4 text-neutral-500">{a.account_manager_name}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.active_community_count ?? '—'}</td>
                       <td className="py-2 pr-4"><ScoreBadge score={a.health_score} band={a.health_band} /></td>
                       <td className="py-2 pr-4">{a.open_ticket_count ?? 0}</td>
                       <td className="py-2 pr-4">{a.closed_ticket_count ?? 0}</td>
