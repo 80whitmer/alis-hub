@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
 } from 'recharts';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
@@ -508,6 +508,17 @@ function CategoryMixChart({ accounts, status }) {
     return <p className="text-sm text-neutral-500 italic">No {status} ticket data yet — click Refresh to pull it.</p>;
   }
 
+  // Sized to anchor a discussion (Aaron, 2026-09-07) — every category needs
+  // a legible label instead of a hover-only tooltip. The bar chart needs
+  // more height as categories pile up (each is its own row); the pie
+  // doesn't — a taller box just centers the same-size circle in more
+  // whitespace, it doesn't spread out slice labels — so it gets one
+  // generous fixed height instead (confirmed live: with the real ~28
+  // category values this data can have, tying pie height to category
+  // count the same way as the bar chart put the actual circle 800+px
+  // down an otherwise-blank card).
+  const chartHeight = chartType === 'pie' ? 640 : Math.max(480, data.length * 56);
+
   return (
     <>
       <div className="flex items-center justify-between mb-2">
@@ -521,22 +532,33 @@ function CategoryMixChart({ accounts, status }) {
           </button>
         )}
       </div>
-      <ResponsiveContainer width="100%" height={480}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         {chartType === 'pie' ? (
           <PieChart>
-            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius={170} label={({ name, total }) => `${name}: ${total}`}>
+            <Pie
+              data={data}
+              dataKey="total"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              outerRadius="68%"
+              label={({ name, total }) => `${name}: ${total}`}
+              isAnimationActive={false}
+            >
               {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
             </Pie>
             <Tooltip />
             {showLegend && <Legend />}
           </PieChart>
         ) : (
-          <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+          <BarChart data={data} layout="vertical" margin={{ top: 8, right: 48, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={180} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 13 }} width={200} />
             <Tooltip />
-            <Bar dataKey="total" fill={status === 'open' ? '#dc2626' : '#2563eb'} radius={[0, 4, 4, 0]} />
+            <Bar dataKey="total" fill={status === 'open' ? '#dc2626' : '#2563eb'} radius={[0, 4, 4, 0]}>
+              <LabelList dataKey="total" position="right" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+            </Bar>
           </BarChart>
         )}
       </ResponsiveContainer>
