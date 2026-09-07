@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
+import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -1333,6 +1334,7 @@ export default function AccountHealthDashboard() {
               value={rollup.enhancementTop + rollup.enhancementLesser}
               sub={`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
             />
+            <TopThreeEnhancementsCard accounts={accounts} />
             <StatCard label="Open Deals" value={rollup.openDeals} />
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />

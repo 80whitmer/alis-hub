@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import AccountHealthDashboard from './pages/AccountHealthDashboard';
+import TeamAmDashboard from './pages/TeamAmDashboard';
 import NewJob    from './pages/NewJob';
 import JobDetail from './pages/JobDetail';
 import FormMarkupApproval from './pages/FormMarkupApproval';
@@ -13,6 +14,7 @@ import { version } from '../package.json';
 
 const nav = [
   { to: '/',        label: 'Dashboard' },
+  { to: '/team-am', label: 'Team AM' },
   { to: '/jobs',    label: 'Job Board' },
   { to: '/new-job', label: '+ New Job'  },
   { to: '/evaluation-detail', label: 'Evaluation Lookup' },
@@ -57,6 +59,7 @@ export default function App() {
         <div className="container-wide">
           <Routes>
             <Route path="/"                    element={<AccountHealthDashboard />} />
+            <Route path="/team-am"             element={<TeamAmDashboard />} />
             <Route path="/jobs"                element={<Dashboard />} />
             <Route path="/new-job"             element={<NewJob />}    />
             <Route path="/jobs/:id"            element={<JobDetail />} />

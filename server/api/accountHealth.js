@@ -67,8 +67,13 @@ function mapLiveServiceHealth(ticketSummary) {
     // Finance, Done - waiting for confirmation, Insignificant Ticket
     // Updates, SPAM, New) so nothing open is silently uncounted.
     enhancementTopCount: ticketSummary.enhancementTickets.top.length,
+    // createdAt/closedAt/isOpen added (Sep 2026) for the shared Top 3
+    // Enhancement Requests drawer (TopThreeEnhancementsCard.jsx, used by
+    // both this dashboard and the new Team AM Dashboard) — the raw
+    // ticket already carries these fields, just wasn't forwarding them.
     enhancementTopItems: ticketSummary.enhancementTickets.top.map((t) => ({
       ticketId: t.id, subject: t.subject, rank: t.topThreeRank, stage: t.pipelineStageLabel, url: t.url,
+      createdAt: t.createdAt || null, closedAt: t.closedAt || null, isOpen: t.isOpen ?? null,
     })),
     enhancementLesserCount: ticketSummary.enhancementTickets.lesser.length,
     otherOpenCount: ticketSummary.otherOpenTickets.length,

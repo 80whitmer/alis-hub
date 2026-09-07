@@ -377,6 +377,46 @@ async function initDb() {
     // Column already exists — fine.
   }
 
+  // A deliberately SEPARATE table from account_health_snapshots above, not
+  // an added column — Aaron's call (Sep 2026): the personal Account Health
+  // Dashboard's refresh already does a destructive prune
+  // (pruneAccountHealthSnapshots deletes any row not in that one refresh's
+  // company list), scoped to just his own ~94 accounts. Unifying the two
+  // would mean the Team AM Dashboard's portal-wide refresh (611+ Home
+  // Offices) and Aaron's own refresh could each wipe the other's cached
+  // rows. Same shape as account_health_snapshots minus the occupancy_*
+  // columns (the Team AM Dashboard never pulls ALIS occupancy directly —
+  // it cross-references account_health_snapshots read-only for whatever
+  // Aaron has already refreshed there), plus account_manager_id/_name.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS team_am_snapshots (
+      hubspot_company_id TEXT PRIMARY KEY,
+      company_name       TEXT NOT NULL,
+      account_manager_id   TEXT,
+      account_manager_name TEXT,
+      lifecycle_stage     TEXT,
+      service_health_json  TEXT,
+      financial_health_json TEXT,
+      open_ticket_count    INTEGER DEFAULT 0,
+      closed_ticket_count  INTEGER DEFAULT 0,
+      open_deal_count      INTEGER DEFAULT 0,
+      open_deal_value_cents INTEGER DEFAULT 0,
+      arr_cents             INTEGER,
+      arr_added_this_year_cents INTEGER,
+      aging_json             TEXT,
+      aging_total_cents       INTEGER,
+      aging_past_due_61_plus_cents INTEGER,
+      aging_as_of_date        TEXT,
+      enhancement_top_count    INTEGER,
+      enhancement_lesser_count INTEGER,
+      other_open_ticket_count  INTEGER,
+      active_community_count  INTEGER,
+      health_score         INTEGER,
+      health_band          TEXT,
+      refreshed_at          TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -969,6 +1009,97 @@ function findRecentKpiSnapshotsByHubspotCompanyId() {
   return byCompanyId;
 }
 
+/** Same reasoning as pruneAccountHealthSnapshots — deleting rows for companies no longer in the fresh team-wide pull, without touching aging_json (its own independent upload cadence). This table has exactly one writer (the Team AM Dashboard's own refresh), so a full-list prune here is safe in a way it wouldn't be if this table were shared. */
+function pruneTeamAmSnapshots(currentIds) {
+  if (currentIds.length === 0) {
+    run('DELETE FROM team_am_snapshots');
+    return;
+  }
+  const placeholders = currentIds.map(() => '?').join(',');
+  run(`DELETE FROM team_am_snapshots WHERE hubspot_company_id NOT IN (${placeholders})`, currentIds);
+}
+
+/** Mirrors upsertAccountHealthSnapshot — see that function's comment for why ON CONFLICT DO UPDATE (not INSERT OR REPLACE) and why aging_* stays out of the UPDATE clause. */
+function upsertTeamAmSnapshot({
+  hubspotCompanyId, companyName, accountManagerId, accountManagerName, lifecycleStage, serviceHealth, financialHealth,
+  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents,
+  enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, activeCommunityCount, healthScore, healthBand,
+}) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO team_am_snapshots (
+       hubspot_company_id, company_name, account_manager_id, account_manager_name, lifecycle_stage,
+       service_health_json, financial_health_json,
+       open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
+       enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, active_community_count,
+       health_score, health_band, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET
+       company_name = excluded.company_name,
+       account_manager_id = excluded.account_manager_id,
+       account_manager_name = excluded.account_manager_name,
+       lifecycle_stage = excluded.lifecycle_stage,
+       service_health_json = excluded.service_health_json,
+       financial_health_json = excluded.financial_health_json,
+       open_ticket_count = excluded.open_ticket_count,
+       closed_ticket_count = excluded.closed_ticket_count,
+       open_deal_count = excluded.open_deal_count,
+       open_deal_value_cents = excluded.open_deal_value_cents,
+       arr_cents = excluded.arr_cents,
+       arr_added_this_year_cents = excluded.arr_added_this_year_cents,
+       enhancement_top_count = excluded.enhancement_top_count,
+       enhancement_lesser_count = excluded.enhancement_lesser_count,
+       other_open_ticket_count = excluded.other_open_ticket_count,
+       active_community_count = excluded.active_community_count,
+       health_score = excluded.health_score,
+       health_band = excluded.health_band,
+       refreshed_at = excluded.refreshed_at`,
+    [
+      hubspotCompanyId, companyName, accountManagerId ?? null, accountManagerName ?? null, lifecycleStage,
+      JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
+      openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null,
+      enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, activeCommunityCount ?? null,
+      healthScore ?? null, healthBand || null, now,
+    ]
+  );
+}
+
+function listTeamAmSnapshots() {
+  return queryAll('SELECT * FROM team_am_snapshots ORDER BY company_name').map((row) => ({
+    ...row,
+    serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
+    financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
+    aging: row.aging_json ? JSON.parse(row.aging_json) : null,
+  }));
+}
+
+/** Mirrors updateAccountHealthAging — its own independent upload cadence, decoupled from the HubSpot refresh cycle. */
+function updateTeamAmAging(hubspotCompanyId, aging) {
+  run(
+    `UPDATE team_am_snapshots
+     SET aging_json = ?, aging_total_cents = ?, aging_past_due_61_plus_cents = ?, aging_as_of_date = ?
+     WHERE hubspot_company_id = ?`,
+    [
+      aging ? JSON.stringify(aging) : null,
+      aging?.totalCents ?? null,
+      aging?.pastDue61PlusCents ?? null,
+      aging?.asOfDate ?? null,
+      hubspotCompanyId,
+    ]
+  );
+}
+
+function getTeamAmSnapshot(hubspotCompanyId) {
+  const row = queryOne('SELECT * FROM team_am_snapshots WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  if (!row) return null;
+  return {
+    ...row,
+    serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
+    financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
+    aging: row.aging_json ? JSON.parse(row.aging_json) : null,
+  };
+}
+
 module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
   deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
@@ -982,5 +1113,6 @@ module.exports = {
   addAuditHistorySnapshot, getAuditHistorySnapshot,
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError,
+  pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging, getTeamAmSnapshot,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };

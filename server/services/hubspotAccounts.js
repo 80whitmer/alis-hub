@@ -287,4 +287,88 @@ async function filterHomeOfficesWithActiveCommunity(companies) {
   return { companies: active, excludedInactiveCommunities };
 }
 
-module.exports = { getOwnerId, getOwnedCompanies };
+/**
+ * Manual owner-ID → name mapping for the Team AM Dashboard, supplied
+ * directly by Aaron (Sep 2026) after confirming live that neither of the
+ * two "resolve it programmatically" options actually work in this portal:
+ * - `account_manager`'s property DEFINITION has an empty `options` array —
+ *   confirmed live via GET /crm/v3/properties/companies/account_manager:
+ *   `referencedObjectType: "OWNER", externalOptions: true`, meaning this
+ *   is a dynamic owner-reference field, not a static enum with inline
+ *   labels the way a normal dropdown property would be.
+ * - `/crm/v3/owners` (the endpoint that WOULD resolve an owner ID to a
+ *   name) still 403s MISSING_SCOPES — the same `crm.objects.owners.read`
+ *   gap `getOwnerId()` above already works around for Aaron's own ID.
+ * Each ID verified live against real `account_manager`-filtered company
+ * counts before being hardcoded here (Sep 2026): 280699315→109,
+ * 474571664→105, 2558500→61, 77259229→124, 49052011→56, 90345669→4 Home
+ * Offices. 212010676 (Evan Kuo) and 1152655184 (Gary Jones) verified as
+ * real IDs but currently have 0 assigned Home Offices each — kept in the
+ * map anyway (harmless, and correct the moment either is assigned one).
+ * A small extra ~10 Home Offices (of 611 portal-wide, 142 with no
+ * account_manager at all) belong to an account_manager ID not in this
+ * list — `getAccountManagerName()` below falls back to "Unassigned"
+ * (no property value) or "Other AM" (a real but unmapped ID) rather than
+ * silently dropping those accounts. **How to apply:** update this map
+ * when an AM joins/leaves — there's no live sync, this is a point-in-time
+ * snapshot Aaron provided, not resolved from HubSpot automatically.
+ */
+const ACCOUNT_MANAGER_NAMES = {
+  280699315: 'Aaron Whitmer',
+  474571664: 'Taylor King',
+  2558500: 'Patrick Noack',
+  49052011: 'Owen Phoenix',
+  77259229: 'Jeffery Brown',
+  90345669: 'Jessica Crouse',
+  212010676: 'Evan Kuo',
+  1152655184: 'Gary Jones',
+};
+
+/** `null` (no account_manager set — "Unassigned") vs. a real ID this portal doesn't have a name for yet ("Other AM") are genuinely different states, not folded into one fallback string, so a dashboard reader can tell "nobody's assigned this" from "someone is, we just don't have their name mapped." */
+function getAccountManagerName(ownerId) {
+  if (!ownerId) return 'Unassigned';
+  return ACCOUNT_MANAGER_NAMES[ownerId] || `Other AM (${ownerId})`;
+}
+
+/**
+ * Every Home Office company portal-wide, regardless of account_manager —
+ * the Team AM Dashboard's "all accounts" set, vs. getOwnedCompanies'
+ * single-AM scope above. Same Home-Office signal (hs_num_child_companies
+ * > 0) and the same filterHomeOfficesWithActiveCommunity churn-exclusion
+ * pass, just without the `account_manager EQ` filter. Confirmed live
+ * (Sep 2026): 611 total Home Offices portal-wide, 142 with no
+ * account_manager set at all.
+ */
+async function getAllHomeOfficeCompanies() {
+  const companies = [];
+  let after;
+  do {
+    const { status, body } = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_num_child_companies', operator: 'GT', value: '0' },
+        ],
+      }],
+      properties: COMPANY_PROPERTIES,
+      limit: 100,
+      ...(after ? { after } : {}),
+    });
+    if (status !== 200) {
+      throw new Error(`HubSpot all-Home-Offices search failed (${status}): ${JSON.stringify(body)}`);
+    }
+    companies.push(...(body.results || []).map((c) => ({
+      id: c.id,
+      name: c.properties.name,
+      accountManagerId: c.properties.account_manager || null,
+      accountManagerName: getAccountManagerName(c.properties.account_manager),
+      lifecycleStage: c.properties.lifecyclestage || null,
+      createdAt: c.properties.createdate || null,
+      arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
+    })));
+    after = body.paging?.next?.after;
+  } while (after);
+
+  return filterHomeOfficesWithActiveCommunity(companies);
+}
+
+module.exports = { getOwnerId, getOwnedCompanies, getAllHomeOfficeCompanies, getAccountManagerName };
