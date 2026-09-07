@@ -46,6 +46,27 @@ const TICKET_PROPERTIES = [
 // have more than one — the label is the stable, human-meaningful signal.
 const TOP_3_STATUS_LABEL = 'Top 3 Enhancements';
 
+// Which open-ticket stage labels count as the account manager's actual
+// working queue, per Aaron (Sep 2026) — confirmed live against this
+// portal's 3 real ticket pipelines (Account Management / ALIS Pay /
+// Support Pipeline; get_properties on TICKET.hs_pipeline_stage): "Client
+// Submitted" and "In Progress" are the two stages that mean "someone needs
+// to act on this," in any pipeline. Everything else that isn't closed
+// either belongs to enhancement tracking (see LONG_TERM_STATUS_LABEL /
+// TOP_3_STATUS_LABEL below) or is a lower-volume status (Not Started,
+// Waiting for confirmation, Check In, ALIS Internal Finance, Done -
+// waiting for confirmation, Insignificant Ticket Updates, SPAM, New) that
+// isn't part of the focused open count but still isn't silently dropped —
+// see otherOpenTickets below.
+const FOCUSED_OPEN_STATUS_LABELS = new Set(['Client Submitted', 'In Progress']);
+
+// The pipeline stage a ticket sits in once it's agreed to be a longer-term
+// build rather than a quick fix — confirmed live via the same
+// get_properties lookup as TOP_3_STATUS_LABEL. Tracked as its own
+// "lesser enhancement" bucket, distinct from a Top 3 Enhancement (a ticket
+// can be both — see isTopEnhancement below).
+const LONG_TERM_STATUS_LABEL = 'Long-Term Projects';
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -272,10 +293,28 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
     misaligned: topThreeItems.filter((t) => !t.aligned),
   };
 
+  // Splits the open queue into the buckets Aaron actually wants surfaced
+  // separately (Sep 2026): a focused "needs action" queue, two enhancement
+  // tiers (Top 3 vs. everything else parked as a longer-term build), and a
+  // catch-all for lower-volume statuses so nothing open goes uncounted.
+  // isTopEnhancement reuses hasTag/hasStage above rather than
+  // topThreeItems directly, since topThreeItems isn't filtered to isOpen.
+  const isTopEnhancement = (t) => hasTag(t) || hasStage(t);
+  const isLesserEnhancement = (t) => t.pipelineStageLabel === LONG_TERM_STATUS_LABEL && !isTopEnhancement(t);
+  const focusedOpenTickets = openTickets.filter((t) => FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel));
+  const topEnhancementOpenTickets = openTickets.filter(isTopEnhancement);
+  const lesserEnhancementOpenTickets = openTickets.filter(isLesserEnhancement);
+  const otherOpenTickets = openTickets.filter((t) => (
+    !FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel) && !isTopEnhancement(t) && !isLesserEnhancement(t)
+  ));
+
   return {
     total: tickets.length,
     open: openTickets.length,
     closed: tickets.length - openTickets.length,
+    focusedOpenTickets,
+    enhancementTickets: { top: topEnhancementOpenTickets, lesser: lesserEnhancementOpenTickets },
+    otherOpenTickets,
     byCategory,
     agingOpenTickets,
     topThreeEnhancements,
@@ -286,7 +325,7 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
 // HubSpot's standard CRM object type IDs — used to build direct record
 // links (https://app.hubspot.com/contacts/<portal>/record/<type>/<id>).
 // Same URL shape regardless of object type; only this ID changes.
-const HUBSPOT_OBJECT_TYPE = { ticket: '0-5', deal: '0-3' };
+const HUBSPOT_OBJECT_TYPE = { ticket: '0-5', deal: '0-3', company: '0-2' };
 
 function hubspotRecordUrl(objectType, id) {
   const portalId = process.env.HUBSPOT_PORTAL_ID;
@@ -713,4 +752,7 @@ function enrichOpenTickets(serviceHealth) {
   };
 }
 
-module.exports = { getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, getOpenTasksForDeal, enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets };
+module.exports = {
+  getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, getOpenTasksForDeal,
+  enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets, hubspotRecordUrl,
+};

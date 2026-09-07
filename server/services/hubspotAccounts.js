@@ -79,6 +79,19 @@ async function hubspotRequest(method, path, body, attempt = 1) {
 
 const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr'];
 
+/** Splits `arr` into chunks of at most `size` items — HubSpot's search endpoint's IN-filter is fine with 109 values in one call today, but this keeps a much bigger future portfolio from silently exceeding it. */
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Confirmed live (Sep 2026) via get_properties on COMPANY.lifecyclestage:
+// stored value "50833003" carries this portal's custom "Canceled " label
+// (trailing space and all, exactly as stored) — the stage an individual
+// community moves to once it stops using ALIS.
+const CANCELED_LIFECYCLE_STAGE = '50833003';
+
 // Owner ID essentially never changes for a running process — cached in
 // memory (not the DB) rather than re-resolved on every refresh.
 let ownerIdPromise = null;
@@ -162,6 +175,11 @@ async function getOwnerId() {
  * Paginated the same cursor-`after` way as hubspotTickets.js's association
  * lookups, since a full portfolio can exceed one page (HubSpot search
  * defaults to 10, capped at 100 per page).
+ *
+ * Returns `{ companies, excludedInactiveCommunities }` — see
+ * filterHomeOfficesWithActiveCommunity below for the second filtering pass
+ * this return value now also reflects (Home Offices with zero remaining
+ * active communities are dropped from `companies` and listed there instead).
  */
 async function getOwnedCompanies(ownerId) {
   const companies = [];
@@ -196,7 +214,66 @@ async function getOwnedCompanies(ownerId) {
     })));
     after = body.paging?.next?.after;
   } while (after);
-  return companies;
+
+  return filterHomeOfficesWithActiveCommunity(companies);
+}
+
+/**
+ * Drops any Home Office where every one of its individual communities has
+ * churned — confirmed live (Sep 2026) against "Pinnacle/RSL Management":
+ * all 6 of its child companies carry lifecyclestage "Canceled ", backed up
+ * by 4 real "Cancellation"-type deals closed in 2025. hs_num_child_companies
+ * > 0 alone (the existing Home Office signal, see getOwnedCompanies above)
+ * doesn't distinguish that from a Home Office with one live community — a
+ * live portfolio scan (Sep 2026) found 15 of 109 "my accounts" Home
+ * Offices in exactly this all-canceled state.
+ *
+ * One bulk search across every candidate Home Office's children (chunked
+ * to 100 IN-filter values, then paginated per chunk) rather than one
+ * search per Home Office — keeps this to a handful of calls regardless of
+ * portfolio size, not O(n) extra HubSpot round-trips.
+ */
+async function filterHomeOfficesWithActiveCommunity(companies) {
+  if (companies.length === 0) return { companies: [], excludedInactiveCommunities: [] };
+
+  const childStagesByParent = new Map();
+  for (const idBatch of chunk(companies.map((c) => c.id), 100)) {
+    let after;
+    do {
+      const { status, body } = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
+        filterGroups: [{ filters: [{ propertyName: 'hs_parent_company_id', operator: 'IN', values: idBatch }] }],
+        properties: ['hs_parent_company_id', 'lifecyclestage'],
+        limit: 100,
+        ...(after ? { after } : {}),
+      });
+      if (status !== 200) {
+        throw new Error(`HubSpot child-company lookup failed (${status}): ${JSON.stringify(body)}`);
+      }
+      for (const c of body.results || []) {
+        const parentId = c.properties.hs_parent_company_id;
+        if (!parentId) continue;
+        if (!childStagesByParent.has(parentId)) childStagesByParent.set(parentId, []);
+        childStagesByParent.get(parentId).push(c.properties.lifecyclestage);
+      }
+      after = body.paging?.next?.after;
+    } while (after);
+  }
+
+  const active = [];
+  const excludedInactiveCommunities = [];
+  for (const company of companies) {
+    const childStages = childStagesByParent.get(company.id);
+    // No child records found at all (shouldn't happen given
+    // hs_num_child_companies > 0 already filtered upstream) — fail open
+    // rather than silently dropping a real account over a lookup gap.
+    const hasActiveCommunity = !childStages || childStages.some((s) => s !== CANCELED_LIFECYCLE_STAGE);
+    if (hasActiveCommunity) {
+      active.push(company);
+    } else {
+      excludedInactiveCommunities.push({ id: company.id, name: company.name });
+    }
+  }
+  return { companies: active, excludedInactiveCommunities };
 }
 
 module.exports = { getOwnerId, getOwnedCompanies };

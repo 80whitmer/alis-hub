@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 
 const { getOwnerId, getOwnedCompanies } = require('../services/hubspotAccounts');
-const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal } = require('../services/hubspotTickets');
-const { computeHealthScore } = require('../services/accountHealthScoring');
+const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
+const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
   updateAccountHealthAging,
@@ -18,9 +18,19 @@ const { matchAgingRows } = require('../services/agingReportMatcher');
  * data can actually supply. escalationCount/repeatIssues/slaAdherencePct
  * stay null (Jira- and judgment-based, not available from this API), which
  * scoreServiceHealth already treats as "no penalty," not a fabricated risk.
+ *
+ * "Open" here (openTicketCount, avgTicketAgeDays, agedTickets) means
+ * specifically the focused working queue — "Client Submitted"/"In
+ * Progress" tickets — per Aaron (Sep 2026), not every non-closed ticket:
+ * a Long-Term Project or Top 3 Enhancement sitting open for months isn't
+ * the same "stuck ticket" problem an unanswered Client Submitted ticket
+ * is, and scoring/aging stats that blended them together would have
+ * masked the actual SLA signal. Enhancement/other-status tickets are
+ * still fully counted, just in their own buckets below, not the aging
+ * calculation.
  */
 function mapLiveServiceHealth(ticketSummary) {
-  const openTickets = ticketSummary.tickets.filter((t) => t.isOpen);
+  const openTickets = ticketSummary.focusedOpenTickets;
   const avgTicketAgeDays = openTickets.length > 0
     ? openTickets.reduce((sum, t) => sum + (t.daysOpen || 0), 0) / openTickets.length
     : null;
@@ -43,8 +53,21 @@ function mapLiveServiceHealth(ticketSummary) {
     slaAdherencePct: null,
     // Extras for the drill-down UI, outside the scored shape:
     totalTickets: ticketSummary.total,
-    openTicketCount: ticketSummary.open,
+    openTicketCount: openTickets.length,
     closedTicketCount: ticketSummary.closed,
+    // Every open ticket NOT in the focused queue above, split into the
+    // buckets Aaron asked to track separately: ranked-1/2/3 (or
+    // "Top 3 Enhancements" stage) tickets, everything else parked in
+    // "Long-Term Projects," and a catch-all for lower-volume statuses
+    // (Not Started, Waiting for confirmation, Check In, ALIS Internal
+    // Finance, Done - waiting for confirmation, Insignificant Ticket
+    // Updates, SPAM, New) so nothing open is silently uncounted.
+    enhancementTopCount: ticketSummary.enhancementTickets.top.length,
+    enhancementTopItems: ticketSummary.enhancementTickets.top.map((t) => ({
+      ticketId: t.id, subject: t.subject, rank: t.topThreeRank, stage: t.pipelineStageLabel, url: t.url,
+    })),
+    enhancementLesserCount: ticketSummary.enhancementTickets.lesser.length,
+    otherOpenCount: ticketSummary.otherOpenTickets.length,
   };
 }
 
@@ -137,7 +160,7 @@ async function mapWithConcurrency(items, limit, fn) {
 router.post('/refresh', async (req, res) => {
   try {
     const ownerId = await getOwnerId();
-    const companies = await getOwnedCompanies(ownerId);
+    const { companies, excludedInactiveCommunities } = await getOwnedCompanies(ownerId);
     const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
 
     // Confirmed live (Sep 2026): a full 371-company portfolio at
@@ -155,7 +178,7 @@ router.post('/refresh', async (req, res) => {
         ]);
         const serviceHealth = mapLiveServiceHealth(ticketSummary);
         const financialHealth = await mapLiveFinancialHealth(dealSummary);
-        const { score, band } = computeHealthScore({ serviceHealth, financialHealth });
+        const { score, band } = computeHealthScore({ serviceHealth, financialHealth, arrCents: company.arrCents });
 
         upsertAccountHealthSnapshot({
           hubspotCompanyId: company.id,
@@ -163,12 +186,15 @@ router.post('/refresh', async (req, res) => {
           lifecycleStage: company.lifecycleStage,
           serviceHealth,
           financialHealth,
-          openTicketCount: ticketSummary.open,
+          openTicketCount: serviceHealth.openTicketCount,
           closedTicketCount: ticketSummary.closed,
           openDealCount: dealSummary.open,
           openDealValueCents: Math.round((dealSummary.totalOpenValue || 0) * 100),
           arrCents: company.arrCents,
           arrAddedThisYearCents: financialHealth.arrAddedThisYearCents,
+          enhancementTopCount: serviceHealth.enhancementTopCount,
+          enhancementLesserCount: serviceHealth.enhancementLesserCount,
+          otherOpenTicketCount: serviceHealth.otherOpenCount,
           healthScore: score,
           healthBand: band?.label || null,
         });
@@ -189,6 +215,7 @@ router.post('/refresh', async (req, res) => {
       errorCount: errors.length,
       errors,
       priorQbrCount: priorQbrByCompanyId.size,
+      excludedInactiveCommunities,
     });
   } catch (err) {
     console.error('[accountHealth] Refresh failed:', err);
@@ -304,13 +331,15 @@ router.get('/', (req, res) => {
     // to run after it.
     const enriched = accounts.map((a) => {
       const { score, band, subScores } = computeHealthScore({
-        serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging,
+        serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
       });
       return {
         ...a,
         health_score: score,
         health_band: band?.label || null,
         subScores,
+        dsoDays: computeDsoDays(a.aging, a.arr_cents),
+        hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
         priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
       };
     });

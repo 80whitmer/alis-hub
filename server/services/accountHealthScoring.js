@@ -89,11 +89,46 @@ function scoreAging(aging) {
   return Math.min(35, deduction);
 }
 
-function scoreFinancialHealth(financialHealth, aging) {
+/**
+ * A rudimentary Days Sales Outstanding — not a true invoice-to-payment DSO
+ * (this app has neither invoice dates nor payment dates for any account;
+ * the Intacct aging report is a point-in-time balance snapshot, and ARR is
+ * a company-level rate, not actual billed amounts per period). Pinned to
+ * the two real numbers actually available, per Aaron (Sep 2026): the
+ * current AR balance (aging.totalCents) against a daily-revenue-rate proxy
+ * (arrCents / 365) — "how many days of revenue does the outstanding
+ * balance represent," which is directionally the same question DSO asks,
+ * even though it isn't computed the textbook way. Labeled "rudimentary"
+ * everywhere it's surfaced so it doesn't get mistaken for the real thing.
+ */
+function computeDsoDays(aging, arrCents) {
+  if (!aging || !aging.totalCents || !arrCents || arrCents <= 0) return null;
+  const dailyRevenueCents = arrCents / 365;
+  if (dailyRevenueCents <= 0) return null;
+  return Math.round(aging.totalCents / dailyRevenueCents);
+}
+
+/**
+ * Deducts on top of scoreAging — a genuinely different signal (concentration
+ * of age within the CURRENT balance vs. the balance's size relative to
+ * revenue), not a duplicate of it: an account with a large, all-current
+ * balance scores 0 on scoreAging but can still carry a high DSO if that
+ * balance is large relative to its ARR.
+ */
+function scoreDso(dsoDays) {
+  if (dsoDays == null) return 0;
+  if (dsoDays > 90) return 15;
+  if (dsoDays > 60) return 10;
+  if (dsoDays > 45) return 5;
+  return 0;
+}
+
+function scoreFinancialHealth(financialHealth, aging, arrCents) {
   if (!financialHealth && !aging) return null;
   let score = 100;
 
   score -= scoreAging(aging);
+  score -= scoreDso(computeDsoDays(aging, arrCents));
 
   if (!financialHealth) return Math.max(0, Math.min(100, Math.round(score)));
 
@@ -170,10 +205,10 @@ function scoreProductHealth(productHealthScore) {
  * when NO category has any data, so the UI can show "no data" instead of a
  * false "0% healthy."
  */
-function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth, productHealthScore, aging } = {}) {
+function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth, productHealthScore, aging, arrCents } = {}) {
   const subScores = {
     service: scoreServiceHealth(serviceHealth),
-    financial: scoreFinancialHealth(financialHealth, aging),
+    financial: scoreFinancialHealth(financialHealth, aging, arrCents),
     relationship: scoreRelationshipHealth(relationshipHealth),
     product: scoreProductHealth(productHealthScore),
   };
@@ -193,4 +228,4 @@ function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth
   return { score, band: bandFor(score), subScores };
 }
 
-module.exports = { computeHealthScore, bandFor, SCORE_BANDS };
+module.exports = { computeHealthScore, bandFor, SCORE_BANDS, computeDsoDays };

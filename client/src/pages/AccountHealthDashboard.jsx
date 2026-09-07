@@ -42,12 +42,28 @@ function SortableHeader({ label, column, sort, onSort, className = '' }) {
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, sub }) {
   return (
     <div className="card">
       <p className="text-xs text-neutral-500 uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-bold text-primary-900 mt-1">{value}</p>
+      {sub && <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>}
     </div>
+  );
+}
+
+function CompanyLink({ account, children, className = 'text-accent-600 hover:underline' }) {
+  if (!account.hubspotUrl) return <span>{children}</span>;
+  return (
+    <a
+      href={account.hubspotUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={className}
+    >
+      {children}
+    </a>
   );
 }
 
@@ -167,11 +183,11 @@ function CategoryMixChart({ accounts }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={480}>
       <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
-        <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={140} />
+        <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={180} />
         <Tooltip />
         <Bar dataKey="total" fill="#2563eb" radius={[0, 4, 4, 0]} />
       </BarChart>
@@ -196,10 +212,10 @@ function DealTypeChart({ accounts }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+    <ResponsiveContainer width="100%" height={480}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 40 }}>
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={60} />
+        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" height={90} />
         <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
         <Tooltip />
         <Bar dataKey="count" radius={[4, 4, 0, 0]}>
@@ -222,17 +238,28 @@ function AccountDrawer({ account, onClose }) {
   return (
     <Drawer
       title={account.company_name}
-      subtitle={`HubSpot company ${account.hubspot_company_id}${account.lifecycle_stage ? ` · lifecycle stage ${account.lifecycle_stage}` : ''}`}
+      subtitle={
+        <>
+          {account.hubspotUrl ? (
+            <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">
+              Open in HubSpot
+            </a>
+          ) : `HubSpot company ${account.hubspot_company_id}`}
+          {account.lifecycle_stage ? ` · lifecycle stage ${account.lifecycle_stage}` : ''}
+        </>
+      }
       badge={<ScoreBadge score={account.health_score} band={BAND_LABEL_TO_COLOR[account.health_band] || null} />}
       onClose={onClose}
     >
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <StatCard label="Open Tickets" value={account.open_ticket_count} />
+        <StatCard label="Open Tickets" value={account.open_ticket_count} sub="Client Submitted + In Progress" />
         <StatCard label="Closed Tickets" value={account.closed_ticket_count} />
         <StatCard label="Open Deals" value={account.open_deal_count} />
         <StatCard label="Open Deal Value" value={currencyStr(account.open_deal_value_cents)} />
         <StatCard label="ARR" value={account.arr_cents != null ? currencyStr(account.arr_cents) : '—'} />
         <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(account.arr_added_this_year_cents)} />
+        <StatCard label="Aging Balance" value={account.aging_total_cents != null ? currencyStr(account.aging_total_cents) : '—'} />
+        <StatCard label="DSO" value={account.dsoDays != null ? `${account.dsoDays}d` : '—'} sub="Rudimentary — see Portfolio DSO note" />
       </div>
 
       {account.priorQbr && (
@@ -259,6 +286,30 @@ function AccountDrawer({ account, onClose }) {
           ))}
         </ul>
       ) : <p className="text-sm text-neutral-500 italic mb-6">No tickets open past 45 days.</p>}
+
+      <h3 className="font-semibold text-primary-900 text-sm mb-2">Enhancement Tracking</h3>
+      {(svc?.enhancementTopItems?.length > 0 || svc?.enhancementLesserCount > 0) ? (
+        <div className="text-sm mb-6">
+          {svc.enhancementTopItems?.length > 0 && (
+            <ul className="space-y-1 mb-2">
+              {svc.enhancementTopItems.map((t) => (
+                <li key={t.ticketId} className="flex justify-between gap-2">
+                  <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline truncate">
+                    {t.rank ? `#${t.rank} · ` : ''}{t.subject}
+                  </a>
+                  <span className="text-neutral-400 shrink-0">{t.stage}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {svc.enhancementLesserCount > 0 && (
+            <p className="text-neutral-500">{svc.enhancementLesserCount} additional Long-Term Project(s) tracked as lesser enhancements.</p>
+          )}
+        </div>
+      ) : <p className="text-sm text-neutral-500 italic mb-6">No enhancement requests tracked.</p>}
+      {svc?.otherOpenCount > 0 && (
+        <p className="text-xs text-neutral-400 -mt-4 mb-6">{svc.otherOpenCount} other open ticket(s) in lower-volume statuses (billing/support), not counted above.</p>
+      )}
 
       <h3 className="font-semibold text-primary-900 text-sm mb-2">Financial Health</h3>
       {openDeals.length > 0 ? (
@@ -345,7 +396,7 @@ function flattenDeals(accounts) {
  * (vs. `[]`) means the fetch itself failed for that one deal, shown as
  * "unavailable" rather than a false "no open tasks."
  */
-function DealsSection({ accounts }) {
+function DealsSection({ accounts, search }) {
   const allDeals = useMemo(() => flattenDeals(accounts), [accounts]);
   const pipelines = useMemo(
     () => [...new Set(allDeals.map((d) => d.pipeline).filter(Boolean))].sort(),
@@ -383,10 +434,16 @@ function DealsSection({ accounts }) {
   return (
     <SectionCard
       title="All Deals"
-      description={`Open + recently-closed (90 days) across every account — ${filtered.length} of ${allDeals.length} shown`}
+      description={
+        search.trim()
+          ? `Open + recently-closed (90 days) — ${filtered.length} of ${allDeals.length} shown, matching "${search.trim()}"`
+          : `Open + recently-closed (90 days) across every account — ${filtered.length} of ${allDeals.length} shown`
+      }
     >
       {allDeals.length === 0 ? (
-        <p className="text-sm text-neutral-500 italic">No deals yet — click Refresh to pull them.</p>
+        <p className="text-sm text-neutral-500 italic">
+          {search.trim() ? `No deals for accounts matching "${search.trim()}".` : 'No deals yet — click Refresh to pull them.'}
+        </p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2 mb-4">
@@ -542,16 +599,33 @@ export default function AccountHealthDashboard() {
   const rollup = useMemo(() => {
     const scored = accounts.filter((a) => a.health_score != null);
     const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
+
+    // Weighted, not a simple average-of-averages, so a handful of small
+    // accounts with an odd balance/ARR ratio can't swing the portfolio
+    // figure — same reasoning as summing dollars before dividing anywhere
+    // else in this rollup. Still a rudimentary DSO (see
+    // accountHealthScoring.js's computeDsoDays doc comment) — labeled as
+    // such wherever it's shown.
+    const dsoEligible = accounts.filter((a) => a.aging_total_cents != null && a.arr_cents);
+    const dsoAgingTotal = dsoEligible.reduce((s, a) => s + a.aging_total_cents, 0);
+    const dsoArrTotal = dsoEligible.reduce((s, a) => s + a.arr_cents, 0);
+    const portfolioDsoDays = dsoArrTotal > 0 ? Math.round(dsoAgingTotal / (dsoArrTotal / 365)) : null;
+
     return {
       totalAccounts: accounts.length,
       openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
       closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
+      enhancementTop: accounts.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
+      enhancementLesser: accounts.reduce((s, a) => s + (a.enhancement_lesser_count || 0), 0),
+      otherOpen: accounts.reduce((s, a) => s + (a.other_open_ticket_count || 0), 0),
       openDeals: accounts.reduce((s, a) => s + (a.open_deal_count || 0), 0),
       openDealValueCents: accounts.reduce((s, a) => s + (a.open_deal_value_cents || 0), 0),
       arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
       arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+      agingTotalCents: accounts.reduce((s, a) => s + (a.aging_total_cents || 0), 0),
       pastDue61PlusCents: accounts.reduce((s, a) => s + (a.aging_past_due_61_plus_cents || 0), 0),
       agingAsOfDate: accounts.find((a) => a.aging_as_of_date)?.aging_as_of_date || null,
+      portfolioDsoDays,
       avgScore,
       // Lifecycle stages come back as opaque HubSpot property-option IDs
       // (or the literal "lead" for that built-in one) — not resolved to
@@ -571,6 +645,11 @@ export default function AccountHealthDashboard() {
             {rollup.totalAccounts} HubSpot accounts you own
             {refreshResult && ` · last refresh: ${refreshResult.companyCount} accounts, ${refreshResult.errorCount} error(s)`}
           </p>
+          {refreshResult?.excludedInactiveCommunities?.length > 0 && (
+            <p className="text-xs text-neutral-400 mt-1 max-w-2xl">
+              Excluded {refreshResult.excludedInactiveCommunities.length} Home Office(s) with no active ALIS community: {refreshResult.excludedInactiveCommunities.map((c) => c.name).join(', ')}
+            </p>
+          )}
         </div>
         <div className="flex gap-3">
           <ImportAgingReportButton onImported={load} />
@@ -601,27 +680,43 @@ export default function AccountHealthDashboard() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <StatCard label="Total Accounts" value={rollup.totalAccounts} />
-            <StatCard label="Open Tickets" value={rollup.openTickets} />
+            <StatCard
+              label="Open Tickets"
+              value={rollup.openTickets}
+              sub="Client Submitted + In Progress"
+            />
             <StatCard label="Closed Tickets" value={rollup.closedTickets} />
             <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
+            <StatCard
+              label="Enhancement Requests"
+              value={rollup.enhancementTop + rollup.enhancementLesser}
+              sub={`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
+            />
             <StatCard label="Open Deals" value={rollup.openDeals} />
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
             <StatCard
-              label={`Past Due 61+ Days${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`}
+              label={`Aging Balance${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`}
+              value={rollup.agingAsOfDate ? currencyStr(rollup.agingTotalCents) : '—'}
+            />
+            <StatCard
+              label="Past Due 61+ Days"
               value={rollup.agingAsOfDate ? currencyStr(rollup.pastDue61PlusCents) : '—'}
+            />
+            <StatCard
+              label="Portfolio DSO"
+              value={rollup.portfolioDsoDays != null ? `${rollup.portfolioDsoDays}d` : '—'}
+              sub="Rudimentary — AR balance ÷ daily revenue rate, not true invoice-to-payment DSO"
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            <SectionCard title="Tickets by Category 2.0" description="Aggregated across every account, open + closed">
-              <CategoryMixChart accounts={accounts} />
-            </SectionCard>
-            <SectionCard title="Deals by Type" description="Aggregated across every account's deal history">
-              <DealTypeChart accounts={accounts} />
-            </SectionCard>
-          </div>
+          <SectionCard title="Tickets by Category 2.0" description="Aggregated across every account, open + closed">
+            <CategoryMixChart accounts={accounts} />
+          </SectionCard>
+          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history">
+            <DealTypeChart accounts={accounts} />
+          </SectionCard>
 
           <SectionCard
             title="Accounts"
@@ -645,7 +740,9 @@ export default function AccountHealthDashboard() {
                     <SortableHeader label="Closed Tickets" column="closed_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Open Deals" column="open_deal_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Open Deal Value" column="open_deal_value_cents" sort={sort} onSort={toggleSort} className="pr-4" />
-                    <SortableHeader label="ARR" column="arr_cents" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="ARR" column="arr_cents" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Aging Balance" column="aging_total_cents" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="DSO" column="dsoDays" sort={sort} onSort={toggleSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -655,13 +752,19 @@ export default function AccountHealthDashboard() {
                       className="border-t border-neutral-100 cursor-pointer hover:bg-neutral-50"
                       onClick={() => setSelected(a)}
                     >
-                      <td className="py-2 pr-4 text-neutral-700 font-medium">{a.company_name}</td>
+                      <td className="py-2 pr-4 font-medium">
+                        <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                      </td>
                       <td className="py-2 pr-4"><ScoreBadge score={a.health_score} band={BAND_LABEL_TO_COLOR[a.health_band] || null} /></td>
                       <td className="py-2 pr-4 text-neutral-500">{a.open_ticket_count}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.closed_ticket_count}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.open_deal_count}</td>
                       <td className="py-2 pr-4 text-neutral-500">{currencyStr(a.open_deal_value_cents)}</td>
-                      <td className="py-2 text-neutral-500">{a.arr_cents != null ? currencyStr(a.arr_cents) : '—'}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.arr_cents != null ? currencyStr(a.arr_cents) : '—'}</td>
+                      <td className={`py-2 pr-4 ${a.aging_past_due_61_plus_cents > 0 ? 'text-error font-medium' : 'text-neutral-500'}`}>
+                        {a.aging_total_cents != null ? currencyStr(a.aging_total_cents) : '—'}
+                      </td>
+                      <td className="py-2 text-neutral-500">{a.dsoDays != null ? `${a.dsoDays}d` : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -670,7 +773,7 @@ export default function AccountHealthDashboard() {
             </div>
           </SectionCard>
 
-          <DealsSection accounts={accounts} />
+          <DealsSection accounts={filtered} search={search} />
         </>
       )}
 

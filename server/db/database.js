@@ -264,6 +264,9 @@ async function initDb() {
       aging_total_cents       INTEGER,
       aging_past_due_61_plus_cents INTEGER,
       aging_as_of_date        TEXT,
+      enhancement_top_count    INTEGER,
+      enhancement_lesser_count INTEGER,
+      other_open_ticket_count  INTEGER,
       health_score         INTEGER,
       health_band          TEXT,
       refreshed_at          TEXT DEFAULT (datetime('now'))
@@ -301,6 +304,21 @@ async function initDb() {
   }
   try {
     db.run(`ALTER TABLE account_health_snapshots ADD COLUMN arr_added_this_year_cents INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN enhancement_top_count INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN enhancement_lesser_count INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN other_open_ticket_count INTEGER;`);
   } catch {
     // Column already exists — fine.
   }
@@ -740,15 +758,17 @@ function pruneAccountHealthSnapshots(currentIds) {
  */
 function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
-  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents, healthScore, healthBand,
+  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents,
+  enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, healthScore, healthBand,
 }) {
   const now = new Date().toISOString();
   run(
     `INSERT INTO account_health_snapshots (
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
+       enhancement_top_count, enhancement_lesser_count, other_open_ticket_count,
        health_score, health_band, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        lifecycle_stage = excluded.lifecycle_stage,
@@ -760,6 +780,9 @@ function upsertAccountHealthSnapshot({
        open_deal_value_cents = excluded.open_deal_value_cents,
        arr_cents = excluded.arr_cents,
        arr_added_this_year_cents = excluded.arr_added_this_year_cents,
+       enhancement_top_count = excluded.enhancement_top_count,
+       enhancement_lesser_count = excluded.enhancement_lesser_count,
+       other_open_ticket_count = excluded.other_open_ticket_count,
        health_score = excluded.health_score,
        health_band = excluded.health_band,
        refreshed_at = excluded.refreshed_at`,
@@ -767,6 +790,7 @@ function upsertAccountHealthSnapshot({
       hubspotCompanyId, companyName, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null,
+      enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0,
       healthScore ?? null, healthBand || null, now,
     ]
   );
