@@ -226,7 +226,7 @@ function buildOccupancyBreakdownTable(title, rows, keyField) {
       <table>
         <thead><tr><th>${keyField === 'productType' ? 'Product Type' : 'Classification'}</th><th class="num">Occupancy %</th><th class="num">Occupied / Total</th></tr></thead>
         <tbody>
-          ${rows.map((r) => `<tr><td>${escapeHtml(String(r[keyField]))}</td><td class="num">${r.pct != null ? `${(r.pct * 100).toFixed(1)}%` : '—'}</td><td class="num">${r.occupied} / ${r.total}</td></tr>`).join('\n')}
+          ${rows.map((r) => `<tr><td>${escapeHtml(String(r[keyField]))}</td><td class="num">${r.pct != null ? `${(r.pct * 100).toFixed(1)}%` : '—'}</td><td class="num">${r.occupied} / ${r.total ?? '—'}</td></tr>`).join('\n')}
         </tbody>
       </table>
     </div>`;

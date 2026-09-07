@@ -21,7 +21,7 @@
  * kpiExport.js/wellnessExport.js/usageAudit.js already use.
  */
 const { getCompanyHost } = require('../db/database');
-const { getOccupancy } = require('./alisApiClient');
+const { getOccupancy, getResidents } = require('./alisApiClient');
 const { normalizeOccupancy } = require('./kpiNormalizer');
 
 function todayIso() {
@@ -79,6 +79,45 @@ function filterToLatestDay(rawRows) {
   return { rows: actual.filter((r) => r.date === latest), asOfDate: latest };
 }
 
+/**
+ * Some accounts genuinely don't use ALIS's floor-plan/room-assignment
+ * feature — confirmed live (Sep 2026, "Constant Care" / host
+ * "grandbrook"): a correctly-mapped, clearly real, active account
+ * (29 real communities, all plausibly named) whose hqOccupancies pull
+ * comes back completely empty on every community and every month
+ * tried, while `/v1/export/residents` for the SAME host returns 556
+ * real current residents. hqOccupancies being empty means "this
+ * account doesn't track room assignments in ALIS," not "no data" —
+ * falling back to a current-residents count gets a real census number
+ * for exactly this case, just without a capacity/vacant-bed figure
+ * (residents-only data has no concept of an empty bed, so `total` stays
+ * null rather than guessing occupied === capacity).
+ */
+function normalizeFromResidents(residents) {
+  const byProductType = {};
+  const byClassification = {};
+  for (const r of residents) {
+    const pt = (r.productType || 'Unspecified').toString().trim() || 'Unspecified';
+    byProductType[pt] = (byProductType[pt] || 0) + 1;
+    const cl = (r.classification || 'Unspecified').toString().trim() || 'Unspecified';
+    byClassification[cl] = (byClassification[cl] || 0) + 1;
+  }
+  return {
+    hasOccupancyData: residents.length > 0,
+    pct: null,
+    occupiedRoomDays: residents.length,
+    totalRoomDays: null,
+    byProductType: Object.entries(byProductType)
+      .map(([productType, occupied]) => ({ productType, occupied, total: null, pct: null }))
+      .sort((a, b) => b.occupied - a.occupied),
+    byClassification: Object.entries(byClassification)
+      .map(([classification, occupied]) => ({ classification, occupied, total: null, pct: null }))
+      .sort((a, b) => b.occupied - a.occupied),
+  };
+}
+
+const NO_DATA = { hasOccupancyData: false, pct: null, occupiedRoomDays: null, totalRoomDays: null, byProductType: [], byClassification: [] };
+
 /** Returns null if this account has no known ALIS subdomain — a real, expected state for most of the portfolio today (see doc comment above), not an error. */
 async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
   const host = getCompanyHost({ companyName, hubspotCompanyId });
@@ -92,7 +131,9 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
   // succeeds, matching kpiExport.js's partial-data-over-total-failure
   // pattern for the same multi-host case. Only throws (surfacing as a
   // real per-account error in the /refresh-occupancy route) if every
-  // host failed.
+  // host failed on BOTH the floor-plan pull and the residents fallback
+  // below — a host that's simply wrong/unauthorized should still read
+  // as a failure, not silently render as "no data."
   const rawRows = [];
   const hostErrors = [];
   for (const h of hosts) {
@@ -102,16 +143,39 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
       hostErrors.push(`${h}: ${err.message}`);
     }
   }
-  if (hostErrors.length === hosts.length) {
-    throw new Error(`Occupancy pull failed for every host (${hosts.join(', ')}): ${hostErrors.join('; ')}`);
-  }
-  if (hostErrors.length > 0) {
-    console.error(`[accountHealthOccupancy] ${companyName}: occupancy pull failed for ${hostErrors.length} of ${hosts.length} host(s), continuing with the rest: ${hostErrors.join('; ')}`);
-  }
 
   const { rows, asOfDate } = filterToLatestDay(rawRows);
   const normalized = normalizeOccupancy(rows);
-  return { ...normalized, asOfDate };
+  if (normalized.hasOccupancyData) {
+    if (hostErrors.length > 0) {
+      console.error(`[accountHealthOccupancy] ${companyName}: occupancy pull failed for ${hostErrors.length} of ${hosts.length} host(s), continuing with the rest: ${hostErrors.join('; ')}`);
+    }
+    return { ...normalized, asOfDate };
+  }
+
+  // No floor-plan data from any host — try current residents instead
+  // before giving up.
+  const residents = [];
+  const residentErrors = [];
+  for (const h of hosts) {
+    try {
+      residents.push(...await getResidents(h));
+    } catch (err) {
+      residentErrors.push(`${h}: ${err.message}`);
+    }
+  }
+
+  if (residents.length > 0) {
+    return { ...normalizeFromResidents(residents), asOfDate: todayIso() };
+  }
+
+  // Neither approach returned anything. Only a real error if EVERY host
+  // failed on BOTH pulls — otherwise this is a genuine "no data at all
+  // for this account" case, not a failure.
+  if (hostErrors.length === hosts.length && residentErrors.length === hosts.length) {
+    throw new Error(`Occupancy pull failed for every host (${hosts.join(', ')}): ${hostErrors.join('; ')}`);
+  }
+  return NO_DATA;
 }
 
 module.exports = { getOccupancySnapshotForAccount };

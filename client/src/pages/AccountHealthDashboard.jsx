@@ -76,6 +76,33 @@ function JumpLink({ to, children }) {
   );
 }
 
+/** Floating "back to top" button — this page is long (charts, Accounts table, All Deals) and Aaron asked for a way back up that doesn't require scrolling by hand. Only shown once scrolled down a bit, so it's not just sitting over the header. */
+function BackToTopButton() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setVisible(window.scrollY > 400);
+    }
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      className="fixed bottom-6 right-6 z-50 w-11 h-11 rounded-full bg-accent-500 text-white shadow-lg hover:bg-accent-600 transition-colors flex items-center justify-center text-lg"
+      aria-label="Back to top"
+      title="Back to top"
+    >
+      ↑
+    </button>
+  );
+}
+
 function CompanyLink({ account, children, className = 'text-accent-600 hover:underline' }) {
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
@@ -606,7 +633,7 @@ function OccupancyBreakdownTable({ title, rows, keyField }) {
             <tr key={r[keyField]} className="border-t border-neutral-100">
               <td className="py-1.5">{r[keyField]}</td>
               <td className="py-1.5 text-right">{pctStr(r.pct)}</td>
-              <td className="py-1.5 text-right">{r.occupied} / {r.total}</td>
+              <td className="py-1.5 text-right">{r.occupied} / {r.total ?? '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -1447,6 +1474,7 @@ export default function AccountHealthDashboard() {
           onUpdated={load}
         />
       )}
+      <BackToTopButton />
     </div>
   );
 }
