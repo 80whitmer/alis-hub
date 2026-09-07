@@ -679,9 +679,9 @@ export default function TeamAmDashboard() {
             <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
             <StatCard label="Open Tickets" value={rollup.openTickets} sub="Client Submitted + In Progress" />
             <StatCard label="Closed Tickets" value={rollup.closedTickets} />
-            <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
+            <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
           </div>
 
           <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team">
