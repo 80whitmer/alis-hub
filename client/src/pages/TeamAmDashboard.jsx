@@ -260,6 +260,7 @@ function ChartTypeToggle({ value, onChange }) {
 }
 
 const METRICS = [
+  { key: 'avgScore', label: 'Avg Health Score', format: (v) => v },
   { key: 'totalAccounts', label: 'Total Accounts', format: (v) => v },
   { key: 'totalCommunities', label: 'Total Communities', format: (v) => v },
   { key: 'openTickets', label: 'Open Tickets', format: (v) => v },
@@ -279,7 +280,7 @@ const METRICS = [
  * shape, just grouped by account_manager_name instead of ticket category.
  */
 function KpiByAmChart({ rollupByAccountManager }) {
-  const [metricKey, setMetricKey] = useState('openTickets');
+  const [metricKey, setMetricKey] = useState('avgScore');
   const [chartType, setChartType] = useState('bar');
   const metric = METRICS.find((m) => m.key === metricKey);
 
@@ -327,6 +328,44 @@ function KpiByAmChart({ rollupByAccountManager }) {
         </ResponsiveContainer>
       )}
     </>
+  );
+}
+
+// Fixed worst-to-best order (matches accountHealthScoring.js's SCORE_BANDS
+// exactly: <40 / 40-60 / 60-80 / 80-100) rather than sorted by count, so
+// the "spread" reads left-to-right as a quality gradient every time,
+// not shuffled depending on which band happens to have the most accounts.
+const HEALTH_BANDS = ['Unhealthy', 'At Risk', 'Stable', 'Healthy'];
+
+/**
+ * "Spread of health scores" (Aaron, Sep 2026) — how many accounts fall
+ * into each of the app's existing health bands, portfolio-wide. Reuses
+ * the same band/color vocabulary as ScoreBadge rather than a generic
+ * numeric histogram, since Unhealthy/At Risk/Stable/Healthy is already
+ * the language this whole app uses for a health score.
+ */
+function HealthScoreDistributionChart({ accounts }) {
+  const data = HEALTH_BANDS
+    .map((band) => ({ name: band, total: accounts.filter((a) => a.health_band === band).length, color: BAND_COLOR[BAND_LABEL_TO_COLOR[band]] }))
+    .filter((d) => d.total > 0);
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No scored accounts yet — click Refresh to pull data.</p>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+        <Tooltip formatter={(v) => `${v} account${v === 1 ? '' : 's'}`} />
+        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+          {data.map((d, i) => <Cell key={i} fill={d.color} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -455,6 +494,10 @@ export default function TeamAmDashboard() {
             <KpiByAmChart rollupByAccountManager={rollupByAccountManager} />
           </SectionCard>
 
+          <SectionCard title="Health Score Distribution" description="How many accounts fall into each health band, portfolio-wide">
+            <HealthScoreDistributionChart accounts={accounts} />
+          </SectionCard>
+
           <SectionCard
             title="Accounts"
             description="Sorted by Health Score by default — weakest accounts first"
@@ -478,6 +521,7 @@ export default function TeamAmDashboard() {
                     <SortableHeader label="Open Tickets" column="open_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Closed Tickets" column="closed_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="ARR" column="arr_cents" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Aging Balance" column="aging_total_cents" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Total Capacity" column="total_capacity" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} />
                   </tr>
@@ -493,6 +537,7 @@ export default function TeamAmDashboard() {
                       <td className="py-2 pr-4">{a.open_ticket_count ?? 0}</td>
                       <td className="py-2 pr-4">{a.closed_ticket_count ?? 0}</td>
                       <td className="py-2 pr-4">{currencyStr(a.arr_cents)}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.aging_total_cents != null ? currencyStr(a.aging_total_cents) : '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
                       <td className="py-2 text-neutral-500">{a.current_census ?? '—'}</td>
                     </tr>
