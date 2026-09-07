@@ -67,6 +67,35 @@ function addTitleSlide(pptx, { totalAccounts, totalAms }) {
   });
 }
 
+/**
+ * Table of contents (Aaron, Sep 2026) — the real slide list this deck
+ * builds, not a separately-maintained guess: `KPI_METRICS`/
+ * `METRIC_LABELS` (defined below) are the exact same arrays the KPI
+ * slide loop itself iterates, so this can never drift out of sync with
+ * what's actually in the deck. One line per literal slide would mean
+ * listing every metric twice (once for its bar slide, once for pie) —
+ * shown instead as one indented line per KPI, noting both chart types
+ * exist for it, which is what's actually useful to skim.
+ */
+function addIndexSlide(pptx) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Contents');
+
+  const runs = [
+    { text: 'Overview', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    { text: 'KPI by Account Manager', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    ...KPI_METRICS.map((key) => ({
+      text: `${METRIC_LABELS[key]}  (Bar + Pie)`,
+      options: { bullet: true, indentLevel: 1, color: BRAND.slate, breakLine: true },
+    })),
+    { text: 'Health Score Distribution', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+  ];
+
+  slide.addText(runs, {
+    x: 0.7, y: 1.2, w: 8.5, h: 4.0, fontFace: FONT_BODY, fontSize: 13, lineSpacingMultiple: 1.25,
+  });
+}
+
 function statCard(slide, x, y, label, valueStr) {
   slide.addShape('roundRect', { x, y, w: 2.75, h: 1.3, rectRadius: 0.08, fill: { color: BRAND.cardBg }, line: { color: BRAND.cardBorder, width: 1 } });
   slide.addText(label, { x: x + 0.15, y: y + 0.1, w: 2.45, h: 0.5, fontFace: FONT_BODY, fontSize: 10, color: BRAND.slate });
@@ -199,6 +228,7 @@ async function renderTeamAmPpt(rollup, rollupByAccountManager, accounts) {
   pptx.layout = 'ALIS_HUB';
 
   addTitleSlide(pptx, rollup);
+  addIndexSlide(pptx);
   addCardsSlide(pptx, rollup);
   // One KPI per slide (Aaron, Sep 2026) — both a bar and a pie slide for
   // every metric the on-screen dropdown offers, bar immediately followed
