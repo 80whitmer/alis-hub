@@ -5,7 +5,7 @@ const { getOwnerId, getOwnedCompanies } = require('../services/hubspotAccounts')
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal } = require('../services/hubspotTickets');
 const { computeHealthScore } = require('../services/accountHealthScoring');
 const {
-  upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
+  clearAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
 } = require('../db/database');
 
 /**
@@ -122,6 +122,13 @@ router.post('/refresh', async (req, res) => {
     const ownerId = await getOwnerId();
     const companies = await getOwnedCompanies(ownerId);
     const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
+
+    // Only clear once the owned-company list itself is confirmed fetched —
+    // a failure before this point (network issue, bad token) leaves the
+    // previous refresh's data intact instead of wiping the table for
+    // nothing. See clearAccountHealthSnapshots' doc comment for why this
+    // wipe needs to happen at all.
+    clearAccountHealthSnapshots();
 
     // Confirmed live (Sep 2026): a full 371-company portfolio at
     // concurrency 8 hit HubSpot's ten_secondly_rolling rate limit hard —

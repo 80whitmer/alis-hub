@@ -77,27 +77,37 @@ async function hubspotRequest(method, path, body, attempt = 1) {
   return res;
 }
 
-const COMPANY_PROPERTIES = ['name', 'hubspot_owner_id', 'lifecyclestage', 'createdate', 'arr'];
+const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr'];
 
 // Owner ID essentially never changes for a running process — cached in
 // memory (not the DB) rather than re-resolved on every refresh.
 let ownerIdPromise = null;
 
 /**
- * Resolves the HubSpot owner ID to filter "my accounts" by.
+ * Resolves the HubSpot owner ID used to filter "my accounts" — specifically
+ * against the `account_manager` company property (see getOwnedCompanies),
+ * a dedicated enumeration field whose option VALUES are HubSpot owner IDs
+ * (confirmed live: option "280699315" is labeled "Aaron Whitmer", matching
+ * his real owner ID exactly) but which is a genuinely DIFFERENT assignment
+ * from the generic `hubspot_owner_id` — confirmed live on a real company
+ * ("Oakwood Senior Living Home Office"): hubspot_owner_id was Aaron, but
+ * account_manager was a different person (Patrick Noack) entirely. Only
+ * account_manager reflects "assigned to me as account manager"; this
+ * resolver still just answers "what is Aaron's owner ID", the same ID
+ * plugged into a different property by the caller.
  *
  * Prefers HUBSPOT_OWNER_ID (a direct override, no API call, no scope
  * needed) over the /crm/v3/owners email lookup — confirmed live (Sep
  * 2026) that this portal's private app token does NOT have the
  * crm.objects.owners.read scope the owners endpoint requires (403
- * MISSING_SCOPES), while company search filtered by hubspot_owner_id
- * works fine with the scopes already granted. Add HUBSPOT_OWNER_ID to
- * server/.env once you know it (visible in this portal's Settings > Users
- * & Teams, or on any company record you own by checking the "Company
- * owner" field's value in the page source/API) to skip the owners lookup
- * entirely; otherwise grant crm.objects.owners.read to the private app
- * (Settings > Integrations > Private Apps > this app > Scopes) and this
- * falls back to resolving it by email automatically.
+ * MISSING_SCOPES), while company search filtered this way works fine
+ * with the scopes already granted. Add HUBSPOT_OWNER_ID to server/.env
+ * once you know it (visible in this portal's Settings > Users & Teams, or
+ * on any company record via the "Account Manager"/"Company owner" field's
+ * value in the page source/API) to skip the owners lookup entirely;
+ * otherwise grant crm.objects.owners.read to the private app (Settings >
+ * Integrations > Private Apps > this app > Scopes) and this falls back to
+ * resolving it by email automatically.
  */
 async function getOwnerId() {
   if (process.env.HUBSPOT_OWNER_ID) return process.env.HUBSPOT_OWNER_ID;
@@ -126,17 +136,44 @@ async function getOwnerId() {
 }
 
 /**
- * Every company with hubspot_owner_id = ownerId — "my accounts" for the
- * portfolio dashboard. Paginated the same cursor-`after` way as
- * hubspotTickets.js's association lookups, since a full portfolio can
- * exceed one page (HubSpot search defaults to 10, capped at 100 per page).
+ * Every "Home Office" company assigned to `ownerId` as its account_manager
+ * — "my accounts" for the portfolio dashboard, scoped exactly the way
+ * Aaron asked: Home Office (parent) companies only, not their individual
+ * communities, and matched on the dedicated account_manager field, not
+ * the generic hubspot_owner_id (see getOwnerId's doc comment for why
+ * those two differ in practice).
+ *
+ * "Home Office" isn't its own property anywhere in this portal (checked:
+ * community_type's options are Assisted Living/Memory Care/Independent
+ * Living/Skilled Nursing/Home Health/Other, no "Home Office" value) — it's
+ * HubSpot's native company-hierarchy concept instead. Confirmed live: a
+ * "Home Office" company (e.g. "Oakwood Senior Living Home Office") has
+ * hs_num_child_companies > 0 and no hs_parent_company_id, while its
+ * individual communities (e.g. plain "Oakwood Senior Living") have the
+ * reverse — hs_parent_company_id set, hs_num_child_companies = 0.
+ * Filtering on hs_num_child_companies > 0 is therefore the real signal,
+ * not a name match on "Home Office" (confirmed live via a portal-wide
+ * count: 673 total companies carry Aaron's account_manager id, of which
+ * 109 are actual Home Office parents — a meaningfully different, smaller,
+ * and more accurate "my accounts" set than either the 371 the earlier
+ * hubspot_owner_id-based version returned, or all 673 including every
+ * individual community).
+ *
+ * Paginated the same cursor-`after` way as hubspotTickets.js's association
+ * lookups, since a full portfolio can exceed one page (HubSpot search
+ * defaults to 10, capped at 100 per page).
  */
 async function getOwnedCompanies(ownerId) {
   const companies = [];
   let after;
   do {
     const { status, body } = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
-      filterGroups: [{ filters: [{ propertyName: 'hubspot_owner_id', operator: 'EQ', value: ownerId }] }],
+      filterGroups: [{
+        filters: [
+          { propertyName: 'account_manager', operator: 'EQ', value: ownerId },
+          { propertyName: 'hs_num_child_companies', operator: 'GT', value: '0' },
+        ],
+      }],
       properties: COMPANY_PROPERTIES,
       limit: 100,
       ...(after ? { after } : {}),
@@ -149,6 +186,7 @@ async function getOwnedCompanies(ownerId) {
       name: c.properties.name,
       lifecycleStage: c.properties.lifecyclestage || null,
       createdAt: c.properties.createdate || null,
+      childCompanyCount: c.properties.hs_num_child_companies != null ? Number(c.properties.hs_num_child_companies) : null,
       // Confirmed live against a real company (Viva Senior Living, "arr":
       // "410082.00") — HubSpot's own company-level ARR figure, not
       // something computed here from deals; deliberately not derived from

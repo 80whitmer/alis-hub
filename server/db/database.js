@@ -678,6 +678,19 @@ function getAuditHistorySnapshot(jobId) {
   return row;
 }
 
+/**
+ * Clears every row before a fresh portfolio pull — this table is meant to
+ * be "current state," replaced wholesale each refresh (see its CREATE
+ * TABLE comment), but nothing actually enforced that before: a company
+ * that fell out of scope (e.g. the "my accounts" query narrowed from 371
+ * to 109 companies once Home Office scoping was added) would otherwise
+ * sit here forever as stale, never-cleaned-up data, silently inflating
+ * every read.
+ */
+function clearAccountHealthSnapshots() {
+  run('DELETE FROM account_health_snapshots');
+}
+
 function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, healthScore, healthBand,
@@ -762,6 +775,6 @@ module.exports = {
   addUsageAuditSnapshot, getUsageAuditSnapshot,
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,
-  upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
+  clearAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };
