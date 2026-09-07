@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
+import { arrayBufferToBase64 } from '../utils/base64';
 
 function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -203,7 +204,7 @@ function ImportAgingReportButton({ onImported }) {
     setResult(null);
     try {
       const buf = await file.arrayBuffer();
-      const pdfBase64 = btoa(new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ''));
+      const pdfBase64 = arrayBufferToBase64(buf);
       const res = await fetch('/api/team-am/import-aging-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

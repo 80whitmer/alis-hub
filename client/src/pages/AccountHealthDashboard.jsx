@@ -9,6 +9,7 @@ import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
 } from '../utils/accountHealthExport';
+import { arrayBufferToBase64 } from '../utils/base64';
 
 function pctStr(p) {
   return p != null ? `${(p * 100).toFixed(1)}%` : '—';
@@ -158,7 +159,7 @@ function ImportAgingReportButton({ onImported }) {
     setResult(null);
     try {
       const buf = await file.arrayBuffer();
-      const pdfBase64 = btoa(new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ''));
+      const pdfBase64 = arrayBufferToBase64(buf);
       const res = await fetch('/api/account-health/import-aging-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
