@@ -5,6 +5,7 @@ import {
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import { arrayBufferToBase64 } from '../utils/base64';
+import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 
 function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -239,6 +240,51 @@ function ImportAgingReportButton({ onImported }) {
   );
 }
 
+/**
+ * Downloads the PPT export — passes the KPI-by-AM chart's CURRENT
+ * on-screen metric/chart-type as query params (Aaron, Sep 2026: "each
+ * graph should get a slide") so the exported slide matches whatever's
+ * actually being looked at, not a fixed default.
+ */
+function ExportPptButton({ metricKey, chartType }) {
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleClick() {
+    setExporting(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/team-am/export-ppt?metric=${encodeURIComponent(metricKey)}&chartType=${encodeURIComponent(chartType)}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Team-AM-Dashboard.pptx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="text-right">
+      <button onClick={handleClick} disabled={exporting} className="btn btn-sm btn-secondary">
+        {exporting ? 'Exporting…' : '📊 Export to PPT'}
+      </button>
+      {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
+    </div>
+  );
+}
+
 const PIE_COLORS = ['#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#dc2626', '#0891b2', '#ca8a04', '#db2777', '#4d7c0f', '#9333ea'];
 
 function ChartTypeToggle({ value, onChange }) {
@@ -279,9 +325,7 @@ const METRICS = [
  * — copies CategoryMixChart's (AccountHealthDashboard.jsx) bar/pie-toggle
  * shape, just grouped by account_manager_name instead of ticket category.
  */
-function KpiByAmChart({ rollupByAccountManager }) {
-  const [metricKey, setMetricKey] = useState('avgScore');
-  const [chartType, setChartType] = useState('bar');
+function KpiByAmChart({ rollupByAccountManager, metricKey, setMetricKey, chartType, setChartType }) {
   const metric = METRICS.find((m) => m.key === metricKey);
 
   const data = rollupByAccountManager
@@ -369,6 +413,171 @@ function HealthScoreDistributionChart({ accounts }) {
   );
 }
 
+/** True for an account with no real Account Manager name attached — either no account_manager property at all ("Unassigned") or a real owner ID this app doesn't have a name mapped for ("Other AM (id)", see ACCOUNT_MANAGER_NAMES in hubspotAccounts.js). */
+function isUnmappedAm(account) {
+  return account.account_manager_name === 'Unassigned' || account.account_manager_name?.startsWith('Other AM');
+}
+
+/**
+ * Deals/tickets for accounts with no real AM name — Aaron asked for this
+ * (Sep 2026) as an actionable list for "dialing in" AM assignment: these
+ * accounts' open work is otherwise invisible to whoever should be
+ * managing them. Deals come from financialHealth.expansionPipeline.deals
+ * (open + last-90-days-closed, already stored per account). Tickets are
+ * NOT a full ticket list — this app only caches two curated subsets per
+ * account (Top 3 Enhancement, Aged 45+ days), so that's what's shown
+ * here, clearly labeled rather than implied as exhaustive.
+ */
+function flattenUnmappedDeals(accounts) {
+  const rows = [];
+  for (const a of accounts) {
+    if (!isUnmappedAm(a)) continue;
+    for (const d of a.financialHealth?.expansionPipeline?.deals || []) {
+      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, ...d });
+    }
+  }
+  return rows;
+}
+
+function flattenUnmappedTickets(accounts) {
+  const rows = [];
+  for (const a of accounts) {
+    if (!isUnmappedAm(a)) continue;
+    for (const t of a.serviceHealth?.enhancementTopItems || []) {
+      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, subject: t.subject, type: `Top 3 Enhancement${t.rank ? ` (rank ${t.rank})` : ''}`, stage: t.stage, url: t.url });
+    }
+    for (const t of a.serviceHealth?.agedTickets || []) {
+      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, subject: t.subject, type: `Aged (${t.ageDays}d)`, stage: t.stage, url: t.url });
+    }
+  }
+  return rows;
+}
+
+/** Collapsible, internally-scrolling panel (Aaron: "scrolling dropdowns") so a long deal/ticket list doesn't push the rest of the page down indefinitely. */
+function ScrollDropdown({ title, count, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-neutral-200 rounded-lg mb-3 last:mb-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-neutral-50"
+      >
+        <span className="font-medium text-primary-900 text-sm">
+          {title} <span className="text-neutral-400 font-normal">({count})</span>
+        </span>
+        <span className="text-neutral-400 text-xs">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="max-h-96 overflow-y-auto border-t border-neutral-100 px-4 py-3">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UnmappedAmSection({ accounts }) {
+  const unmappedAccounts = useMemo(() => accounts.filter(isUnmappedAm), [accounts]);
+  const deals = useMemo(() => flattenUnmappedDeals(accounts), [accounts]);
+  const tickets = useMemo(() => flattenUnmappedTickets(accounts), [accounts]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  const unassignedCount = unmappedAccounts.filter((a) => a.account_manager_name === 'Unassigned').length;
+  const otherAmCount = unmappedAccounts.length - unassignedCount;
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportUnmappedAmRecords({ deals, tickets });
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <SectionCard
+      title="Needs an Account Manager"
+      description={`${unmappedAccounts.length} accounts with no real AM name — ${unassignedCount} Unassigned, ${otherAmCount} with an unmapped ID`}
+      action={
+        <button
+          onClick={handleExport}
+          disabled={exporting || (deals.length === 0 && tickets.length === 0)}
+          className="btn btn-secondary btn-sm"
+        >
+          {exporting ? 'Exporting…' : '⬇ Export to Excel'}
+        </button>
+      }
+    >
+      {exportError && <p className="text-xs text-error mb-3">{exportError}</p>}
+      <ScrollDropdown title="Deals" count={deals.length}>
+        {deals.length === 0 ? (
+          <p className="text-sm text-neutral-500 italic">No deals found for these accounts.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase">
+                <th className="pb-2 pr-3">Company</th>
+                <th className="pb-2 pr-3">Account Manager</th>
+                <th className="pb-2 pr-3">Deal</th>
+                <th className="pb-2 pr-3">Stage</th>
+                <th className="pb-2 pr-3 text-right">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deals.map((d, i) => (
+                <tr key={i} className="border-t border-neutral-100">
+                  <td className="py-1.5 pr-3">{d.companyName}</td>
+                  <td className="py-1.5 pr-3 text-neutral-500">{d.accountManagerLabel}</td>
+                  <td className="py-1.5 pr-3">
+                    {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{d.name}</a> : d.name}
+                  </td>
+                  <td className="py-1.5 pr-3 text-neutral-500">{d.stage}</td>
+                  <td className="py-1.5 pr-3 text-right text-neutral-500">{currencyStr(d.valueCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ScrollDropdown>
+      <ScrollDropdown title="Tickets — Top 3 Enhancement + Aged (45+ days) only" count={tickets.length}>
+        {tickets.length === 0 ? (
+          <p className="text-sm text-neutral-500 italic">No tickets found for these accounts.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase">
+                <th className="pb-2 pr-3">Company</th>
+                <th className="pb-2 pr-3">Account Manager</th>
+                <th className="pb-2 pr-3">Ticket</th>
+                <th className="pb-2 pr-3">Type</th>
+                <th className="pb-2">Stage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tickets.map((t, i) => (
+                <tr key={i} className="border-t border-neutral-100">
+                  <td className="py-1.5 pr-3">{t.companyName}</td>
+                  <td className="py-1.5 pr-3 text-neutral-500">{t.accountManagerLabel}</td>
+                  <td className="py-1.5 pr-3">
+                    {t.url ? <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{t.subject}</a> : t.subject}
+                  </td>
+                  <td className="py-1.5 pr-3 text-neutral-500">{t.type}</td>
+                  <td className="py-1.5 text-neutral-500">{t.stage}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </ScrollDropdown>
+    </SectionCard>
+  );
+}
+
 export default function TeamAmDashboard() {
   const [accounts, setAccounts] = useState([]);
   const [rollupByAccountManager, setRollupByAccountManager] = useState([]);
@@ -376,6 +585,8 @@ export default function TeamAmDashboard() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ column: 'health_score', direction: 'asc' });
+  const [metricKey, setMetricKey] = useState('avgScore');
+  const [chartType, setChartType] = useState('bar');
 
   async function load() {
     setLoading(true);
@@ -452,6 +663,7 @@ export default function TeamAmDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 justify-end max-w-2xl">
+          <ExportPptButton metricKey={metricKey} chartType={chartType} />
           <ImportAgingReportButton onImported={load} />
           <RefreshButton onRefreshed={load} />
         </div>
@@ -491,12 +703,20 @@ export default function TeamAmDashboard() {
           </div>
 
           <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team">
-            <KpiByAmChart rollupByAccountManager={rollupByAccountManager} />
+            <KpiByAmChart
+              rollupByAccountManager={rollupByAccountManager}
+              metricKey={metricKey}
+              setMetricKey={setMetricKey}
+              chartType={chartType}
+              setChartType={setChartType}
+            />
           </SectionCard>
 
           <SectionCard title="Health Score Distribution" description="How many accounts fall into each health band, portfolio-wide">
             <HealthScoreDistributionChart accounts={accounts} />
           </SectionCard>
+
+          <UnmappedAmSection accounts={accounts} />
 
           <SectionCard
             title="Accounts"

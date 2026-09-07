@@ -12,6 +12,7 @@ const {
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
 const { matchAgingRows } = require('../services/agingReportMatcher');
+const { renderTeamAmPpt } = require('../services/teamAmPpt');
 
 /**
  * Deliberately duplicated from accountHealth.js's function of the same
@@ -375,6 +376,49 @@ router.get('/', (req, res) => {
     const accounts = getEnrichedTeamAmAccounts();
     res.json({ accounts, rollupByAccountManager: computeRollupByAccountManager(accounts) });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Same shape as the client's `rollup` useMemo in TeamAmDashboard.jsx — duplicated rather than shared, same reasoning as computePortfolioRollup in accountHealth.js. Needed server-side only for the PPT export's Cards slide. */
+function computePortfolioRollup(accounts) {
+  const scored = accounts.filter((a) => a.health_score != null);
+  const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
+  const distinctAms = new Set(accounts.map((a) => a.account_manager_name).filter((n) => n && !n.startsWith('Other AM') && n !== 'Unassigned'));
+  return {
+    totalAms: distinctAms.size,
+    totalAccounts: accounts.length,
+    totalCommunities: accounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
+    openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
+    closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
+    enhancementTopCount: accounts.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
+    arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
+    arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+    avgScore,
+  };
+}
+
+// GET /api/team-am/export-ppt?metric=<key>&chartType=bar|pie — mirrors
+// whatever's currently selected in the on-screen KPI-by-Account-Manager
+// chart (Aaron, Sep 2026: "each graph should get a slide"). Census/
+// capacity deliberately excluded from both the Cards slide and as a
+// selectable metric here — same scoping as the rest of this dashboard.
+router.get('/export-ppt', async (req, res) => {
+  try {
+    const accounts = getEnrichedTeamAmAccounts();
+    const rollupByAccountManager = computeRollupByAccountManager(accounts);
+    const rollup = computePortfolioRollup(accounts);
+    const metricKey = ['totalAccounts', 'totalCommunities', 'openTickets', 'closedTickets', 'dealsThisYearOpen', 'dealsThisYearClosed', 'arrCents', 'arrAddedThisYearCents', 'avgScore'].includes(req.query.metric)
+      ? req.query.metric
+      : 'avgScore';
+    const chartType = req.query.chartType === 'pie' ? 'pie' : 'bar';
+
+    const buffer = await renderTeamAmPpt(rollup, rollupByAccountManager, accounts, { metricKey, chartType });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('Content-Disposition', 'attachment; filename="Team-AM-Dashboard.pptx"');
+    res.send(buffer);
+  } catch (err) {
+    console.error('[teamAm] PPT export failed:', err);
     res.status(500).json({ error: err.message });
   }
 });
