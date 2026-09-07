@@ -111,7 +111,16 @@ const METRIC_LABELS = {
 };
 const CURRENCY_METRICS = new Set(['arrCents', 'arrAddedThisYearCents']);
 
-/** Mirrors the on-screen KPI-by-Account-Manager chart — same metric/chart-type the dashboard currently has selected, passed through as export params rather than fixed, so the export matches what's actually on screen. */
+// Every metric the on-screen KPI-by-Account-Manager dropdown offers,
+// same order — census/capacity excluded, same scoping as the Cards
+// slide (Aaron's own call: this dashboard doesn't pull fresh occupancy
+// data, so it doesn't belong in a portfolio-wide export yet).
+const KPI_METRICS = [
+  'avgScore', 'totalAccounts', 'totalCommunities', 'openTickets', 'closedTickets',
+  'dealsThisYearOpen', 'dealsThisYearClosed', 'arrCents', 'arrAddedThisYearCents',
+];
+
+/** One metric/chart-type combination on the KPI-by-Account-Manager chart. */
 function addKpiByAmSlide(pptx, rollupByAccountManager, metricKey, chartType) {
   const slide = pptx.addSlide();
   const label = METRIC_LABELS[metricKey] || metricKey;
@@ -183,16 +192,22 @@ function addHealthDistributionSlide(pptx, accounts) {
  * @param {object} rollup - portfolio-wide rollup (same shape as the client's `rollup` useMemo)
  * @param {Array} rollupByAccountManager - per-AM rollup array (from GET /api/team-am)
  * @param {Array} accounts - enriched accounts (from GET /api/team-am)
- * @param {{ metricKey?: string, chartType?: 'bar'|'pie' }} chartState - whatever's currently selected in the on-screen KPI-by-AM chart
  */
-async function renderTeamAmPpt(rollup, rollupByAccountManager, accounts, chartState = {}) {
+async function renderTeamAmPpt(rollup, rollupByAccountManager, accounts) {
   const pptx = new pptxgen();
   pptx.defineLayout({ name: 'ALIS_HUB', width: 10, height: 5.63 });
   pptx.layout = 'ALIS_HUB';
 
   addTitleSlide(pptx, rollup);
   addCardsSlide(pptx, rollup);
-  addKpiByAmSlide(pptx, rollupByAccountManager, chartState.metricKey || 'avgScore', chartState.chartType || 'bar');
+  // One KPI per slide (Aaron, Sep 2026) — both a bar and a pie slide for
+  // every metric the on-screen dropdown offers, bar immediately followed
+  // by its pie counterpart so reviewing metric-by-metric reads naturally,
+  // rather than grouping all bars first then all pies.
+  for (const metricKey of KPI_METRICS) {
+    addKpiByAmSlide(pptx, rollupByAccountManager, metricKey, 'bar');
+    addKpiByAmSlide(pptx, rollupByAccountManager, metricKey, 'pie');
+  }
   addHealthDistributionSlide(pptx, accounts);
 
   return pptx.write({ outputType: 'nodebuffer' });

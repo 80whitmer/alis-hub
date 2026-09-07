@@ -398,22 +398,19 @@ function computePortfolioRollup(accounts) {
   };
 }
 
-// GET /api/team-am/export-ppt?metric=<key>&chartType=bar|pie — mirrors
-// whatever's currently selected in the on-screen KPI-by-Account-Manager
-// chart (Aaron, Sep 2026: "each graph should get a slide"). Census/
-// capacity deliberately excluded from both the Cards slide and as a
-// selectable metric here — same scoping as the rest of this dashboard.
+// GET /api/team-am/export-ppt — a bar AND a pie slide for every metric
+// the on-screen KPI-by-Account-Manager dropdown offers (Aaron, Sep
+// 2026: "let's do a KPI per slide... both bar graphs and pie charts"),
+// not just whichever one happens to be selected on screen. Census/
+// capacity deliberately excluded from both the Cards slide and the KPI
+// metric set — same scoping as the rest of this dashboard.
 router.get('/export-ppt', async (req, res) => {
   try {
     const accounts = getEnrichedTeamAmAccounts();
     const rollupByAccountManager = computeRollupByAccountManager(accounts);
     const rollup = computePortfolioRollup(accounts);
-    const metricKey = ['totalAccounts', 'totalCommunities', 'openTickets', 'closedTickets', 'dealsThisYearOpen', 'dealsThisYearClosed', 'arrCents', 'arrAddedThisYearCents', 'avgScore'].includes(req.query.metric)
-      ? req.query.metric
-      : 'avgScore';
-    const chartType = req.query.chartType === 'pie' ? 'pie' : 'bar';
 
-    const buffer = await renderTeamAmPpt(rollup, rollupByAccountManager, accounts, { metricKey, chartType });
+    const buffer = await renderTeamAmPpt(rollup, rollupByAccountManager, accounts);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
     res.setHeader('Content-Disposition', 'attachment; filename="Team-AM-Dashboard.pptx"');
     res.send(buffer);

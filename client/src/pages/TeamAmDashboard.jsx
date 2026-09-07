@@ -237,12 +237,12 @@ function ImportAgingReportButton({ onImported }) {
 }
 
 /**
- * Downloads the PPT export — passes the KPI-by-AM chart's CURRENT
- * on-screen metric/chart-type as query params (Aaron, Sep 2026: "each
- * graph should get a slide") so the exported slide matches whatever's
- * actually being looked at, not a fixed default.
+ * Downloads the PPT export — a bar AND a pie slide for every metric the
+ * KPI-by-AM dropdown offers (Aaron, Sep 2026: "let's do a KPI per
+ * slide... both bar graphs and pie charts"), not just whatever's
+ * currently selected on screen.
  */
-function ExportPptButton({ metricKey, chartType }) {
+function ExportPptButton() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
@@ -250,7 +250,7 @@ function ExportPptButton({ metricKey, chartType }) {
     setExporting(true);
     setError('');
     try {
-      const res = await fetch(`/api/team-am/export-ppt?metric=${encodeURIComponent(metricKey)}&chartType=${encodeURIComponent(chartType)}`);
+      const res = await fetch('/api/team-am/export-ppt');
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Export failed (${res.status})`);
@@ -655,7 +655,7 @@ export default function TeamAmDashboard() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3 justify-end max-w-2xl">
-          <ExportPptButton metricKey={metricKey} chartType={chartType} />
+          <ExportPptButton />
           <ImportAgingReportButton onImported={load} />
           <RefreshButton onRefreshed={load} />
         </div>
