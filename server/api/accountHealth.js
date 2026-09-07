@@ -6,11 +6,12 @@ const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDea
 const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
-  updateAccountHealthAging,
+  updateAccountHealthAging, updateAccountHealthOccupancy,
 } = require('../db/database');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
 const { matchAgingRows } = require('../services/agingReportMatcher');
 const { renderAccountHealthPortfolioPdf, renderAccountHealthAccountPdf } = require('../services/accountHealthPdf');
+const { getOccupancySnapshotForAccount } = require('../services/accountHealthOccupancy');
 
 /**
  * Maps getTicketSummaryForCompany's output onto the serviceHealth shape
@@ -391,9 +392,52 @@ function computePortfolioRollup(accounts) {
     pastDue61PlusCents: accounts.reduce((s, a) => s + (a.aging_past_due_61_plus_cents || 0), 0),
     agingAsOfDate: accounts.find((a) => a.aging_as_of_date)?.aging_as_of_date || null,
     portfolioDsoDays,
+    totalCapacity: accounts.reduce((s, a) => s + (a.total_capacity || 0), 0),
+    currentCensus: accounts.reduce((s, a) => s + (a.current_census || 0), 0),
+    occupancyAccountCount: accounts.filter((a) => a.total_capacity != null).length,
+    occupancyAsOfDate: accounts.find((a) => a.occupancy_as_of_date)?.occupancy_as_of_date || null,
     avgScore,
   };
 }
+
+// POST /api/account-health/refresh-occupancy — today's total capacity /
+// current census (+ product-type/classification breakdown) for every
+// account with a known ALIS subdomain mapping (server/api/companyHosts.js).
+// A genuinely separate, heavier external API (Basic Auth per subdomain,
+// not HubSpot) with much sparser coverage today than the HubSpot data —
+// kept as its own action/cadence, same reasoning as the aging-report
+// import, so it never slows down or blocks the main refresh.
+router.post('/refresh-occupancy', async (req, res) => {
+  try {
+    const accounts = listAccountHealthSnapshots();
+    const errors = [];
+    let updated = 0;
+    let skippedNoMapping = 0;
+    await mapWithConcurrency(accounts, 3, async (a) => {
+      try {
+        const occupancy = await getOccupancySnapshotForAccount(a.company_name, a.hubspot_company_id);
+        if (!occupancy) {
+          skippedNoMapping += 1;
+          return;
+        }
+        updateAccountHealthOccupancy(a.hubspot_company_id, occupancy);
+        updated += 1;
+      } catch (err) {
+        errors.push({ company: a.company_name, error: err.message });
+      }
+    });
+    res.json({
+      refreshedAt: new Date().toISOString(),
+      accountsUpdated: updated,
+      accountsSkippedNoMapping: skippedNoMapping,
+      errorCount: errors.length,
+      errors,
+    });
+  } catch (err) {
+    console.error('[accountHealth] Occupancy refresh failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/account-health — the cached portfolio, instant read, plus a
 // best-effort "prior QBR" pointer per company (see

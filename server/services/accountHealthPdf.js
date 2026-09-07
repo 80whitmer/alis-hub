@@ -104,6 +104,8 @@ function buildSummarySection(rollup) {
       ${stat(`Aging Balance${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`, rollup.agingAsOfDate ? usd(rollup.agingTotalCents) : '—')}
       ${stat('Past Due 61+ Days', rollup.agingAsOfDate ? usd(rollup.pastDue61PlusCents) : '—')}
       ${stat('Portfolio DSO', rollup.portfolioDsoDays != null ? `${rollup.portfolioDsoDays}d` : '—', 'Rudimentary — not true invoice-to-payment DSO')}
+      ${stat(`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`, rollup.occupancyAccountCount > 0 ? rollup.totalCapacity : '—', rollup.occupancyAccountCount > 0 ? `${rollup.occupancyAccountCount} accounts mapped` : 'No ALIS subdomains mapped')}
+      ${stat('Current Census', rollup.occupancyAccountCount > 0 ? rollup.currentCensus : '—')}
     </section>`;
 }
 
@@ -187,6 +189,31 @@ function buildAgingSection(aging) {
     <p class="italic-muted">From: ${escapeHtml((aging.sourceRows || []).map((r) => r.customerName).join(', '))}</p>`;
 }
 
+function buildOccupancyBreakdownTable(title, rows, keyField) {
+  if (!rows?.length) return '';
+  return `
+    <div style="flex:1">
+      <h3 style="font-size:11px;margin:0 0 6px;">${escapeHtml(title)}</h3>
+      <table>
+        <thead><tr><th>${keyField === 'productType' ? 'Product Type' : 'Classification'}</th><th class="num">Occupancy %</th><th class="num">Occupied / Total</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `<tr><td>${escapeHtml(String(r[keyField]))}</td><td class="num">${r.pct != null ? `${(r.pct * 100).toFixed(1)}%` : '—'}</td><td class="num">${r.occupied} / ${r.total}</td></tr>`).join('\n')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function buildOccupancySection(account) {
+  if (!account.occupancyByProductType?.length && !account.occupancyByClassification?.length) {
+    return `<p class="italic-muted">${account.occupancy_as_of_date ? 'No product-type/classification breakdown available.' : 'No ALIS subdomain mapped for this account yet.'}</p>`;
+  }
+  return `
+    <div style="display:flex; gap:24px;">
+      ${buildOccupancyBreakdownTable('By Product Type', account.occupancyByProductType, 'productType')}
+      ${buildOccupancyBreakdownTable('By Classification', account.occupancyByClassification, 'classification')}
+    </div>`;
+}
+
 /** Single-account export — mirrors the dashboard's drill-down drawer. */
 async function renderAccountHealthAccountPdf(account) {
   const svc = account.serviceHealth;
@@ -211,6 +238,8 @@ async function renderAccountHealthAccountPdf(account) {
       ${stat(`ARR Added (${new Date().getFullYear()})`, usd(account.arr_added_this_year_cents))}
       ${stat('Aging Balance', account.aging_total_cents != null ? usd(account.aging_total_cents) : '—')}
       ${stat('DSO', account.dsoDays != null ? `${account.dsoDays}d` : '—', 'Rudimentary — not true invoice-to-payment DSO')}
+      ${stat('Total Capacity', account.total_capacity ?? '—', account.occupancy_as_of_date ? `As of ${account.occupancy_as_of_date}` : 'No ALIS subdomain mapped')}
+      ${stat('Current Census', account.current_census ?? '—')}
     </section>
 
     <section class="section">
@@ -234,6 +263,11 @@ async function renderAccountHealthAccountPdf(account) {
     <section class="section">
       <h2>AR Aging</h2>
       ${buildAgingSection(account.aging)}
+    </section>
+
+    <section class="section">
+      <h2>Occupancy</h2>
+      ${buildOccupancySection(account)}
     </section>
 
     <section class="section">

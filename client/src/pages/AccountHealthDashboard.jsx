@@ -3,7 +3,14 @@ import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie,
 } from 'recharts';
 import Drawer from '../components/Drawer';
-import { exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel } from '../utils/accountHealthExport';
+import {
+  exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
+  exportCompanyHostTemplate, parseCompanyHostTemplate,
+} from '../utils/accountHealthExport';
+
+function pctStr(p) {
+  return p != null ? `${(p * 100).toFixed(1)}%` : '—';
+}
 
 // Matches accountHealthScoring.js's SCORE_BANDS exactly (0-40 red / 40-60
 // orange / 60-80 blue / 80-100 green) — kept as a parallel client-side map
@@ -167,12 +174,113 @@ function ImportAgingReportButton({ onImported }) {
   );
 }
 
-// status: 'open' | 'closed' — each account's ticketCategoryMix already
-// carries both counts per category (see byCategory in hubspotTickets.js),
-// so splitting into two charts is just picking a different field, not a
-// new data source. Aaron's request (Sep 2026): open and closed ticket
-// volume by category read very differently (open = current workload,
-// closed = historical mix) and were hard to compare blended into one bar.
+/**
+ * Lets Aaron map each account to its ALIS subdomain — the one piece of
+ * data needed to pull capacity/census (server/api/companyHosts.js has no
+ * UI of its own, only a bulk-import API route). Downloads a template
+ * pre-filled with every account name + ID (and any subdomain already
+ * known); the upload half reads a completed copy back and posts it to
+ * that same existing import route. Confirmed live (Sep 2026): only 7 of
+ * 109 accounts have a mapping today, so this is expected to be filled in
+ * gradually, not all at once.
+ */
+function CompanyHostMappingButtons({ accounts, companyHosts, onImported }) {
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const mappedCount = companyHosts.filter((h) => accounts.some((a) => a.hubspot_company_id === h.hubspot_company_id)).length;
+
+  async function handleDownload() {
+    await exportCompanyHostTemplate(accounts, companyHosts);
+  }
+
+  async function handleUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImporting(true);
+    setError('');
+    setResult(null);
+    try {
+      const rows = await parseCompanyHostTemplate(file);
+      if (rows.length === 0) throw new Error('No rows with an ALIS Subdomain filled in were found in this file.');
+      const res = await fetch('/api/company-hosts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
+      setResult(data);
+      await onImported();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  }
+
+  return (
+    <div className="text-right">
+      <p className="text-xs text-neutral-400 mb-1">{mappedCount} of {accounts.length} accounts have a known ALIS subdomain</p>
+      <div className="flex gap-2 justify-end">
+        <button onClick={handleDownload} className="btn btn-sm btn-secondary">📋 Download Subdomain Template</button>
+        <label className="btn btn-sm btn-secondary cursor-pointer">
+          {importing ? 'Importing…' : '📤 Upload Completed Template'}
+          <input type="file" accept=".xlsx" onChange={handleUpload} disabled={importing} className="hidden" />
+        </label>
+      </div>
+      {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
+      {result && <p className="text-xs text-neutral-500 mt-1 max-w-xs ml-auto">{result.imported} subdomain(s) imported{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}</p>}
+    </div>
+  );
+}
+
+/**
+ * Total capacity + current census refresh — a separate action from the
+ * main HubSpot refresh (RefreshButton above), since this hits a
+ * genuinely different, Basic-Auth-per-subdomain external API (ALIS's own
+ * export API) with much sparser coverage today (see
+ * CompanyHostMappingButtons above) than the HubSpot data.
+ */
+function RefreshOccupancyButton({ onRefreshed }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  async function handleClick() {
+    setRefreshing(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await fetch('/api/account-health/refresh-occupancy', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Refresh failed (${res.status})`);
+      setResult(data);
+      await onRefreshed();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div className="text-right">
+      <button onClick={handleClick} disabled={refreshing} className="btn btn-sm btn-secondary">
+        {refreshing ? 'Refreshing…' : '🏘️ Refresh Occupancy Data'}
+      </button>
+      {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
+      {result && (
+        <p className="text-xs text-neutral-500 mt-1 max-w-xs ml-auto">
+          {result.accountsUpdated} account(s) updated
+          {result.accountsSkippedNoMapping > 0 && `, ${result.accountsSkippedNoMapping} skipped (no ALIS subdomain mapped)`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Downloads a server-rendered PDF via fetch+Blob — same pattern WellnessScorecard.jsx uses for its export-pdf route. */
 async function downloadPdf(url, fallbackFilename) {
   const res = await fetch(url);
@@ -334,6 +442,34 @@ function DealTypeChart({ accounts }) {
   );
 }
 
+/** Mirrors KpiDashboard.jsx's OccupancyByProductTypeSection table shape/style — same {productType|classification, pct, occupied, total} rows, just a different data source (accountHealthOccupancy.js instead of a kpi-export job). */
+function OccupancyBreakdownTable({ title, rows, keyField }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="flex-1 min-w-[220px]">
+      <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">{title}</h4>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-neutral-500 text-xs uppercase">
+            <th className="py-1">{keyField === 'productType' ? 'Product Type' : 'Classification'}</th>
+            <th className="py-1 text-right">Occupancy %</th>
+            <th className="py-1 text-right">Occupied / Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r[keyField]} className="border-t border-neutral-100">
+              <td className="py-1.5">{r[keyField]}</td>
+              <td className="py-1.5 text-right">{pctStr(r.pct)}</td>
+              <td className="py-1.5 text-right">{r.occupied} / {r.total}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function isPastDue(deal) {
   return deal.isOpen && deal.expectedCloseDate && new Date(deal.expectedCloseDate) < new Date();
 }
@@ -375,6 +511,8 @@ function AccountDrawer({ account, onClose }) {
         <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(account.arr_added_this_year_cents)} />
         <StatCard label="Aging Balance" value={account.aging_total_cents != null ? currencyStr(account.aging_total_cents) : '—'} />
         <StatCard label="DSO" value={account.dsoDays != null ? `${account.dsoDays}d` : '—'} sub="Rudimentary — see Portfolio DSO note" />
+        <StatCard label="Total Capacity" value={account.total_capacity ?? '—'} sub={account.occupancy_as_of_date ? `As of ${account.occupancy_as_of_date}` : 'No ALIS subdomain mapped'} />
+        <StatCard label="Current Census" value={account.current_census ?? '—'} sub={account.occupancy_pct != null ? `${pctStr(account.occupancy_pct)} occupied` : undefined} />
       </div>
 
       {account.priorQbr && (
@@ -478,6 +616,20 @@ function AccountDrawer({ account, onClose }) {
           </p>
         </div>
       ) : <p className="text-sm text-neutral-500 italic mb-6">No aging data imported for this account yet.</p>}
+
+      <h3 className="font-semibold text-primary-900 text-sm mb-2">Occupancy</h3>
+      {(account.occupancyByProductType?.length > 0 || account.occupancyByClassification?.length > 0) ? (
+        <div className="mb-6">
+          <div className="flex gap-6 flex-wrap">
+            <OccupancyBreakdownTable title="By Product Type" rows={account.occupancyByProductType} keyField="productType" />
+            <OccupancyBreakdownTable title="By Classification" rows={account.occupancyByClassification} keyField="classification" />
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-neutral-500 italic mb-6">
+          {account.occupancy_as_of_date ? 'No product-type/classification breakdown available.' : 'No ALIS subdomain mapped for this account yet — see Refresh Occupancy Data.'}
+        </p>
+      )}
 
       <h3 className="font-semibold text-primary-900 text-sm mb-2">Sub-scores</h3>
       <div className="grid grid-cols-2 gap-3">
@@ -659,6 +811,7 @@ function DealsSection({ accounts, search }) {
 
 export default function AccountHealthDashboard() {
   const [accounts, setAccounts] = useState([]);
+  const [companyHosts, setCompanyHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -669,10 +822,14 @@ export default function AccountHealthDashboard() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/account-health');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Failed to load (${res.status})`);
+      const [accountsRes, hostsRes] = await Promise.all([
+        fetch('/api/account-health'),
+        fetch('/api/company-hosts'),
+      ]);
+      const data = await accountsRes.json();
+      if (!accountsRes.ok) throw new Error(data.error || `Failed to load (${accountsRes.status})`);
       setAccounts(data.accounts || []);
+      setCompanyHosts(hostsRes.ok ? await hostsRes.json() : []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -726,6 +883,14 @@ export default function AccountHealthDashboard() {
     const dsoArrTotal = dsoEligible.reduce((s, a) => s + a.arr_cents, 0);
     const portfolioDsoDays = dsoArrTotal > 0 ? Math.round(dsoAgingTotal / (dsoArrTotal / 365)) : null;
 
+    // Only accounts with a known ALIS subdomain carry occupancy data (see
+    // CompanyHostMappingButtons) — everyone else is left out of these
+    // sums entirely rather than silently counted as 0 capacity.
+    const occupancyEligible = accounts.filter((a) => a.total_capacity != null);
+    const totalCapacity = occupancyEligible.reduce((s, a) => s + a.total_capacity, 0);
+    const currentCensus = occupancyEligible.reduce((s, a) => s + (a.current_census || 0), 0);
+    const occupancyAsOfDate = accounts.find((a) => a.occupancy_as_of_date)?.occupancy_as_of_date || null;
+
     return {
       totalAccounts: accounts.length,
       openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
@@ -741,6 +906,11 @@ export default function AccountHealthDashboard() {
       pastDue61PlusCents: accounts.reduce((s, a) => s + (a.aging_past_due_61_plus_cents || 0), 0),
       agingAsOfDate: accounts.find((a) => a.aging_as_of_date)?.aging_as_of_date || null,
       portfolioDsoDays,
+      totalCapacity,
+      currentCensus,
+      occupancyPct: totalCapacity > 0 ? currentCensus / totalCapacity : null,
+      occupancyAccountCount: occupancyEligible.length,
+      occupancyAsOfDate,
       avgScore,
       // Lifecycle stages come back as opaque HubSpot property-option IDs
       // (or the literal "lead" for that built-in one) — not resolved to
@@ -766,12 +936,14 @@ export default function AccountHealthDashboard() {
             </p>
           )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 justify-end max-w-2xl">
           <ExportButtons
             onExcel={() => exportAccountHealthPortfolioExcel(accounts, rollup)}
             onPdf={() => downloadPdf('/api/account-health/export-pdf', 'Account-Health-Portfolio.pdf')}
           />
           <ImportAgingReportButton onImported={load} />
+          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
+          <RefreshOccupancyButton onRefreshed={load} />
           <RefreshButton onRefreshed={handleRefreshed} />
         </div>
       </div>
@@ -815,6 +987,16 @@ export default function AccountHealthDashboard() {
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
+            <StatCard
+              label={`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`}
+              value={rollup.occupancyAccountCount > 0 ? rollup.totalCapacity : '—'}
+              sub={rollup.occupancyAccountCount > 0 ? `${rollup.occupancyAccountCount} of ${rollup.totalAccounts} accounts mapped` : 'No ALIS subdomains mapped yet'}
+            />
+            <StatCard
+              label="Current Census"
+              value={rollup.occupancyAccountCount > 0 ? rollup.currentCensus : '—'}
+              sub={rollup.occupancyPct != null ? `${pctStr(rollup.occupancyPct)} occupied` : undefined}
+            />
             <StatCard
               label={`Aging Balance${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`}
               value={rollup.agingAsOfDate ? currencyStr(rollup.agingTotalCents) : '—'}
@@ -864,7 +1046,9 @@ export default function AccountHealthDashboard() {
                     <SortableHeader label="Open Deal Value" column="open_deal_value_cents" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="ARR" column="arr_cents" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Aging Balance" column="aging_total_cents" sort={sort} onSort={toggleSort} className="pr-4" />
-                    <SortableHeader label="DSO" column="dsoDays" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="DSO" column="dsoDays" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Total Capacity" column="total_capacity" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -886,7 +1070,9 @@ export default function AccountHealthDashboard() {
                       <td className={`py-2 pr-4 ${a.aging_past_due_61_plus_cents > 0 ? 'text-error font-medium' : 'text-neutral-500'}`}>
                         {a.aging_total_cents != null ? currencyStr(a.aging_total_cents) : '—'}
                       </td>
-                      <td className="py-2 text-neutral-500">{a.dsoDays != null ? `${a.dsoDays}d` : '—'}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.dsoDays != null ? `${a.dsoDays}d` : '—'}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
+                      <td className="py-2 text-neutral-500">{a.current_census ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

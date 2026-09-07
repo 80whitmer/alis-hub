@@ -33,6 +33,67 @@ function flattenDeals(accounts) {
   return rows;
 }
 
+/**
+ * Downloadable template for mapping each account to its ALIS subdomain —
+ * the one piece of information needed (server/api/companyHosts.js) to
+ * pull capacity/census data, which otherwise has no connection to
+ * anything HubSpot already gave this dashboard. Pre-fills the ALIS
+ * Subdomain column wherever a mapping is already known, so Aaron only
+ * has to fill in the blanks before re-uploading via
+ * exportAccountHealthPortfolioExcel's counterpart, ImportCompanyHostsButton.
+ */
+export async function exportCompanyHostTemplate(accounts, existingHosts) {
+  const hostByCompanyId = new Map((existingHosts || []).map((h) => [h.hubspot_company_id, h.company_host]));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'alis-hub';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('ALIS Subdomains');
+  sheet.columns = [
+    { header: 'Company Name', key: 'companyName', width: 34 },
+    { header: 'HubSpot Company ID', key: 'hubspotCompanyId', width: 20 },
+    { header: 'ALIS Subdomain', key: 'companyHost', width: 24 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  for (const a of accounts) {
+    sheet.addRow({
+      companyName: a.company_name,
+      hubspotCompanyId: a.hubspot_company_id,
+      companyHost: hostByCompanyId.get(a.hubspot_company_id) || '',
+    });
+  }
+
+  await download(workbook, 'Account-Health-ALIS-Subdomains-Template.xlsx');
+}
+
+/**
+ * Reads a completed copy of the template above back into
+ * `{ companyName, hubspotCompanyId, companyHost }` rows — same field
+ * names server/db/database.js's bulkImportCompanyHosts expects, so the
+ * result can be POSTed to /api/company-hosts/import as-is. Rows with no
+ * ALIS Subdomain filled in are skipped rather than sent as empty
+ * mappings (bulkImportCompanyHosts would skip them anyway, but there's
+ * no reason to send them).
+ */
+export async function parseCompanyHostTemplate(file) {
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new Error('No worksheet found in this file.');
+
+  const rows = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // header
+    const companyName = row.getCell(1).text?.trim();
+    const hubspotCompanyId = row.getCell(2).text?.trim();
+    const companyHost = row.getCell(3).text?.trim();
+    if (companyHost) rows.push({ companyName, hubspotCompanyId, companyHost });
+  });
+  return rows;
+}
+
 /** Portfolio-wide workbook — Summary, Accounts, and Deals sheets, matching the on-screen roll-up/table/All Deals section. */
 export async function exportAccountHealthPortfolioExcel(accounts, rollup) {
   const workbook = new ExcelJS.Workbook();
@@ -57,6 +118,8 @@ export async function exportAccountHealthPortfolioExcel(accounts, rollup) {
     [`Aging Balance${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`, rollup.agingAsOfDate ? usd(rollup.agingTotalCents) : ''],
     ['Past Due 61+ Days', rollup.agingAsOfDate ? usd(rollup.pastDue61PlusCents) : ''],
     ['Portfolio DSO (days, rudimentary)', rollup.portfolioDsoDays ?? ''],
+    [`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`, rollup.occupancyAccountCount > 0 ? rollup.totalCapacity : ''],
+    ['Current Census', rollup.occupancyAccountCount > 0 ? rollup.currentCensus : ''],
   ];
   for (const [metric, value] of summaryRows) summarySheet.addRow({ metric, value });
 
@@ -78,6 +141,8 @@ export async function exportAccountHealthPortfolioExcel(accounts, rollup) {
     { header: 'Aging Balance', key: 'agingTotal', width: 14 },
     { header: 'Past Due 61+', key: 'pastDue', width: 13 },
     { header: 'DSO (days)', key: 'dso', width: 11 },
+    { header: 'Total Capacity', key: 'totalCapacity', width: 14 },
+    { header: 'Current Census', key: 'currentCensus', width: 14 },
   ];
   accountsSheet.getRow(1).font = { bold: true };
   for (const a of accounts) {
@@ -98,6 +163,8 @@ export async function exportAccountHealthPortfolioExcel(accounts, rollup) {
       agingTotal: usd(a.aging_total_cents),
       pastDue: usd(a.aging_past_due_61_plus_cents),
       dso: a.dsoDays ?? '',
+      totalCapacity: a.total_capacity ?? '',
+      currentCensus: a.current_census ?? '',
     });
   }
 
@@ -154,6 +221,8 @@ export async function exportAccountHealthSingleExcel(account) {
     ['ARR Added This Year', usd(account.arr_added_this_year_cents)],
     ['Aging Balance', usd(account.aging_total_cents)],
     ['DSO (days, rudimentary)', account.dsoDays ?? ''],
+    [`Total Capacity${account.occupancy_as_of_date ? ` (as of ${account.occupancy_as_of_date})` : ''}`, account.total_capacity ?? ''],
+    ['Current Census', account.current_census ?? ''],
   ];
   for (const [metric, value] of overviewRows) overview.addRow({ metric, value });
   overview.addRow({});
@@ -218,6 +287,26 @@ export async function exportAccountHealthSingleExcel(account) {
     });
     agingSheet.addRow({});
     agingSheet.addRow({ current: `As of ${account.aging.asOfDate} — from: ${(account.aging.sourceRows || []).map((r) => r.customerName).join(', ')}` });
+  }
+
+  const occupancySheet = workbook.addWorksheet('Occupancy');
+  occupancySheet.columns = [
+    { header: 'Breakdown', key: 'breakdown', width: 14 },
+    { header: 'Group', key: 'group', width: 24 },
+    { header: 'Occupancy %', key: 'pct', width: 14 },
+    { header: 'Occupied', key: 'occupied', width: 12 },
+    { header: 'Total', key: 'total', width: 12 },
+  ];
+  occupancySheet.getRow(1).font = { bold: true };
+  for (const r of account.occupancyByProductType || []) {
+    occupancySheet.addRow({ breakdown: 'Product Type', group: r.productType, pct: r.pct != null ? Number((r.pct * 100).toFixed(1)) : '', occupied: r.occupied, total: r.total });
+  }
+  for (const r of account.occupancyByClassification || []) {
+    occupancySheet.addRow({ breakdown: 'Classification', group: r.classification, pct: r.pct != null ? Number((r.pct * 100).toFixed(1)) : '', occupied: r.occupied, total: r.total });
+  }
+  if (account.occupancy_as_of_date) {
+    occupancySheet.addRow({});
+    occupancySheet.addRow({ breakdown: `As of ${account.occupancy_as_of_date}` });
   }
 
   await download(workbook, `${(account.company_name || 'Account').replace(/[^a-z0-9.\-]/gi, '_')}-Account-Health.xlsx`);

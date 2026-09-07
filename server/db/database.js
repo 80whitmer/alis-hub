@@ -267,6 +267,12 @@ async function initDb() {
       enhancement_top_count    INTEGER,
       enhancement_lesser_count INTEGER,
       other_open_ticket_count  INTEGER,
+      total_capacity          INTEGER,
+      current_census          INTEGER,
+      occupancy_pct           REAL,
+      occupancy_by_product_type_json TEXT,
+      occupancy_by_classification_json TEXT,
+      occupancy_as_of_date    TEXT,
       health_score         INTEGER,
       health_band          TEXT,
       refreshed_at          TEXT DEFAULT (datetime('now'))
@@ -319,6 +325,36 @@ async function initDb() {
   }
   try {
     db.run(`ALTER TABLE account_health_snapshots ADD COLUMN other_open_ticket_count INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN total_capacity INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN current_census INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_pct REAL;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_by_product_type_json TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_by_classification_json TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_as_of_date TEXT;`);
   } catch {
     // Column already exists — fine.
   }
@@ -802,7 +838,32 @@ function listAccountHealthSnapshots() {
     serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
     financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
     aging: row.aging_json ? JSON.parse(row.aging_json) : null,
+    occupancyByProductType: row.occupancy_by_product_type_json ? JSON.parse(row.occupancy_by_product_type_json) : null,
+    occupancyByClassification: row.occupancy_by_classification_json ? JSON.parse(row.occupancy_by_classification_json) : null,
   }));
+}
+
+/**
+ * Writes (or clears, if occupancy is null) one account's capacity/census
+ * snapshot — a plain UPDATE on its own independent cadence (an ALIS API
+ * pull, not a HubSpot one), same reasoning as updateAccountHealthAging.
+ */
+function updateAccountHealthOccupancy(hubspotCompanyId, occupancy) {
+  run(
+    `UPDATE account_health_snapshots
+     SET total_capacity = ?, current_census = ?, occupancy_pct = ?,
+         occupancy_by_product_type_json = ?, occupancy_by_classification_json = ?, occupancy_as_of_date = ?
+     WHERE hubspot_company_id = ?`,
+    [
+      occupancy?.totalRoomDays ?? null,
+      occupancy?.occupiedRoomDays ?? null,
+      occupancy?.pct ?? null,
+      occupancy?.byProductType ? JSON.stringify(occupancy.byProductType) : null,
+      occupancy?.byClassification ? JSON.stringify(occupancy.byClassification) : null,
+      occupancy?.asOfDate ?? null,
+      hubspotCompanyId,
+    ]
+  );
 }
 
 /**
@@ -884,6 +945,6 @@ module.exports = {
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
-  updateAccountHealthAging,
+  updateAccountHealthAging, updateAccountHealthOccupancy,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };
