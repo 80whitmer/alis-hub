@@ -14,7 +14,11 @@
  * 2026) only 7 of 109 accounts have a remembered mapping; this is why
  * occupancy refresh is its own action/button, not bundled into the main
  * HubSpot refresh — accounts with no mapping just show no occupancy data
- * rather than blocking or slowing down everything else.
+ * rather than blocking or slowing down everything else. Supports more
+ * than one subdomain per account (comma-separated in the same cell, per
+ * Aaron — Sep 2026) for a Home Office that spans multiple ALIS instances;
+ * results are merged before computing today's snapshot, same convention
+ * kpiExport.js/wellnessExport.js/usageAudit.js already use.
  */
 const { getCompanyHost } = require('../db/database');
 const { getOccupancy } = require('./alisApiClient');
@@ -22,6 +26,21 @@ const { normalizeOccupancy } = require('./kpiNormalizer');
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// A HubSpot company can span more than one ALIS instance (e.g. grew
+// through M&A, communities split across two separate ALIS subdomains) —
+// company_host already supports this as a comma-separated list, the same
+// convention kpiExport.js/wellnessExport.js/usageAudit.js already use
+// (and upsertCompanyHost already merges into on conflict). This was the
+// one consumer of company_host that didn't split it yet — duplicated
+// locally rather than imported, matching this codebase's established
+// small-helper-duplication pattern elsewhere.
+function parseHosts(companyHost) {
+  return String(companyHost || '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -65,7 +84,31 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
   const host = getCompanyHost({ companyName, hubspotCompanyId });
   if (!host) return null;
 
-  const rawRows = await getOccupancy(host.company_host);
+  const hosts = parseHosts(host.company_host);
+  if (hosts.length === 0) return null;
+
+  // One bad host (network hiccup, a stale/typo'd subdomain) shouldn't
+  // blank out an account that has other, working hosts — merge whatever
+  // succeeds, matching kpiExport.js's partial-data-over-total-failure
+  // pattern for the same multi-host case. Only throws (surfacing as a
+  // real per-account error in the /refresh-occupancy route) if every
+  // host failed.
+  const rawRows = [];
+  const hostErrors = [];
+  for (const h of hosts) {
+    try {
+      rawRows.push(...await getOccupancy(h));
+    } catch (err) {
+      hostErrors.push(`${h}: ${err.message}`);
+    }
+  }
+  if (hostErrors.length === hosts.length) {
+    throw new Error(`Occupancy pull failed for every host (${hosts.join(', ')}): ${hostErrors.join('; ')}`);
+  }
+  if (hostErrors.length > 0) {
+    console.error(`[accountHealthOccupancy] ${companyName}: occupancy pull failed for ${hostErrors.length} of ${hosts.length} host(s), continuing with the rest: ${hostErrors.join('; ')}`);
+  }
+
   const { rows, asOfDate } = filterToLatestDay(rawRows);
   const normalized = normalizeOccupancy(rows);
   return { ...normalized, asOfDate };

@@ -63,9 +63,14 @@ export async function exportCompanyHostTemplate(accounts, existingHosts) {
   sheet.columns = [
     { header: 'Company Name', key: 'companyName', width: 34 },
     { header: 'HubSpot Company ID', key: 'hubspotCompanyId', width: 20 },
-    { header: 'ALIS Subdomain', key: 'companyHost', width: 24 },
+    { header: 'ALIS Subdomain(s)', key: 'companyHost', width: 30 },
   ];
   sheet.getRow(1).font = { bold: true };
+  // Multiple ALIS instances for one HubSpot company (grew through M&A,
+  // communities split across two ALIS subdomains) — comma-separate them
+  // in the same cell, e.g. "vivaeast,vivawest". Same convention the QBR/
+  // Wellness/Usage Audit pipelines already use for this table.
+  sheet.getCell('C1').note = 'Multiple ALIS instances for one company? Comma-separate them in the same cell, e.g. "vivaeast,vivawest".';
   for (const a of accounts) {
     sheet.addRow({
       companyName: a.company_name,
