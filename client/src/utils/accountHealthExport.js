@@ -33,6 +33,16 @@ function flattenDeals(accounts) {
   return rows;
 }
 
+function flattenArrAddedDeals(accounts) {
+  const rows = [];
+  for (const a of accounts) {
+    for (const d of a.financialHealth?.arrAddedThisYearDeals || []) {
+      rows.push({ ...d, companyName: a.company_name });
+    }
+  }
+  return rows;
+}
+
 /**
  * Downloadable template for mapping each account to its ALIS subdomain —
  * the one piece of information needed (server/api/companyHosts.js) to
@@ -105,6 +115,7 @@ export async function exportAccountHealthPortfolioExcel(accounts, rollup) {
   summarySheet.getRow(1).font = { bold: true };
   const summaryRows = [
     ['Total Accounts', rollup.totalAccounts],
+    ['Total Communities (active child companies)', rollup.totalCommunities],
     ['Open Tickets (Client Submitted + In Progress)', rollup.openTickets],
     ['Closed Tickets', rollup.closedTickets],
     ['Enhancement Requests — Top 3', rollup.enhancementTop],
@@ -192,6 +203,30 @@ export async function exportAccountHealthPortfolioExcel(accounts, rollup) {
       closeDate: d.expectedCloseDate ? d.expectedCloseDate.slice(0, 10) : '',
       isOpen: d.isOpen ? 'Open' : 'Closed',
       nextStep: d.nextStep || '',
+      url: d.url || '',
+    });
+  }
+
+  const arrAddedDeals = flattenArrAddedDeals(accounts);
+  const arrAddedSheet = workbook.addWorksheet('ARR Added Deals');
+  arrAddedSheet.columns = [
+    { header: 'Account', key: 'companyName', width: 30 },
+    { header: 'Deal', key: 'name', width: 40 },
+    { header: 'Pipeline', key: 'pipeline', width: 22 },
+    { header: 'Stage', key: 'stage', width: 20 },
+    { header: 'ARR Value', key: 'arrValue', width: 14 },
+    { header: 'Close Date', key: 'closeDate', width: 14 },
+    { header: 'Link', key: 'url', width: 40 },
+  ];
+  arrAddedSheet.getRow(1).font = { bold: true };
+  for (const d of arrAddedDeals) {
+    arrAddedSheet.addRow({
+      companyName: d.companyName,
+      name: d.name,
+      pipeline: d.pipeline,
+      stage: d.stage,
+      arrValue: usd(d.arrValueCents),
+      closeDate: d.closeDate ? d.closeDate.slice(0, 10) : '',
       url: d.url || '',
     });
   }

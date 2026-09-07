@@ -95,6 +95,11 @@ async function mapLiveFinancialHealth(dealSummary) {
     ...dealSummary.openDeals.map((d) => ({ ...d, isOpen: true })),
     ...dealSummary.closedDeals.map((d) => ({ ...d, isOpen: false })),
   ];
+
+  const currentYear = new Date().getFullYear();
+  const arrAddedThisYearDeals = dealSummary.deals
+    .filter((d) => d.isWon && d.closeDate && new Date(d.closeDate).getFullYear() === currentYear)
+    .map((d) => ({ ...d, arrValueCents: Math.round((d.arrValue || 0) * 100) }));
   const dealsWithTasks = await Promise.all(dealsForView.map(async (d) => ({
     ...d,
     tasks: await getOpenTasksForDeal(d.id),
@@ -120,14 +125,17 @@ async function mapLiveFinancialHealth(dealSummary) {
     // {count, valueCents} per type rather than a bare count — Aaron asked
     // (Sep 2026) for total deal value alongside count on the Deals by Type
     // chart, since a type with few but large deals reads very differently
-    // than one with many small ones. Summed over dealSummary.deals (the
-    // full history, already fetched) — same as arrAddedThisYearCents just
+    // than one with many small ones. valueCents sums `arr_value`, not
+    // `amount` — Aaron asked (Sep 2026, same session as the ARR Added fix
+    // below) for this chart to read the same way the rest of the
+    // dashboard now does. Summed over dealSummary.deals (the full
+    // history, already fetched) — same as arrAddedThisYearCents just
     // below, no extra HubSpot calls.
     dealsByType: dealSummary.deals.reduce((acc, d) => {
       const key = d.dealType || 'unspecified';
       if (!acc[key]) acc[key] = { count: 0, valueCents: 0 };
       acc[key].count += 1;
-      acc[key].valueCents += Math.round((d.amount || 0) * 100);
+      acc[key].valueCents += Math.round((d.arrValue || 0) * 100);
       return acc;
     }, {}),
     // "ARR added this calendar year" — gross sum of closed-won deals'
@@ -150,9 +158,15 @@ async function mapLiveFinancialHealth(dealSummary) {
     // fields, same caveat as the rest of this file's deal-derived numbers.
     // Reuses dealSummary.deals (already fetched, the full history) — no
     // new HubSpot calls.
-    arrAddedThisYearCents: dealSummary.deals
-      .filter((d) => d.isWon && d.closeDate && new Date(d.closeDate).getFullYear() === new Date().getFullYear())
-      .reduce((sum, d) => sum + Math.round((d.arrValue || 0) * 100), 0),
+    arrAddedThisYearCents: arrAddedThisYearDeals.reduce((sum, d) => sum + d.arrValueCents, 0),
+    // The actual deals behind arrAddedThisYearCents — Aaron asked (Sep
+    // 2026) for a drill-down after the ARR Added figure jumped once
+    // arr_value replaced amount, since a portfolio-wide sum with no way
+    // to see what's in it isn't trustworthy on its own.
+    arrAddedThisYearDeals: arrAddedThisYearDeals.map((d) => ({
+      name: d.name, arrValueCents: d.arrValueCents, closeDate: d.closeDate,
+      pipeline: d.pipeline, stage: d.stage, url: d.url,
+    })),
   };
 }
 
@@ -214,6 +228,7 @@ router.post('/refresh', async (req, res) => {
           enhancementTopCount: serviceHealth.enhancementTopCount,
           enhancementLesserCount: serviceHealth.enhancementLesserCount,
           otherOpenTicketCount: serviceHealth.otherOpenCount,
+          activeCommunityCount: company.activeCommunityCount,
           healthScore: score,
           healthBand: band?.label || null,
         });
@@ -396,6 +411,7 @@ function computePortfolioRollup(accounts) {
     currentCensus: accounts.reduce((s, a) => s + (a.current_census || 0), 0),
     occupancyAccountCount: accounts.filter((a) => a.total_capacity != null).length,
     occupancyAsOfDate: accounts.find((a) => a.occupancy_as_of_date)?.occupancy_as_of_date || null,
+    totalCommunities: accounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
     avgScore,
   };
 }

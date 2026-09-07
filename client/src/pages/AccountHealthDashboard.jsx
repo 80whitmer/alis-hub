@@ -415,7 +415,7 @@ function DealTypeTooltip({ active, payload }) {
     <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
       <p className="font-semibold text-primary-900 mb-1">{d.name}</p>
       <p className="text-neutral-600">{d.count} deal{d.count === 1 ? '' : 's'}</p>
-      <p className="text-neutral-600">{currencyStr(d.valueCents)} total value</p>
+      <p className="text-neutral-600">{currencyStr(d.valueCents)} total ARR</p>
     </div>
   );
 }
@@ -665,6 +665,89 @@ function flattenDeals(accounts) {
   return rows;
 }
 
+function flattenArrAddedDeals(accounts) {
+  const rows = [];
+  for (const a of accounts) {
+    for (const d of a.financialHealth?.arrAddedThisYearDeals || []) {
+      rows.push({ ...d, companyName: a.company_name, hubspotCompanyId: a.hubspot_company_id });
+    }
+  }
+  return rows;
+}
+
+/**
+ * The actual deals behind the "ARR Added" roll-up tile — Aaron asked (Sep
+ * 2026) for this after the figure jumped once arrAddedThisYearCents
+ * switched from summing `amount` to `arr_value`, since a portfolio-wide
+ * sum with no way to see what's in it isn't trustworthy on its own.
+ */
+function ArrAddedDealsSection({ accounts }) {
+  const deals = useMemo(() => flattenArrAddedDeals(accounts), [accounts]);
+  const [sort, setSort] = useState({ column: 'arrValueCents', direction: 'desc' });
+
+  function toggleSort(column) {
+    setSort((prev) => (prev.column === column
+      ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      : { column, direction: 'asc' }));
+  }
+
+  const sorted = useMemo(() => {
+    const { column, direction } = sort;
+    const dir = direction === 'asc' ? 1 : -1;
+    return [...deals].sort((a, b) => {
+      const av = a[column];
+      const bv = b[column];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
+    });
+  }, [deals, sort]);
+
+  const totalCents = deals.reduce((s, d) => s + d.arrValueCents, 0);
+
+  return (
+    <SectionCard
+      title="ARR Added This Year — Contributing Deals"
+      description={`${deals.length} closed-won deal(s) totaling ${currencyStr(totalCents)}`}
+    >
+      {deals.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No closed-won deals with an ARR value this year yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                <SortableHeader label="Account" column="companyName" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="Deal" column="name" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="Pipeline" column="pipeline" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="Stage" column="stage" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="ARR Value" column="arrValueCents" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="Close Date" column="closeDate" sort={sort} onSort={toggleSort} />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((d, i) => (
+                <tr key={`${d.hubspotCompanyId}:${d.name}:${i}`} className="border-t border-neutral-100">
+                  <td className="py-2 pr-4 text-neutral-700">{d.companyName}</td>
+                  <td className="py-2 pr-4">
+                    {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{d.name}</a> : d.name}
+                  </td>
+                  <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
+                  <td className="py-2 pr-4 text-neutral-500">{d.stage}</td>
+                  <td className="py-2 pr-4 text-neutral-500">{currencyStr(d.arrValueCents)}</td>
+                  <td className="py-2 text-neutral-500">{d.closeDate ? d.closeDate.slice(0, 10) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 /**
  * Portfolio-wide Deals view — every account's open + recently-closed (90
  * day) deals in one flat, filterable/sortable table, so deals that "lurch
@@ -904,6 +987,7 @@ export default function AccountHealthDashboard() {
 
     return {
       totalAccounts: accounts.length,
+      totalCommunities: accounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
       openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
       closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
       enhancementTop: accounts.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
@@ -982,6 +1066,7 @@ export default function AccountHealthDashboard() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <StatCard label="Total Accounts" value={rollup.totalAccounts} />
+            <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
             <StatCard
               label="Open Tickets"
               value={rollup.openTickets}
@@ -1029,9 +1114,11 @@ export default function AccountHealthDashboard() {
           <SectionCard title="Closed Tickets by Category 2.0" description="Aggregated across every account — historical mix">
             <CategoryMixChart accounts={accounts} status="closed" />
           </SectionCard>
-          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history">
+          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR">
             <DealTypeChart accounts={accounts} />
           </SectionCard>
+
+          <ArrAddedDealsSection accounts={accounts} />
 
           <SectionCard
             title="Accounts"

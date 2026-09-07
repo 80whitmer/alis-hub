@@ -93,6 +93,7 @@ function buildSummarySection(rollup) {
   return `
     <section class="stats-grid">
       ${stat('Total Accounts', rollup.totalAccounts)}
+      ${stat('Total Communities', rollup.totalCommunities, 'Active child companies')}
       ${stat('Open Tickets', rollup.openTickets, 'Client Submitted + In Progress')}
       ${stat('Closed Tickets', rollup.closedTickets)}
       ${stat('Avg Health Score', rollup.avgScore ?? '—')}
@@ -142,6 +143,30 @@ function buildAccountsTable(accounts) {
     </section>`;
 }
 
+function buildArrAddedDealsTable(accounts) {
+  const rows = [];
+  for (const a of accounts) {
+    for (const d of a.financialHealth?.arrAddedThisYearDeals || []) rows.push({ ...d, companyName: a.company_name });
+  }
+  if (rows.length === 0) return '<p class="italic-muted">No closed-won deals with an ARR value this year yet.</p>';
+
+  const totalCents = rows.reduce((s, d) => s + d.arrValueCents, 0);
+  return `
+    <p class="meta">${rows.length} deal(s) totaling ${usd(totalCents)}</p>
+    <table>
+      <thead><tr><th>Account</th><th>Deal</th><th>Stage</th><th class="num">ARR Value</th><th>Close Date</th></tr></thead>
+      <tbody>
+        ${rows.map((d) => `<tr>
+          <td>${escapeHtml(d.companyName)}</td>
+          <td>${d.url ? `<a href="${d.url}">${escapeHtml(d.name)}</a>` : escapeHtml(d.name)}</td>
+          <td>${escapeHtml(d.stage || '')}</td>
+          <td class="num">${usd(d.arrValueCents)}</td>
+          <td>${d.closeDate ? escapeHtml(d.closeDate.slice(0, 10)) : '—'}</td>
+        </tr>`).join('\n')}
+      </tbody>
+    </table>`;
+}
+
 /** Portfolio-wide export — every account Aaron owns, one row each, plus the same roll-up stats shown on the dashboard. */
 async function renderAccountHealthPortfolioPdf(accounts, rollup) {
   const body = `
@@ -149,6 +174,10 @@ async function renderAccountHealthPortfolioPdf(accounts, rollup) {
     <p class="meta">Generated ${escapeHtml(new Date().toISOString().slice(0, 10))} · ${accounts.length} accounts</p>
     ${buildSummarySection(rollup)}
     ${buildAccountsTable(accounts)}
+    <section class="section">
+      <h2>ARR Added This Year — Contributing Deals</h2>
+      ${buildArrAddedDealsTable(accounts)}
+    </section>
   `;
   return renderHtmlToPdf(htmlShell('Account Health — Portfolio Report', body));
 }

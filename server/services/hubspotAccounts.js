@@ -267,6 +267,17 @@ async function filterHomeOfficesWithActiveCommunity(companies) {
     // hs_num_child_companies > 0 already filtered upstream) — fail open
     // rather than silently dropping a real account over a lookup gap.
     const hasActiveCommunity = !childStages || childStages.some((s) => s !== CANCELED_LIFECYCLE_STAGE);
+    // Aaron asked (Sep 2026) for a portfolio-wide "total communities"
+    // figure — active (non-canceled) child companies specifically, not
+    // just hs_num_child_companies, for the same reason the exclusion
+    // above exists: a canceled community is still a "child company" in
+    // HubSpot's own count, but isn't a real active community anymore.
+    // Falls back to the company's own child-count property in the
+    // fail-open case above, rather than 0, since "no data" shouldn't
+    // read as "no communities."
+    company.activeCommunityCount = childStages
+      ? childStages.filter((s) => s !== CANCELED_LIFECYCLE_STAGE).length
+      : (company.childCompanyCount ?? 0);
     if (hasActiveCommunity) {
       active.push(company);
     } else {
