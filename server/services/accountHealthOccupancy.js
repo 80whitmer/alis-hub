@@ -102,16 +102,22 @@ function normalizeFromResidents(residents) {
     const cl = (r.classification || 'Unspecified').toString().trim() || 'Unspecified';
     byClassification[cl] = (byClassification[cl] || 0) + 1;
   }
+  // pct is each group's share of total census (occupied / total residents)
+  // — the same census-share meaning kpiNormalizer.js's normalizeOccupancy
+  // uses, and actually a MORE natural fit here than a fill-rate would be,
+  // since this fallback has no capacity/total figure to compute a fill
+  // rate from in the first place (see NO capacity comment above).
+  const total = residents.length;
   return {
-    hasOccupancyData: residents.length > 0,
+    hasOccupancyData: total > 0,
     pct: null,
-    occupiedRoomDays: residents.length,
+    occupiedRoomDays: total,
     totalRoomDays: null,
     byProductType: Object.entries(byProductType)
-      .map(([productType, occupied]) => ({ productType, occupied, total: null, pct: null }))
+      .map(([productType, occupied]) => ({ productType, occupied, total: null, pct: total ? occupied / total : null }))
       .sort((a, b) => b.occupied - a.occupied),
     byClassification: Object.entries(byClassification)
-      .map(([classification, occupied]) => ({ classification, occupied, total: null, pct: null }))
+      .map(([classification, occupied]) => ({ classification, occupied, total: null, pct: total ? occupied / total : null }))
       .sort((a, b) => b.occupied - a.occupied),
   };
 }

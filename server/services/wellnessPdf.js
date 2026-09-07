@@ -106,7 +106,7 @@ function buildOccupancySection(snapshot) {
     <div style="flex:1">
       <h3 style="font-size:11px;margin:0 0 6px;">${escapeHtml(title)}</h3>
       <table>
-        <thead><tr><th>${keyField === 'productType' ? 'Product Type' : 'Classification'}</th><th class="num">Occupancy %</th><th class="num">Occupied / Total</th></tr></thead>
+        <thead><tr><th>${keyField === 'productType' ? 'Product Type' : 'Classification'}</th><th class="num">% of Census</th><th class="num">Occupied / Total</th></tr></thead>
         <tbody>
           ${rows.map((r) => `<tr><td>${escapeHtml(String(r[keyField]))}</td><td class="num">${pctStr(r.pct)}</td><td class="num">${r.occupied} / ${r.total}</td></tr>`).join('\n')}
         </tbody>

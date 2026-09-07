@@ -99,7 +99,7 @@ function addOccupancySheet(workbook, snapshot) {
   const addBreakdown = (title, rows, keyField) => {
     const headerRow = sheet.addRow([title]);
     headerRow.font = { bold: true };
-    sheet.addRow([keyField === 'productType' ? 'Product Type' : 'Classification', 'Occupancy %', 'Occupied', 'Total']).font = { bold: true };
+    sheet.addRow([keyField === 'productType' ? 'Product Type' : 'Classification', '% of Census', 'Occupied', 'Total']).font = { bold: true };
     for (const r of rows) {
       sheet.addRow([r[keyField], r.pct != null ? `${(r.pct * 100).toFixed(1)}%` : '—', r.occupied, r.total]);
     }

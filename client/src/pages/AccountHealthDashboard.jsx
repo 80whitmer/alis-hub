@@ -599,7 +599,7 @@ function OccupancyBreakdownTable({ title, rows, keyField }) {
         <thead>
           <tr className="text-left text-neutral-500 text-xs uppercase">
             <th className="py-1">{keyField === 'productType' ? 'Product Type' : 'Classification'}</th>
-            <th className="py-1 text-right">Occupancy %</th>
+            <th className="py-1 text-right">% of Census</th>
             <th className="py-1 text-right">Occupied / Total</th>
           </tr>
         </thead>

@@ -149,11 +149,18 @@ function normalizeOccupancy(rawRows = [], { billedResidentIds } = {}) {
       communityId,
       pct: c.total ? c.occupied / c.total : null,
     })),
+    // pct here is each group's share of total CENSUS (occupied / total
+    // occupied across every group) — a composition/mix percentage, not
+    // that group's own fill rate (which would be c.occupied / c.total,
+    // "what % of Memory Care rooms are occupied"). Aaron asked for the
+    // former (2026-09-07): "what percentage are each of the product
+    // types or classifications" of the whole. `total` (room count for
+    // that group) is still returned as-is for the Occupied/Total column.
     byProductType: Object.entries(byProductType)
-      .map(([productType, c]) => ({ productType, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .map(([productType, c]) => ({ productType, pct: totalOccupied ? c.occupied / totalOccupied : null, occupied: c.occupied, total: c.total }))
       .sort((a, b) => b.total - a.total),
     byClassification: Object.entries(byClassification)
-      .map(([classification, c]) => ({ classification, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .map(([classification, c]) => ({ classification, pct: totalOccupied ? c.occupied / totalOccupied : null, occupied: c.occupied, total: c.total }))
       .sort((a, b) => b.total - a.total),
   };
 }

@@ -712,7 +712,9 @@ function LosDrawer({ lengthOfStay, companyName, onClose }) {
  * wasn't being read before. Classification is frequently blank at
  * accounts that don't use that field at all (confirmed live) — an
  * "Unspecified" row dominating the classification table is expected
- * there, not a bug.
+ * there, not a bug. Each row's pct is that group's share of TOTAL
+ * census (occupied / total occupied across every group), not that
+ * group's own fill rate — per Aaron (2026-09-07).
  */
 function OccupancyByProductTypeSection({ occupancy }) {
   if (!occupancy?.byProductType?.length && !occupancy?.byClassification?.length) {
@@ -730,7 +732,7 @@ function OccupancyByProductTypeSection({ occupancy }) {
         <thead>
           <tr className="text-left text-neutral-500 text-xs uppercase">
             <th className="py-1">{keyField === 'productType' ? 'Product Type' : 'Classification'}</th>
-            <th className="py-1 text-right">Occupancy %</th>
+            <th className="py-1 text-right">% of Census</th>
             <th className="py-1 text-right">Occupied / Total</th>
           </tr>
         </thead>

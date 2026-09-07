@@ -333,7 +333,7 @@ export async function exportAccountHealthSingleExcel(account) {
   occupancySheet.columns = [
     { header: 'Breakdown', key: 'breakdown', width: 14 },
     { header: 'Group', key: 'group', width: 24 },
-    { header: 'Occupancy %', key: 'pct', width: 14 },
+    { header: '% of Census', key: 'pct', width: 14 },
     { header: 'Occupied', key: 'occupied', width: 12 },
     { header: 'Total', key: 'total', width: 12 },
   ];

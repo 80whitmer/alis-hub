@@ -439,11 +439,16 @@ function normalizeOccupancySnapshot(occupancyRows, allCommunityIds = []) {
     occupied: totalOccupied,
     total,
     byCommunity,
+    // pct is each group's share of total census (occupied / totalOccupied
+    // across every group), not that group's own fill rate — matches
+    // kpiNormalizer.js's normalizeOccupancy (2026-09-07, Aaron: "what
+    // percentage are each of the product types or classifications" of
+    // the whole).
     byProductType: Object.entries(byProductType)
-      .map(([productType, c]) => ({ productType, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .map(([productType, c]) => ({ productType, pct: totalOccupied ? c.occupied / totalOccupied : null, occupied: c.occupied, total: c.total }))
       .sort((a, b) => b.total - a.total),
     byClassification: Object.entries(byClassification)
-      .map(([classification, c]) => ({ classification, pct: c.total ? c.occupied / c.total : null, occupied: c.occupied, total: c.total }))
+      .map(([classification, c]) => ({ classification, pct: totalOccupied ? c.occupied / totalOccupied : null, occupied: c.occupied, total: c.total }))
       .sort((a, b) => b.total - a.total),
   };
 }
