@@ -60,6 +60,22 @@ function StatCard({ label, value, sub }) {
   );
 }
 
+/** Smooth-scrolls to a section by id rather than a plain hash jump, so the page doesn't snap instantly — used from the stat tiles to reach the Accounts table / ARR Added deals table further down the page. */
+function JumpLink({ to, children }) {
+  return (
+    <a
+      href={`#${to}`}
+      onClick={(e) => {
+        e.preventDefault();
+        document.getElementById(to)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }}
+      className="text-xs text-accent-600 hover:underline"
+    >
+      {children}
+    </a>
+  );
+}
+
 function CompanyLink({ account, children, className = 'text-accent-600 hover:underline' }) {
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
@@ -1065,7 +1081,7 @@ export default function AccountHealthDashboard() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <StatCard label="Total Accounts" value={rollup.totalAccounts} />
+            <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts-table">Jump to table ↓</JumpLink>} />
             <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
             <StatCard
               label="Open Tickets"
@@ -1082,7 +1098,11 @@ export default function AccountHealthDashboard() {
             <StatCard label="Open Deals" value={rollup.openDeals} />
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
-            <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
+            <StatCard
+              label={`ARR Added (${new Date().getFullYear()})`}
+              value={currencyStr(rollup.arrAddedThisYearCents)}
+              sub={<JumpLink to="arr-added-deals">Jump to deals ↓</JumpLink>}
+            />
             <StatCard
               label={`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`}
               value={rollup.occupancyAccountCount > 0 ? rollup.totalCapacity : '—'}
@@ -1108,18 +1128,7 @@ export default function AccountHealthDashboard() {
             />
           </div>
 
-          <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload">
-            <CategoryMixChart accounts={accounts} status="open" />
-          </SectionCard>
-          <SectionCard title="Closed Tickets by Category 2.0" description="Aggregated across every account — historical mix">
-            <CategoryMixChart accounts={accounts} status="closed" />
-          </SectionCard>
-          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR">
-            <DealTypeChart accounts={accounts} />
-          </SectionCard>
-
-          <ArrAddedDealsSection accounts={accounts} />
-
+          <div id="accounts-table">
           <SectionCard
             title="Accounts"
             action={
@@ -1178,6 +1187,21 @@ export default function AccountHealthDashboard() {
               {filtered.length === 0 && <p className="text-sm text-neutral-500 italic py-4">No accounts match "{search}".</p>}
             </div>
           </SectionCard>
+          </div>
+
+          <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload">
+            <CategoryMixChart accounts={accounts} status="open" />
+          </SectionCard>
+          <SectionCard title="Closed Tickets by Category 2.0" description="Aggregated across every account — historical mix">
+            <CategoryMixChart accounts={accounts} status="closed" />
+          </SectionCard>
+          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR">
+            <DealTypeChart accounts={accounts} />
+          </SectionCard>
+
+          <div id="arr-added-deals">
+            <ArrAddedDealsSection accounts={accounts} />
+          </div>
 
           <DealsSection accounts={filtered} search={search} />
         </>
