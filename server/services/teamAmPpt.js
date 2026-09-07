@@ -77,9 +77,12 @@ function addTitleSlide(pptx, { totalAccounts, totalAms }) {
  * shown instead as one indented line per KPI, noting both chart types
  * exist for it, which is what's actually useful to skim.
  */
-function addIndexSlide(pptx) {
+function addIndexSlide(pptx, accounts) {
   const slide = pptx.addSlide();
   addSectionHeader(slide, 'Contents');
+
+  const atRiskCount = accounts.filter(isAtRisk).length;
+  const atRiskPages = Math.max(1, Math.ceil(atRiskCount / AT_RISK_PER_SLIDE));
 
   const runs = [
     { text: 'Overview', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
@@ -89,6 +92,10 @@ function addIndexSlide(pptx) {
       options: { bullet: true, indentLevel: 1, color: BRAND.slate, breakLine: true },
     })),
     { text: 'Health Score Distribution', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    {
+      text: `At-Risk Accounts  (${atRiskCount} account${atRiskCount === 1 ? '' : 's'}${atRiskPages > 1 ? `, ${atRiskPages} slides` : ''})`,
+      options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true },
+    },
   ];
 
   slide.addText(runs, {
@@ -217,6 +224,72 @@ function addHealthDistributionSlide(pptx, accounts) {
   });
 }
 
+const AT_RISK_PER_SLIDE = 5;
+// Same reasoning as the client's isAtRisk (TeamAmDashboard.jsx) —
+// Unhealthy and At Risk together, score < 60. Kept as a separate literal
+// check here rather than imported, matching this codebase's established
+// client/server duplication pattern for small predicates like this.
+function isAtRisk(a) {
+  return a.health_band === 'Unhealthy' || a.health_band === 'At Risk';
+}
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * One page of the at-risk-accounts list — company/AM/score plus up to 3
+ * "why" bullets. `riskReasons` is computed server-side once (see
+ * explainRisk in accountHealthScoring.js, attached to each account by
+ * getEnrichedTeamAmAccounts in teamAm.js) and reused as-is here — the
+ * exact same reasons the on-screen At-Risk drawer shows, not a
+ * separately-derived explanation.
+ */
+function addAtRiskAccountsSlide(pptx, pageAccounts, pageNum, totalPages) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, totalPages > 1 ? `At-Risk Accounts (${pageNum} of ${totalPages})` : 'At-Risk Accounts');
+
+  let y = 1.05;
+  for (const a of pageAccounts) {
+    const scoreColor = a.health_band === 'Unhealthy' ? BAND_HEX.Unhealthy : BAND_HEX['At Risk'];
+    slide.addText(
+      [
+        { text: a.company_name, options: { bold: true, color: BRAND.onyx, fontSize: 13 } },
+        { text: `   ${a.account_manager_name || 'Unassigned'}   ·   Score ${a.health_score ?? '—'}`, options: { color: scoreColor, fontSize: 11, bold: true } },
+      ],
+      { x: 0.6, y, w: 8.8, h: 0.3, fontFace: FONT_BODY }
+    );
+    y += 0.32;
+
+    const reasons = a.riskReasons?.length > 0 ? a.riskReasons.slice(0, 3) : ['No specific driver captured — score reflects the weighted composite'];
+    slide.addText(
+      reasons.map((r) => ({ text: r, options: { bullet: true, breakLine: true } })),
+      { x: 0.8, y, w: 8.4, h: 0.6, fontFace: FONT_BODY, fontSize: 10, color: BRAND.slate, lineSpacingMultiple: 1.1 }
+    );
+    y += reasons.length * 0.2 + 0.18;
+    if (a.riskReasons?.length > 3) {
+      slide.addText(`+${a.riskReasons.length - 3} more factor(s)`, { x: 0.8, y: y - 0.18, w: 8.4, h: 0.2, fontFace: FONT_BODY, fontSize: 9, italic: true, color: BRAND.smoke });
+    }
+  }
+}
+
+/** Paginates the at-risk list across as many slides as needed (Aaron, Sep 2026: "multiple slides if needed"), sorted weakest-first. */
+function addAtRiskSlides(pptx, accounts) {
+  const atRisk = accounts.filter(isAtRisk).sort((a, b) => (a.health_score ?? 999) - (b.health_score ?? 999));
+
+  if (atRisk.length === 0) {
+    const slide = pptx.addSlide();
+    addSectionHeader(slide, 'At-Risk Accounts');
+    slide.addText('No at-risk accounts this refresh.', { x: 0.5, y: 2.5, w: 9, h: 0.5, fontFace: FONT_BODY, fontSize: 14, color: BRAND.slate, align: 'center' });
+    return;
+  }
+
+  const pages = chunk(atRisk, AT_RISK_PER_SLIDE);
+  pages.forEach((page, i) => addAtRiskAccountsSlide(pptx, page, i + 1, pages.length));
+}
+
 /**
  * @param {object} rollup - portfolio-wide rollup (same shape as the client's `rollup` useMemo)
  * @param {Array} rollupByAccountManager - per-AM rollup array (from GET /api/team-am)
@@ -228,7 +301,7 @@ async function renderTeamAmPpt(rollup, rollupByAccountManager, accounts) {
   pptx.layout = 'ALIS_HUB';
 
   addTitleSlide(pptx, rollup);
-  addIndexSlide(pptx);
+  addIndexSlide(pptx, accounts);
   addCardsSlide(pptx, rollup);
   // One KPI per slide (Aaron, Sep 2026) — both a bar and a pie slide for
   // every metric the on-screen dropdown offers, bar immediately followed
@@ -239,6 +312,7 @@ async function renderTeamAmPpt(rollup, rollupByAccountManager, accounts) {
     addKpiByAmSlide(pptx, rollupByAccountManager, metricKey, 'pie');
   }
   addHealthDistributionSlide(pptx, accounts);
+  addAtRiskSlides(pptx, accounts);
 
   return pptx.write({ outputType: 'nodebuffer' });
 }

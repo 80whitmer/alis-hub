@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, LabelList,
 } from 'recharts';
+import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
+import { exportAtRiskAccounts } from '../utils/atRiskExport';
 
 function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -409,6 +411,78 @@ function HealthScoreDistributionChart({ accounts }) {
   );
 }
 
+/** Score < 60 — the Unhealthy/At Risk bands, matching accountHealthScoring.js's SCORE_BANDS boundary between At Risk and Stable. Aaron asked for "the at risk communities" (Sep 2026); read as both concerning bands together (not just the literally-labeled "At Risk" one) since Unhealthy is the more severe version of the same problem, not a separate one. */
+function isAtRisk(account) {
+  return account.health_band === 'Unhealthy' || account.health_band === 'At Risk';
+}
+
+/**
+ * Scrollable drawer of every at-risk account, weakest-first, each with a
+ * "why" bullet list — riskReasons is computed server-side (see
+ * explainRisk in accountHealthScoring.js), mirroring the exact same
+ * signals/thresholds that lowered the score, not a separately-guessed
+ * explanation. An account can legitimately have zero reasons captured
+ * (e.g. its low score comes entirely from the weighted composite of
+ * sub-scores this app can't yet break out further) — shown honestly
+ * rather than papered over with a generic line.
+ */
+function AtRiskDrawer({ accounts, onClose }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const sorted = useMemo(() => [...accounts].sort((a, b) => (a.health_score ?? 999) - (b.health_score ?? 999)), [accounts]);
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportAtRiskAccounts(accounts);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Drawer
+      title="At-Risk Accounts"
+      subtitle={`${accounts.length} account${accounts.length === 1 ? '' : 's'} scoring below 60 (Unhealthy or At Risk)`}
+      onClose={onClose}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={handleExport} disabled={exporting} className="btn btn-secondary btn-sm">
+            {exporting ? 'Exporting…' : '⬇ Export to Excel'}
+          </button>
+          {exportError && <p className="text-xs text-error">{exportError}</p>}
+        </div>
+      }
+    >
+      {sorted.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No at-risk accounts right now.</p>
+      ) : (
+        <div className="space-y-3">
+          {sorted.map((a) => (
+            <div key={a.hubspot_company_id} className="border border-neutral-200 rounded-lg p-3">
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <CompanyLink account={a} className="font-medium text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                <ScoreBadge score={a.health_score} band={a.health_band} />
+              </div>
+              <p className="text-xs text-neutral-500 mb-1.5">{a.account_manager_name}</p>
+              {a.riskReasons?.length > 0 ? (
+                <ul className="text-xs text-neutral-600 list-disc list-inside space-y-0.5">
+                  {a.riskReasons.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              ) : (
+                <p className="text-xs text-neutral-400 italic">No specific driver captured — score reflects the weighted composite.</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
 /** True for an account with no real Account Manager name attached — either no account_manager property at all ("Unassigned") or a real owner ID this app doesn't have a name mapped for ("Other AM (id)", see ACCOUNT_MANAGER_NAMES in hubspotAccounts.js). */
 function isUnmappedAm(account) {
   return account.account_manager_name === 'Unassigned' || account.account_manager_name?.startsWith('Other AM');
@@ -583,6 +657,7 @@ export default function TeamAmDashboard() {
   const [sort, setSort] = useState({ column: 'health_score', direction: 'asc' });
   const [metricKey, setMetricKey] = useState('avgScore');
   const [chartType, setChartType] = useState('bar');
+  const [atRiskOpen, setAtRiskOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -642,6 +717,8 @@ export default function TeamAmDashboard() {
     };
   }, [accounts]);
 
+  const atRiskAccounts = useMemo(() => accounts.filter(isAtRisk), [accounts]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -694,9 +771,18 @@ export default function TeamAmDashboard() {
             />
           </SectionCard>
 
-          <SectionCard title="Health Score Distribution" description="How many accounts fall into each health band, portfolio-wide">
+          <SectionCard
+            title="Health Score Distribution"
+            description="How many accounts fall into each health band, portfolio-wide"
+            action={
+              <button onClick={() => setAtRiskOpen(true)} className="btn btn-secondary btn-sm">
+                View At-Risk Accounts ({atRiskAccounts.length})
+              </button>
+            }
+          >
             <HealthScoreDistributionChart accounts={accounts} />
           </SectionCard>
+          {atRiskOpen && <AtRiskDrawer accounts={atRiskAccounts} onClose={() => setAtRiskOpen(false)} />}
 
           <UnmappedAmSection accounts={accounts} />
 

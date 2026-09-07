@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const { getAllHomeOfficeCompanies } = require('../services/hubspotAccounts');
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
-const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
+const { computeHealthScore, computeDsoDays, explainRisk } = require('../services/accountHealthScoring');
 const {
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging,
   listAccountHealthSnapshots, createJob, setJobStatus, setItemStatus,
@@ -327,12 +327,19 @@ function getEnrichedTeamAmAccounts() {
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
     });
     const occupancySource = occupancyByCompanyId.get(a.hubspot_company_id);
+    const dsoDays = computeDsoDays(a.aging, a.arr_cents);
     return {
       ...a,
       health_score: score,
       health_band: band?.label || null,
       subScores,
-      dsoDays: computeDsoDays(a.aging, a.arr_cents),
+      dsoDays,
+      // Only meaningful for the two lower bands — kept off Stable/Healthy
+      // accounts rather than computed-and-ignored, since "no reasons" for
+      // a healthy account isn't a finding worth carrying around.
+      riskReasons: (band?.label === 'Unhealthy' || band?.label === 'At Risk')
+        ? explainRisk({ serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, dsoDays })
+        : [],
       hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
       total_capacity: occupancySource?.total_capacity ?? null,
       current_census: occupancySource?.current_census ?? null,

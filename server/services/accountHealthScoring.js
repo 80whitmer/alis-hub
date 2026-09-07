@@ -228,4 +228,50 @@ function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth
   return { score, band: bandFor(score), subScores };
 }
 
-module.exports = { computeHealthScore, bandFor, SCORE_BANDS, computeDsoDays };
+/**
+ * Human-readable reasons behind a low score — Aaron asked (Sep 2026) for
+ * a "brief analysis of why" alongside any at-risk-accounts list, so this
+ * mirrors the EXACT same signals/thresholds scoreServiceHealth and
+ * scoreFinancialHealth deduct on above, rather than a separately-invented
+ * explanation that could drift out of sync with what actually moved the
+ * score. Only ever describes signals this app's live (non-bridge-import)
+ * data can actually populate — relationshipHealth/productHealthScore and
+ * the bridge-only financial fields (renewal/rateDispute/backlog/
+ * splitPay) are real scoring inputs elsewhere in this file but are never
+ * populated by a live refresh, so they're deliberately left out here
+ * rather than silently always-empty conditions.
+ */
+function explainRisk({ serviceHealth, financialHealth, aging, dsoDays } = {}) {
+  const reasons = [];
+
+  const avgAge = serviceHealth?.avgTicketAgeDays;
+  if (avgAge != null && avgAge > 30) {
+    reasons.push(`Avg. open-ticket age ${Math.round(avgAge)}d`);
+  }
+  const agedCount = serviceHealth?.agedTickets?.length || 0;
+  if (agedCount > 0) {
+    reasons.push(`${agedCount} ticket${agedCount === 1 ? '' : 's'} open 45+ days`);
+  }
+
+  if (aging?.totalCents > 0) {
+    const pastDueFraction = (aging.pastDue61PlusCents || 0) / aging.totalCents;
+    if (pastDueFraction > 0) {
+      reasons.push(`${Math.round(pastDueFraction * 100)}% of aging balance is 61+ days past due`);
+    }
+    if ((aging.d121PlusCents || 0) > 0) {
+      reasons.push('Has a 121+ day past-due balance');
+    }
+  }
+
+  if (dsoDays != null && dsoDays > 45) {
+    reasons.push(`Rudimentary DSO ${dsoDays}d`);
+  }
+
+  if ((financialHealth?.expansionPipeline?.openDealsCount || 0) === 0) {
+    reasons.push('No open deals in pipeline');
+  }
+
+  return reasons;
+}
+
+module.exports = { computeHealthScore, bandFor, SCORE_BANDS, computeDsoDays, explainRisk };
