@@ -274,6 +274,8 @@ async function initDb() {
       occupancy_by_product_type_json TEXT,
       occupancy_by_classification_json TEXT,
       occupancy_as_of_date    TEXT,
+      occupancy_error         TEXT,
+      occupancy_error_at      TEXT,
       health_score         INTEGER,
       health_band          TEXT,
       refreshed_at          TEXT DEFAULT (datetime('now'))
@@ -361,6 +363,16 @@ async function initDb() {
   }
   try {
     db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_as_of_date TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_error TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN occupancy_error_at TEXT;`);
   } catch {
     // Column already exists — fine.
   }
@@ -859,7 +871,8 @@ function updateAccountHealthOccupancy(hubspotCompanyId, occupancy) {
   run(
     `UPDATE account_health_snapshots
      SET total_capacity = ?, current_census = ?, occupancy_pct = ?,
-         occupancy_by_product_type_json = ?, occupancy_by_classification_json = ?, occupancy_as_of_date = ?
+         occupancy_by_product_type_json = ?, occupancy_by_classification_json = ?, occupancy_as_of_date = ?,
+         occupancy_error = NULL, occupancy_error_at = NULL
      WHERE hubspot_company_id = ?`,
     [
       occupancy?.totalRoomDays ?? null,
@@ -870,6 +883,22 @@ function updateAccountHealthOccupancy(hubspotCompanyId, occupancy) {
       occupancy?.asOfDate ?? null,
       hubspotCompanyId,
     ]
+  );
+}
+
+/**
+ * Records why the last occupancy pull failed for one account — Aaron
+ * asked (Sep 2026) after a real 94-account run came back "2 failed"
+ * with no way to tell which two from the dashboard itself (the error
+ * only ever lived inside that one job run's job_items rows, gone from
+ * view once a newer job started). Cleared automatically by
+ * updateAccountHealthOccupancy's own UPDATE the next time a pull for
+ * this account succeeds — never needs an explicit "clear" call.
+ */
+function setAccountHealthOccupancyError(hubspotCompanyId, errorMessage) {
+  run(
+    `UPDATE account_health_snapshots SET occupancy_error = ?, occupancy_error_at = ? WHERE hubspot_company_id = ?`,
+    [errorMessage, new Date().toISOString(), hubspotCompanyId]
   );
 }
 
@@ -952,6 +981,6 @@ module.exports = {
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
-  updateAccountHealthAging, updateAccountHealthOccupancy,
+  updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };

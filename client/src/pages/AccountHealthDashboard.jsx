@@ -704,6 +704,11 @@ function AlisHostEditor({ account, companyHosts, onUpdated }) {
       )}
       {error && <p className="text-xs text-error mt-1">{error}</p>}
       {message && <p className="text-xs text-neutral-500 mt-1">{message}</p>}
+      {!editing && !message && !error && account.occupancy_error && (
+        <p className="text-xs text-error mt-1">
+          Last refresh failed{account.occupancy_error_at ? ` (${account.occupancy_error_at.slice(0, 10)})` : ''}: {account.occupancy_error}
+        </p>
+      )}
     </div>
   );
 }
@@ -1315,7 +1320,15 @@ export default function AccountHealthDashboard() {
             <StatCard
               label={`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`}
               value={rollup.occupancyAccountCount > 0 ? rollup.totalCapacity : '—'}
-              sub={rollup.occupancyAccountCount > 0 ? `${rollup.occupancyAccountCount} of ${rollup.totalAccounts} accounts mapped` : 'No ALIS subdomains mapped yet'}
+              // Deliberately NOT worded "accounts mapped" — that phrase
+              // already means something else (has a subdomain saved,
+              // see the "N of 94 have a known ALIS subdomain" line up
+              // top) and confused Aaron into thinking this was a mapping
+              // gap. Most of these accounts DO have a subdomain mapped;
+              // ALIS's own floor-plan data is just genuinely empty for
+              // many of them, which is a different, non-fixable-here
+              // situation (see the drawer's ALIS Subdomain(s) section).
+              sub={rollup.occupancyAccountCount > 0 ? `${rollup.occupancyAccountCount} of ${rollup.totalAccounts} have occupancy data` : 'No occupancy data yet'}
             />
             <StatCard
               label="Current Census"
@@ -1375,7 +1388,17 @@ export default function AccountHealthDashboard() {
                       onClick={() => setSelected(a)}
                     >
                       <td className="py-2 pr-4 font-medium">
-                        <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                        <div className="flex items-center gap-1.5">
+                          <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                          {a.occupancy_error && (
+                            <span
+                              title={`Occupancy refresh failed: ${a.occupancy_error}`}
+                              className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-error/10 text-error cursor-help"
+                            >
+                              Failed
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2 pr-4"><ScoreBadge score={a.health_score} band={BAND_LABEL_TO_COLOR[a.health_band] || null} /></td>
                       <td className="py-2 pr-4 text-neutral-500">{a.open_ticket_count}</td>

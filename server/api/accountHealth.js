@@ -7,7 +7,7 @@ const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDea
 const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
-  updateAccountHealthAging, updateAccountHealthOccupancy, createJob, setJobStatus, setItemStatus,
+  updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError, createJob, setJobStatus, setItemStatus,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -464,6 +464,7 @@ async function runOccupancyRefreshJob(jobId, accounts) {
     } catch (err) {
       errors.push({ company: a.company_name, error: err.message });
       setItemStatus(jobId, a.company_name, 'failed', err.message);
+      setAccountHealthOccupancyError(a.hubspot_company_id, err.message);
       emit('item_fail', { name: a.company_name, error: err.message });
     }
   });
@@ -564,6 +565,7 @@ router.post('/:hubspotCompanyId/refresh-occupancy', async (req, res) => {
     updateAccountHealthOccupancy(account.hubspot_company_id, occupancy);
     res.json({ occupancy });
   } catch (err) {
+    setAccountHealthOccupancyError(req.params.hubspotCompanyId, err.message);
     console.error(`[accountHealth] Single-account occupancy refresh failed for ${req.params.hubspotCompanyId}:`, err);
     res.status(500).json({ error: err.message });
   }
