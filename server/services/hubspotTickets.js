@@ -342,6 +342,15 @@ const DEAL_PROPERTIES = [
   'dealstage',
   'dealtype',
   'amount',
+  // The portal's own purpose-built "ARR (Total Potential Value)" property
+  // — (AL/IL capacity × negotiated rate) × 12 — confirmed live (Sep 2026)
+  // via search_properties as the exact property HubSpot's own "2026
+  // Booked Revenue" dashboard card sums. Deliberately NOT the same as
+  // `amount` (a deal's plain contract-value field, which can be a
+  // one-time fee, a partial add-on, or anything else depending on deal
+  // type) — arrAddedThisYearCents below uses this instead, so it means
+  // the same thing here as it does everywhere else Aaron looks at ARR.
+  'arr_value',
   'closedate',
   'createdate',
   'hs_lastmodifieddate',
@@ -453,6 +462,7 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
       stage: labels?.stage || p.dealstage,
       dealType: p.dealtype || null,
       amount: p.amount != null ? Number(p.amount) : null,
+      arrValue: p.arr_value != null ? Number(p.arr_value) : null,
       closeDate: p.closedate || null,
       createdAt: p.createdate,
       lastModifiedAt: p.hs_lastmodifieddate,

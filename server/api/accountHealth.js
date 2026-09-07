@@ -116,25 +116,42 @@ async function mapLiveFinancialHealth(dealSummary) {
     },
     // Extras for the drill-down UI, outside the scored shape:
     totalDeals: dealSummary.total,
+    // {count, valueCents} per type rather than a bare count — Aaron asked
+    // (Sep 2026) for total deal value alongside count on the Deals by Type
+    // chart, since a type with few but large deals reads very differently
+    // than one with many small ones. Summed over dealSummary.deals (the
+    // full history, already fetched) — same as arrAddedThisYearCents just
+    // below, no extra HubSpot calls.
     dealsByType: dealSummary.deals.reduce((acc, d) => {
       const key = d.dealType || 'unspecified';
-      acc[key] = (acc[key] || 0) + 1;
+      if (!acc[key]) acc[key] = { count: 0, valueCents: 0 };
+      acc[key].count += 1;
+      acc[key].valueCents += Math.round((d.amount || 0) * 100);
       return acc;
     }, {}),
-    // "ARR added this calendar year" — gross sum of closed-won deal amounts
-    // whose close date falls in the current year, not netted against
-    // cancellations/churn (the "Deals by Type" chart already has a real
-    // "cancellation" bucket) — a deliberate simplification, not an
-    // oversight: Aaron asked for "ARR added," and a true net figure would
-    // need cancellation deals' amounts to represent the ARR actually lost,
-    // which isn't confirmed to be populated/signed consistently. Reuses
-    // dealSummary.deals (already fetched, the full history) — no new
-    // HubSpot calls. "amount" is a deal's own contract value, not always
-    // guaranteed to be a true annualized figure, same caveat as the rest
-    // of this file's deal-derived numbers.
+    // "ARR added this calendar year" — gross sum of closed-won deals'
+    // `arr_value` (the portal's own "ARR (Total Potential Value)" property
+    // — confirmed live, Sep 2026, to be exactly what HubSpot's own "2026
+    // Booked Revenue" dashboard card sums) whose close date falls in the
+    // current year. NOT netted against cancellations/churn (the "Deals by
+    // Type" chart already has a real "cancellation" bucket) — a deliberate
+    // simplification: Aaron asked for "ARR added," and a true net figure
+    // would need cancellation deals' lost-ARR values, which isn't
+    // confirmed to be populated consistently. Previously summed the
+    // deal's plain `amount` field instead — fixed (Sep 2026) after Aaron
+    // found alis-hub's figure didn't match his HubSpot "Booked Revenue"
+    // card; `amount` is just a deal's raw contract-value field (a one-time
+    // fee, a partial add-on, anything), not an annualized figure at all,
+    // while `arr_value` is purpose-built for exactly this ((AL/IL capacity
+    // × negotiated rate) × 12) — still "at capacity" potential value, not
+    // necessarily today's actual billed revenue, and can be null on deals
+    // that predate this property or were entered without capacity/rate
+    // fields, same caveat as the rest of this file's deal-derived numbers.
+    // Reuses dealSummary.deals (already fetched, the full history) — no
+    // new HubSpot calls.
     arrAddedThisYearCents: dealSummary.deals
       .filter((d) => d.isWon && d.closeDate && new Date(d.closeDate).getFullYear() === new Date().getFullYear())
-      .reduce((sum, d) => sum + Math.round((d.amount || 0) * 100), 0),
+      .reduce((sum, d) => sum + Math.round((d.arrValue || 0) * 100), 0),
   };
 }
 

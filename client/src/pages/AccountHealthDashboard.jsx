@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie,
 } from 'recharts';
 import Drawer from '../components/Drawer';
 import { exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel } from '../utils/accountHealthExport';
@@ -225,7 +225,28 @@ function ExportButtons({ onExcel, onPdf, size = 'sm' }) {
   );
 }
 
+const PIE_COLORS = ['#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#dc2626', '#0891b2', '#ca8a04', '#db2777', '#4d7c0f', '#9333ea'];
+
+function ChartTypeToggle({ value, onChange }) {
+  return (
+    <div className="flex gap-1 mb-2">
+      {['bar', 'pie'].map((t) => (
+        <button
+          key={t}
+          onClick={() => onChange(t)}
+          className={`text-xs px-2.5 py-1 rounded-full border transition-colors capitalize ${
+            value === t ? 'bg-accent-500 text-white border-accent-500' : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
+          }`}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CategoryMixChart({ accounts, status }) {
+  const [chartType, setChartType] = useState('bar');
   const byCategory = {};
   for (const a of accounts) {
     const mix = a.serviceHealth?.ticketCategoryMix || {};
@@ -243,15 +264,40 @@ function CategoryMixChart({ accounts, status }) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={480}>
-      <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
-        <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={180} />
-        <Tooltip />
-        <Bar dataKey="total" fill={status === 'open' ? '#dc2626' : '#2563eb'} radius={[0, 4, 4, 0]} />
-      </BarChart>
-    </ResponsiveContainer>
+    <>
+      <ChartTypeToggle value={chartType} onChange={setChartType} />
+      <ResponsiveContainer width="100%" height={480}>
+        {chartType === 'pie' ? (
+          <PieChart>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius={170} label={({ name, total }) => `${name}: ${total}`}>
+              {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        ) : (
+          <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
+            <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={180} />
+            <Tooltip />
+            <Bar dataKey="total" fill={status === 'open' ? '#dc2626' : '#2563eb'} radius={[0, 4, 4, 0]} />
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+    </>
+  );
+}
+
+function DealTypeTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+      <p className="font-semibold text-primary-900 mb-1">{d.name}</p>
+      <p className="text-neutral-600">{d.count} deal{d.count === 1 ? '' : 's'}</p>
+      <p className="text-neutral-600">{currencyStr(d.valueCents)} total value</p>
+    </div>
   );
 }
 
@@ -259,12 +305,14 @@ function DealTypeChart({ accounts }) {
   const byType = {};
   for (const a of accounts) {
     const mix = a.financialHealth?.dealsByType || {};
-    for (const [type, count] of Object.entries(mix)) {
-      byType[type] = (byType[type] || 0) + count;
+    for (const [type, { count, valueCents }] of Object.entries(mix)) {
+      if (!byType[type]) byType[type] = { count: 0, valueCents: 0 };
+      byType[type].count += count;
+      byType[type].valueCents += valueCents;
     }
   }
   const data = Object.entries(byType)
-    .map(([name, count]) => ({ name, count }))
+    .map(([name, v]) => ({ name, count: v.count, valueCents: v.valueCents }))
     .sort((a, b) => b.count - a.count);
 
   if (data.length === 0) {
@@ -277,7 +325,7 @@ function DealTypeChart({ accounts }) {
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-30} textAnchor="end" height={90} />
         <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-        <Tooltip />
+        <Tooltip content={<DealTypeTooltip />} />
         <Bar dataKey="count" radius={[4, 4, 0, 0]}>
           {data.map((_, i) => <Cell key={i} fill={['#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#dc2626'][i % 5]} />)}
         </Bar>
