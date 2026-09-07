@@ -10,6 +10,7 @@ const {
 } = require('../db/database');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
 const { matchAgingRows } = require('../services/agingReportMatcher');
+const { renderAccountHealthPortfolioPdf, renderAccountHealthAccountPdf } = require('../services/accountHealthPdf');
 
 /**
  * Maps getTicketSummaryForCompany's output onto the serviceHealth shape
@@ -312,39 +313,115 @@ router.post('/import-aging-report', async (req, res) => {
   }
 });
 
+/**
+ * Shared by GET / and the PDF export routes below — score/subScores
+ * aren't trusted from the stored health_score/health_band columns here,
+ * recomputed on every read, a pure in-memory calculation (no HubSpot
+ * calls), from whatever's currently cached (serviceHealth/financialHealth
+ * from the last /refresh, aging from the last /import-aging-report).
+ * Those two run on completely independent schedules, so the stored
+ * columns (last set by whichever ran most recently) would otherwise
+ * silently miss aging's contribution until the next full HubSpot refresh
+ * happened to run after it.
+ */
+function getEnrichedAccounts() {
+  const accounts = listAccountHealthSnapshots();
+  const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
+  return accounts.map((a) => {
+    const { score, band, subScores } = computeHealthScore({
+      serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
+    });
+    return {
+      ...a,
+      health_score: score,
+      health_band: band?.label || null,
+      subScores,
+      dsoDays: computeDsoDays(a.aging, a.arr_cents),
+      hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
+      priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
+    };
+  });
+}
+
+/**
+ * Same shape as AccountHealthDashboard.jsx's client-side `rollup` useMemo
+ * — duplicated rather than shared across the client/server module
+ * boundary (matching this codebase's established small-helper-duplication
+ * pattern elsewhere), since the PDF export needs the identical roll-up
+ * numbers the on-screen dashboard shows.
+ */
+function computePortfolioRollup(accounts) {
+  const scored = accounts.filter((a) => a.health_score != null);
+  const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
+
+  const dsoEligible = accounts.filter((a) => a.aging_total_cents != null && a.arr_cents);
+  const dsoAgingTotal = dsoEligible.reduce((s, a) => s + a.aging_total_cents, 0);
+  const dsoArrTotal = dsoEligible.reduce((s, a) => s + a.arr_cents, 0);
+  const portfolioDsoDays = dsoArrTotal > 0 ? Math.round(dsoAgingTotal / (dsoArrTotal / 365)) : null;
+
+  return {
+    totalAccounts: accounts.length,
+    openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
+    closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
+    enhancementTop: accounts.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
+    enhancementLesser: accounts.reduce((s, a) => s + (a.enhancement_lesser_count || 0), 0),
+    otherOpen: accounts.reduce((s, a) => s + (a.other_open_ticket_count || 0), 0),
+    openDeals: accounts.reduce((s, a) => s + (a.open_deal_count || 0), 0),
+    openDealValueCents: accounts.reduce((s, a) => s + (a.open_deal_value_cents || 0), 0),
+    arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
+    arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+    agingTotalCents: accounts.reduce((s, a) => s + (a.aging_total_cents || 0), 0),
+    pastDue61PlusCents: accounts.reduce((s, a) => s + (a.aging_past_due_61_plus_cents || 0), 0),
+    agingAsOfDate: accounts.find((a) => a.aging_as_of_date)?.aging_as_of_date || null,
+    portfolioDsoDays,
+    avgScore,
+  };
+}
+
 // GET /api/account-health — the cached portfolio, instant read, plus a
 // best-effort "prior QBR" pointer per company (see
 // findRecentKpiSnapshotsByHubspotCompanyId's doc comment for why this
 // isn't folded into the health score itself).
 router.get('/', (req, res) => {
   try {
-    const accounts = listAccountHealthSnapshots();
-    const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
-    // score/subScores aren't trusted from the stored health_score/
-    // health_band columns here — recomputed on every read, a pure
-    // in-memory calculation (no HubSpot calls), from whatever's currently
-    // cached (serviceHealth/financialHealth from the last /refresh,
-    // aging from the last /import-aging-report). Those two run on
-    // completely independent schedules, so the stored columns (last set
-    // by whichever ran most recently) would otherwise silently miss
-    // aging's contribution until the next full HubSpot refresh happened
-    // to run after it.
-    const enriched = accounts.map((a) => {
-      const { score, band, subScores } = computeHealthScore({
-        serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
-      });
-      return {
-        ...a,
-        health_score: score,
-        health_band: band?.label || null,
-        subScores,
-        dsoDays: computeDsoDays(a.aging, a.arr_cents),
-        hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
-        priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
-      };
-    });
-    res.json({ accounts: enriched });
+    res.json({ accounts: getEnrichedAccounts() });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/account-health/export-pdf — the portfolio report (roll-up +
+// every account), rendered server-side via Playwright (see
+// accountHealthPdf.js). Re-derives from the same cached snapshots GET /
+// reads — no HubSpot calls, same instant-read guarantee.
+router.get('/export-pdf', async (req, res) => {
+  try {
+    const accounts = getEnrichedAccounts();
+    const rollup = computePortfolioRollup(accounts);
+    const buffer = await renderAccountHealthPortfolioPdf(accounts, rollup);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="Account-Health-Portfolio.pdf"');
+    res.send(buffer);
+  } catch (err) {
+    console.error('[accountHealth] Portfolio PDF export failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/account-health/:hubspotCompanyId/export-pdf — a single
+// account's drill-down report, mirroring the dashboard's drawer.
+router.get('/:hubspotCompanyId/export-pdf', async (req, res) => {
+  try {
+    const account = getEnrichedAccounts().find((a) => a.hubspot_company_id === req.params.hubspotCompanyId);
+    if (!account) return res.status(404).json({ error: 'No cached account health data for this company — try Refresh first.' });
+
+    const buffer = await renderAccountHealthAccountPdf(account);
+    const filename = `${account.company_name}-Account-Health.pdf`.replace(/[^a-z0-9.\-]/gi, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('[accountHealth] Single-account PDF export failed:', err);
     res.status(500).json({ error: err.message });
   }
 });

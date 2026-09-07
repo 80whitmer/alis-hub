@@ -3,6 +3,7 @@ import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import Drawer from '../components/Drawer';
+import { exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel } from '../utils/accountHealthExport';
 
 // Matches accountHealthScoring.js's SCORE_BANDS exactly (0-40 red / 40-60
 // orange / 60-80 blue / 80-100 green) — kept as a parallel client-side map
@@ -166,20 +167,79 @@ function ImportAgingReportButton({ onImported }) {
   );
 }
 
-function CategoryMixChart({ accounts }) {
+// status: 'open' | 'closed' — each account's ticketCategoryMix already
+// carries both counts per category (see byCategory in hubspotTickets.js),
+// so splitting into two charts is just picking a different field, not a
+// new data source. Aaron's request (Sep 2026): open and closed ticket
+// volume by category read very differently (open = current workload,
+// closed = historical mix) and were hard to compare blended into one bar.
+/** Downloads a server-rendered PDF via fetch+Blob — same pattern WellnessScorecard.jsx uses for its export-pdf route. */
+async function downloadPdf(url, fallbackFilename) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Export failed (${res.status})`);
+  }
+  const disposition = res.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : fallbackFilename;
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function ExportButtons({ onExcel, onPdf, size = 'sm' }) {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+
+  async function run(kind, fn) {
+    setBusy(kind);
+    setError('');
+    try {
+      await fn();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="text-right">
+      <div className="flex gap-2 justify-end">
+        <button onClick={() => run('excel', onExcel)} disabled={busy != null} className={`btn btn-${size} btn-secondary`}>
+          {busy === 'excel' ? 'Exporting…' : '📊 Export Excel'}
+        </button>
+        <button onClick={() => run('pdf', onPdf)} disabled={busy != null} className={`btn btn-${size} btn-secondary`}>
+          {busy === 'pdf' ? 'Exporting…' : '📄 Export PDF'}
+        </button>
+      </div>
+      {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
+    </div>
+  );
+}
+
+function CategoryMixChart({ accounts, status }) {
   const byCategory = {};
   for (const a of accounts) {
     const mix = a.serviceHealth?.ticketCategoryMix || {};
     for (const [cat, counts] of Object.entries(mix)) {
-      byCategory[cat] = (byCategory[cat] || 0) + (counts.total || 0);
+      byCategory[cat] = (byCategory[cat] || 0) + (counts[status] || 0);
     }
   }
   const data = Object.entries(byCategory)
     .map(([name, total]) => ({ name, total }))
+    .filter((d) => d.total > 0)
     .sort((a, b) => b.total - a.total);
 
   if (data.length === 0) {
-    return <p className="text-sm text-neutral-500 italic">No ticket data yet — click Refresh to pull it.</p>;
+    return <p className="text-sm text-neutral-500 italic">No {status} ticket data yet — click Refresh to pull it.</p>;
   }
 
   return (
@@ -189,7 +249,7 @@ function CategoryMixChart({ accounts }) {
         <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
         <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={180} />
         <Tooltip />
-        <Bar dataKey="total" fill="#2563eb" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="total" fill={status === 'open' ? '#dc2626' : '#2563eb'} radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -251,6 +311,13 @@ function AccountDrawer({ account, onClose }) {
       badge={<ScoreBadge score={account.health_score} band={BAND_LABEL_TO_COLOR[account.health_band] || null} />}
       onClose={onClose}
     >
+      <div className="mb-4">
+        <ExportButtons
+          onExcel={() => exportAccountHealthSingleExcel(account)}
+          onPdf={() => downloadPdf(`/api/account-health/${account.hubspot_company_id}/export-pdf`, `${account.company_name}-Account-Health.pdf`)}
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-3 mb-6">
         <StatCard label="Open Tickets" value={account.open_ticket_count} sub="Client Submitted + In Progress" />
         <StatCard label="Closed Tickets" value={account.closed_ticket_count} />
@@ -652,6 +719,10 @@ export default function AccountHealthDashboard() {
           )}
         </div>
         <div className="flex gap-3">
+          <ExportButtons
+            onExcel={() => exportAccountHealthPortfolioExcel(accounts, rollup)}
+            onPdf={() => downloadPdf('/api/account-health/export-pdf', 'Account-Health-Portfolio.pdf')}
+          />
           <ImportAgingReportButton onImported={load} />
           <RefreshButton onRefreshed={handleRefreshed} />
         </div>
@@ -711,8 +782,11 @@ export default function AccountHealthDashboard() {
             />
           </div>
 
-          <SectionCard title="Tickets by Category 2.0" description="Aggregated across every account, open + closed">
-            <CategoryMixChart accounts={accounts} />
+          <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload">
+            <CategoryMixChart accounts={accounts} status="open" />
+          </SectionCard>
+          <SectionCard title="Closed Tickets by Category 2.0" description="Aggregated across every account — historical mix">
+            <CategoryMixChart accounts={accounts} status="closed" />
           </SectionCard>
           <SectionCard title="Deals by Type" description="Aggregated across every account's deal history">
             <DealTypeChart accounts={accounts} />
