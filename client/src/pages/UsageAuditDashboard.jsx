@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { exportUsageAudit } from '../utils/usageAuditExport';
+import BackToTopButton from '../components/BackToTopButton';
 
 // Tri-state dot: true (green, "on"), false (red for Enabled since an
 // explicitly-off entitlement is a real finding; amber for Used since "no"
@@ -172,6 +173,7 @@ export default function UsageAuditDashboard() {
           </table>
         </div>
       </div>
+      <BackToTopButton />
     </div>
   );
 }

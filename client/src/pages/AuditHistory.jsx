@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { exportAuditHistory } from '../utils/auditHistoryExport';
+import BackToTopButton from '../components/BackToTopButton';
 
 function AuditRow({ row, showTarget }) {
   return (
@@ -160,6 +161,7 @@ export default function AuditHistory() {
           <p className="text-xs text-warning mt-3">This target hit the 500-row safety cap — narrow the date range for a complete pull.</p>
         )}
       </div>
+      <BackToTopButton />
     </div>
   );
 }

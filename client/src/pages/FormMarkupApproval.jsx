@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import BackToTopButton from '../components/BackToTopButton';
 
 /**
  * Form Markup Approval Interface
@@ -325,6 +326,7 @@ export default function FormMarkupApproval() {
         <p>💡 <strong>Current Field Name</strong> column shows the original PDF field name (e.g., "Signature1", "Text2")</p>
         <p>💡 Edit ALIS codes and signers directly in the table, then click Apply</p>
       </div>
+      <BackToTopButton />
     </div>
   );
 }

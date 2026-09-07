@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateFormFields, renderFormField } from '../utils/schema-form-generator';
 import BillingItemsInput from '../components/BillingItemsInput';
@@ -26,6 +26,21 @@ export default function NewJob() {
   const [releaseImportParsed, setReleaseImportParsed] = useState(null);
   const [releaseImportError, setReleaseImportError] = useState('');
   const [releaseImportWarning, setReleaseImportWarning] = useState('');
+  // Which template's info popover is open (one at a time) — click-to-reveal
+  // per Aaron's ask, not hover, so it also works fine on a trackpad tap.
+  const [infoOpenId, setInfoOpenId] = useState(null);
+  const infoPopoverRef = useRef(null);
+
+  useEffect(() => {
+    if (!infoOpenId) return;
+    function handleClickOutside(e) {
+      if (infoPopoverRef.current && !infoPopoverRef.current.contains(e.target)) {
+        setInfoOpenId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [infoOpenId]);
 
   // Load templates on mount
   useEffect(() => {
@@ -319,36 +334,55 @@ export default function NewJob() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="mb-8">
+    <div>
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-primary-900 mb-2">Create Automation Job</h1>
-        <p className="text-neutral-600">Select a template and fill in the required information</p>
+        <p className="text-neutral-600">Pick a job type, then fill in the details below</p>
       </div>
 
-      {/* Template selector */}
+      {/* Template selector — icon-first tiles, description on demand via the ⓘ
+          button rather than always-on body text, so picking a job type is one
+          glance and one click instead of reading five paragraphs first. */}
       <div className="mb-8">
         <label className="input-label">Job Type</label>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {templates.map(template => (
-            <button
-              key={template.id}
-              onClick={() => setSelectedTemplate(template.id)}
-              className={`p-4 rounded-lg border-2 text-left transition-all ${
-                selectedTemplate === template.id
-                  ? 'border-accent-500 bg-accent-50'
-                  : 'border-neutral-200 bg-white hover:border-neutral-300'
-              }`}
-            >
-              <div className="text-xl font-bold">{template.icon}</div>
-              <h3 className="font-semibold text-primary-900 mt-2">{template.name}</h3>
-              <p className="text-xs text-neutral-600 mt-1">{template.description}</p>
-            </button>
+            <div key={template.id} className="relative">
+              <button
+                onClick={() => { setSelectedTemplate(template.id); setInfoOpenId(null); }}
+                className={`w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 text-center transition-all ${
+                  selectedTemplate === template.id
+                    ? 'border-accent-500 bg-accent-50'
+                    : 'border-neutral-200 bg-white hover:border-neutral-300'
+                }`}
+              >
+                <span className="text-2xl leading-none">{template.icon}</span>
+                <span className="text-sm font-semibold text-primary-900 leading-tight">{template.name}</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setInfoOpenId(infoOpenId === template.id ? null : template.id); }}
+                className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white border border-neutral-200 text-neutral-400 hover:text-accent-600 hover:border-accent-300 flex items-center justify-center text-[10px] font-bold leading-none"
+                aria-label={`About ${template.name}`}
+                title="What does this do?"
+              >
+                i
+              </button>
+              {infoOpenId === template.id && (
+                <div
+                  ref={infoPopoverRef}
+                  className="absolute z-20 top-full mt-1.5 left-0 right-0 p-3 rounded-lg border border-neutral-200 bg-white shadow-lg text-xs text-neutral-600 text-left"
+                >
+                  {template.description}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>
 
       {/* Form or advanced mode */}
-      <div className="mb-8">
+      <div className={`mb-8 ${isGLSync || (showAdvanced && selectedTemplate === 'create-communities') ? '' : 'max-w-3xl'}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-primary-900">Configuration</h2>
           {!isGLSync && selectedTemplate !== 'create-communities' && (

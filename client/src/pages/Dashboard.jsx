@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { formatLocalTime } from '../utils/timezone';
+import BackToTopButton from '../components/BackToTopButton';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -776,6 +777,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      <BackToTopButton />
     </div>
   );
 }

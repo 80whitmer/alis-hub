@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { resolveWellnessRow, getVisibleWellnessRows } from '../utils/wellnessRows';
 import { exportWellnessScorecard } from '../utils/wellnessScorecardExport';
+import BackToTopButton from '../components/BackToTopButton';
 
 function BenchmarkBadge({ diff }) {
   if (!diff || diff.benchmark == null) return null;
@@ -275,6 +276,7 @@ export default function WellnessScorecard() {
           hideUntracked={hideUntracked}
         />
       ))}
+      <BackToTopButton />
     </div>
   );
 }

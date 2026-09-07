@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { formatLocalTime, formatLocalDate, formatLocalTimeOnly, getUserTimezone } from '../utils/timezone';
 import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvExport';
+import BackToTopButton from '../components/BackToTopButton';
 
 const ITEM_CONFIG = {
   pending: { icon: '○', badge: 'badge-neutral', dot: 'status-dot-pending' },
@@ -430,6 +431,7 @@ export default function JobDetail() {
           )}
         </div>
       )}
+      <BackToTopButton />
     </div>
   );
 }

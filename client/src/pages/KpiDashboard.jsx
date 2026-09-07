@@ -10,6 +10,7 @@ import { exportPpd } from '../utils/ppdExport';
 import { exportLos } from '../utils/losExport';
 import { exportIncidentCompletion } from '../utils/incidentCompletionExport';
 import Drawer from '../components/Drawer';
+import BackToTopButton from '../components/BackToTopButton';
 
 const SEVERITY_BADGE = {
   risk: 'badge-error',
@@ -2000,6 +2001,7 @@ export default function KpiDashboard() {
         initialWarning={releaseImportWarning}
         onImported={(newSummary) => setSnapshot((prev) => ({ ...prev, summary: newSummary }))}
       />
+      <BackToTopButton />
     </div>
   );
 }
