@@ -37,7 +37,7 @@ All export endpoints are account-wide GETs (Basic Auth per `server/services/alis
 - ⬜ [`/v1/export/communities/floorPlan/roomMarketRateChanges`](#v1v1exportcommunitiesfloorplanroommarketratechanges)
 - ⬜ [`/v1/export/communities/floorPlan/roomStays`](#v1v1exportcommunitiesfloorplanroomstays)
 - ⬜ [`/v1/export/communities/floorPlan/unitOccupancies`](#v1v1exportcommunitiesfloorplanunitoccupancies)
-- ⬜ [`/v1/export/communities/historicalFloorPlan`](#v1v1exportcommunitieshistoricalfloorplan)
+- ✅ [`/v1/export/communities/historicalFloorPlan`](#v1v1exportcommunitieshistoricalfloorplan) — `getHistoricalFloorPlan()`
 - ⬜ [`/v1/export/communities/productTypes`](#v1v1exportcommunitiesproducttypes)
 - ⬜ [`/v1/export/prospects`](#v1v1exportprospects)
 - ⬜ [`/v1/export/prospects/referralOrganizations`](#v1v1exportprospectsreferralorganizations)
@@ -910,6 +910,15 @@ DEPRECATED: Use '/v2/export/communities/floorPlan/hqOccupancies' instead — ali
 
 ## ⬜ `GET /v1/export/communities/floorPlan/roomStays`
 
+**Tested live (Sep 2026, not wired):** considered as a Current Census
+source alongside historicalFloorPlan (its capacity counterpart), but its
+"assignments active today" count came out lower than the plain
+`getResidents()` count for the same account (678 vs. 705 at
+"thecottages") — some current residents apparently aren't room-assigned
+in ALIS. `getResidents()` remains the census source for the
+historicalFloorPlan fallback tier in `accountHealthOccupancy.js`; this
+endpoint wasn't worth wiring on its own.
+
 **Query parameters:** none — account-wide pull, returns full history
 
 **Response fields** (array of objects):
@@ -990,7 +999,9 @@ DEPRECATED: Use '/v2/export/communities/floorPlan/hqOccupancies' instead — ali
 
 ---
 
-## ⬜ `GET /v1/export/communities/historicalFloorPlan`
+## ✅ `GET /v1/export/communities/historicalFloorPlan`
+
+**Wired up as:** `getHistoricalFloorPlan()` in `server/services/alisApiClient.js` — used as a Total Capacity fallback (accountHealthOccupancy.js) for accounts whose hqOccupancies pull is empty. This is a room INVENTORY log, not a snapshot — dedupe by (`communityId`, `roomId`) and filter to `!isDisabled` to get each community's current real room/bed count.
 
 **Query parameters:** none — account-wide pull, returns full history
 

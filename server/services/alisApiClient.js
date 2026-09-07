@@ -132,6 +132,21 @@ const getStaff = (companyHost) =>
 const getResidents = (companyHost, { status = 'CurrentResident' } = {}) =>
   alisApiGet(companyHost, '/v1/export/residents', { status });
 
+// Confirmed live (Sep 2026, "Hickory Senior Living"/host "thecottages"):
+// hqOccupancies genuinely returns 0 rows for this account across every
+// month tried, yet the account has real rooms configured (its ALIS admin
+// FloorPlan page shows them) — hqOccupancies tracks day-by-day room
+// ASSIGNMENT snapshots, and this account apparently doesn't populate that
+// specific daily view, even though the underlying room inventory and
+// resident-to-room assignments exist via a different pair of endpoints.
+// historicalFloorPlan is that room inventory: one row per physical
+// room/bed ever configured (a log, not a snapshot — `isDisabled` marks a
+// room since removed/retired). Filtering to `!isDisabled` and deduping by
+// `roomId` per community gives a real Total Capacity figure even when
+// hqOccupancies is empty. No query params — account-wide, full history.
+const getHistoricalFloorPlan = (companyHost) =>
+  alisApiGet(companyHost, '/v1/export/communities/historicalFloorPlan');
+
 const getMoveInsAndOuts = (companyHost) =>
   alisApiGet(companyHost, '/v1/export/residents/moveInsAndOuts');
 
@@ -328,6 +343,7 @@ module.exports = {
   getCommunities,
   getStaff,
   getResidents,
+  getHistoricalFloorPlan,
   getMoveInsAndOuts,
   getHistoricalMoveInMoveOuts,
   getIncidents,

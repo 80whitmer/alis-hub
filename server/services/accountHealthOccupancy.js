@@ -21,7 +21,7 @@
  * kpiExport.js/wellnessExport.js/usageAudit.js already use.
  */
 const { getCompanyHost } = require('../db/database');
-const { getOccupancy, getResidents } = require('./alisApiClient');
+const { getOccupancy, getResidents, getHistoricalFloorPlan } = require('./alisApiClient');
 const { normalizeOccupancy } = require('./kpiNormalizer');
 
 function todayIso() {
@@ -80,6 +80,30 @@ function filterToLatestDay(rawRows) {
 }
 
 /**
+ * historicalFloorPlan is a room-INVENTORY log (one row per physical
+ * room/bed ever configured, `isInitial`/`createdAt` tracking history),
+ * not a day-by-day snapshot like hqOccupancies — so "current capacity"
+ * means dedupe to each room's latest row and count the ones not
+ * disabled/retired, not just `rows.length`. Confirmed live (Sep 2026,
+ * "Hickory Senior Living"/host "thecottages"): 2101 log rows collapse to
+ * 969 real non-disabled rooms across 21 of its 26 communities — the
+ * other 5 communities simply have no rows here either (a real "not
+ * every community has this configured" gap, not a bug).
+ */
+function countActiveCapacity(floorPlanRows) {
+  const seenRoomIds = new Set();
+  let total = 0;
+  for (const r of floorPlanRows) {
+    if (r.isDisabled) continue;
+    const key = `${r.communityId}:${r.roomId}`;
+    if (seenRoomIds.has(key)) continue;
+    seenRoomIds.add(key);
+    total++;
+  }
+  return total;
+}
+
+/**
  * Some accounts genuinely don't use ALIS's floor-plan/room-assignment
  * feature — confirmed live (Sep 2026, "Constant Care" / host
  * "grandbrook"): a correctly-mapped, clearly real, active account
@@ -89,11 +113,20 @@ function filterToLatestDay(rawRows) {
  * real current residents. hqOccupancies being empty means "this
  * account doesn't track room assignments in ALIS," not "no data" —
  * falling back to a current-residents count gets a real census number
- * for exactly this case, just without a capacity/vacant-bed figure
- * (residents-only data has no concept of an empty bed, so `total` stays
- * null rather than guessing occupied === capacity).
+ * for exactly this case.
+ *
+ * `capacity`, when known (from historicalFloorPlan — see
+ * countActiveCapacity above), fills in a real Total Capacity/occupancy %
+ * that this fallback couldn't otherwise compute — confirmed live
+ * (Sep 2026, "Hickory Senior Living"): the account's admin FloorPlan
+ * page clearly shows real rooms even though hqOccupancies is empty, so
+ * "no capacity data" was a data-SOURCE gap, not a real absence of the
+ * data. Per-product-type/classification capacity stays null regardless
+ * — historicalFloorPlan has no product-type field, so only the
+ * portfolio/community-wide total is knowable this way, not a per-group
+ * breakdown of it.
  */
-function normalizeFromResidents(residents) {
+function normalizeFromResidents(residents, capacity = null) {
   const byProductType = {};
   const byClassification = {};
   for (const r of residents) {
@@ -102,17 +135,16 @@ function normalizeFromResidents(residents) {
     const cl = (r.classification || 'Unspecified').toString().trim() || 'Unspecified';
     byClassification[cl] = (byClassification[cl] || 0) + 1;
   }
-  // pct is each group's share of total census (occupied / total residents)
-  // — the same census-share meaning kpiNormalizer.js's normalizeOccupancy
-  // uses, and actually a MORE natural fit here than a fill-rate would be,
-  // since this fallback has no capacity/total figure to compute a fill
-  // rate from in the first place (see NO capacity comment above).
+  // pct (per-group) is each group's share of total census (occupied /
+  // total residents) — the same census-share meaning kpiNormalizer.js's
+  // normalizeOccupancy uses. The top-level pct is a real occupancy rate
+  // (census / capacity) when capacity is known, null otherwise.
   const total = residents.length;
   return {
     hasOccupancyData: total > 0,
-    pct: null,
+    pct: capacity ? total / capacity : null,
     occupiedRoomDays: total,
-    totalRoomDays: null,
+    totalRoomDays: capacity || null,
     byProductType: Object.entries(byProductType)
       .map(([productType, occupied]) => ({ productType, occupied, total: null, pct: total ? occupied / total : null }))
       .sort((a, b) => b.occupied - a.occupied),
@@ -159,8 +191,12 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
     return { ...normalized, asOfDate };
   }
 
-  // No floor-plan data from any host — try current residents instead
-  // before giving up.
+  // No floor-plan/occupancy-snapshot data from any host — try current
+  // residents (census) plus historicalFloorPlan (capacity) instead of
+  // giving up. The capacity pull is genuinely best-effort on top of an
+  // already-best-effort fallback: a failure here just means this
+  // account's Total Capacity stays "—" same as before, it never blocks
+  // the census figure residents provides.
   const residents = [];
   const residentErrors = [];
   for (const h of hosts) {
@@ -172,7 +208,16 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
   }
 
   if (residents.length > 0) {
-    return { ...normalizeFromResidents(residents), asOfDate: todayIso() };
+    const floorPlanRows = [];
+    for (const h of hosts) {
+      try {
+        floorPlanRows.push(...await getHistoricalFloorPlan(h));
+      } catch (err) {
+        console.error(`[accountHealthOccupancy] ${companyName}: historicalFloorPlan pull failed for host "${h}", Total Capacity will stay unknown for this host: ${err.message}`);
+      }
+    }
+    const capacity = countActiveCapacity(floorPlanRows);
+    return { ...normalizeFromResidents(residents, capacity), asOfDate: todayIso() };
   }
 
   // Neither approach returned anything. Only a real error if EVERY host
