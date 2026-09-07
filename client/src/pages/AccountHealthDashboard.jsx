@@ -259,38 +259,156 @@ function CompanyHostMappingButtons({ accounts, companyHosts, onImported }) {
  * export API) with much sparser coverage today (see
  * CompanyHostMappingButtons above) than the HubSpot data.
  */
+/**
+ * Live progress via the same job/SSE plumbing the Playwright automation
+ * jobs use (server/api/accountHealth.js's refresh-occupancy route now
+ * creates a tracked job instead of just awaiting a bare loop) — Aaron
+ * asked for this (Sep 2026) after a real 93-account run gave no sense of
+ * whether the button was hung. GET /api/stream/:id's `snapshot` event
+ * carries the full job row (completed/total/failed) for hydration;
+ * item_start/item_done/item_fail update the running counters live.
+ */
 function RefreshOccupancyButton({ onRefreshed }) {
-  const [refreshing, setRefreshing] = useState(false);
+  const [progress, setProgress] = useState(null); // { completed, total, failed, lastItem } while running
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
   async function handleClick() {
-    setRefreshing(true);
     setError('');
     setResult(null);
     try {
       const res = await fetch('/api/account-health/refresh-occupancy', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Refresh failed (${res.status})`);
-      setResult(data);
-      await onRefreshed();
+      setProgress({ completed: 0, total: data.total, failed: 0, lastItem: null });
+
+      // Confirmed live (Sep 2026): the EventSource connection can go
+      // silently dead — no `error` event ever fires, no more messages
+      // arrive — while the job itself keeps running and finishes
+      // server-side, leaving the button frozen at some mid-run
+      // percentage forever (exactly the "is this hung?" problem this
+      // whole feature exists to solve, just relocated). A poll-based
+      // safety net that doesn't depend on the SSE connection's own
+      // health signals at all is what actually closes that gap; `done`
+      // is only finalized once, guarded by `finished`, whichever path
+      // (SSE event or poll) notices it first.
+      let finished = false;
+      const finish = async (finalResult) => {
+        if (finished) return;
+        finished = true;
+        clearInterval(pollHandle);
+        es.close();
+        setResult(finalResult);
+        setProgress(null);
+        await onRefreshed();
+      };
+
+      const es = new EventSource(`/api/stream/${data.id}`);
+      es.addEventListener('snapshot', (e) => {
+        const job = JSON.parse(e.data);
+        setProgress((p) => ({ ...(p || {}), completed: job.completed || 0, total: job.total || 0, failed: job.failed || 0 }));
+      });
+      es.addEventListener('item_start', (e) => {
+        const { name } = JSON.parse(e.data);
+        setProgress((p) => ({ ...(p || {}), lastItem: name }));
+      });
+      es.addEventListener('item_done', (e) => {
+        setProgress((p) => ({ ...(p || {}), completed: (p?.completed || 0) + 1 }));
+      });
+      es.addEventListener('item_fail', (e) => {
+        setProgress((p) => ({ ...(p || {}), completed: (p?.completed || 0) + 1, failed: (p?.failed || 0) + 1 }));
+      });
+      es.addEventListener('job_done', (e) => finish(JSON.parse(e.data)));
+      es.addEventListener('job_error', (e) => {
+        if (finished) return;
+        finished = true;
+        clearInterval(pollHandle);
+        setError(JSON.parse(e.data).error || 'Refresh failed');
+        setProgress(null);
+        es.close();
+      });
+      es.onerror = () => {
+        // A dropped connection (server restart, network blip) shouldn't
+        // leave the button stuck showing "Refreshing…" forever with no
+        // way to retry — the poll below is the real safety net, but a
+        // genuine `error` event (the connection cleanly failing) can
+        // still surface faster than the next poll tick.
+        if (finished) return;
+        finished = true;
+        clearInterval(pollHandle);
+        setError((prev) => prev || 'Lost connection to the refresh job — it may still be running server-side.');
+        setProgress(null);
+        es.close();
+      };
+
+      const pollHandle = setInterval(async () => {
+        if (finished) return;
+        try {
+          const jobRes = await fetch(`/api/jobs/${data.id}`);
+          if (!jobRes.ok) return; // transient — try again next tick
+          const job = await jobRes.json();
+          setProgress((p) => ({ ...(p || {}), completed: job.completed || 0, total: job.total || 0, failed: job.failed || 0 }));
+          if (job.status === 'done') {
+            // The poll only has the job's own counts, not the richer
+            // accountsUpdated/accountsSkippedNoMapping breakdown the
+            // job_done SSE event carries (job_items don't distinguish a
+            // real occupancy update from a no-subdomain-mapped skip —
+            // both persist as 'success', see runOccupancyRefreshJob's
+            // doc comment server-side) — good enough for "it finished,
+            // here's roughly what happened" when SSE never delivered
+            // that event at all, worded honestly rather than guessing
+            // at the updated/skipped split.
+            await finish({ approximate: true, processed: job.completed, errorCount: job.failed || 0 });
+          } else if (job.status === 'failed') {
+            if (finished) return;
+            finished = true;
+            clearInterval(pollHandle);
+            es.close();
+            setError(job.error || 'Refresh failed');
+            setProgress(null);
+          }
+        } catch {
+          // Network hiccup on the poll itself — next tick will retry.
+        }
+      }, 8000);
     } catch (err) {
       setError(err.message);
-    } finally {
-      setRefreshing(false);
+      setProgress(null);
     }
   }
+
+  const refreshing = progress != null;
+  const pct = refreshing && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
 
   return (
     <div className="text-right">
       <button onClick={handleClick} disabled={refreshing} className="btn btn-sm btn-secondary">
-        {refreshing ? 'Refreshing…' : '🏘️ Refresh Occupancy Data'}
+        {refreshing ? `Refreshing… ${pct}%` : '🏘️ Refresh Occupancy Data'}
       </button>
+      {refreshing && (
+        <div className="mt-1 max-w-xs ml-auto">
+          <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden">
+            <div className="h-full bg-accent-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-xs text-neutral-400 mt-0.5 truncate">
+            {progress.completed} of {progress.total}
+            {progress.failed > 0 ? ` · ${progress.failed} failed` : ''}
+            {progress.lastItem ? ` · ${progress.lastItem}` : ''}
+          </p>
+        </div>
+      )}
       {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
       {result && (
         <p className="text-xs text-neutral-500 mt-1 max-w-xs ml-auto">
-          {result.accountsUpdated} account(s) updated
-          {result.accountsSkippedNoMapping > 0 && `, ${result.accountsSkippedNoMapping} skipped (no ALIS subdomain mapped)`}
+          {result.approximate ? (
+            <>Finished — {result.processed} processed{result.errorCount > 0 && `, ${result.errorCount} failed`} (live connection dropped mid-run, so exact updated/skipped counts aren't available; the data itself is current)</>
+          ) : (
+            <>
+              {result.accountsUpdated} account(s) updated
+              {result.accountsSkippedNoMapping > 0 && `, ${result.accountsSkippedNoMapping} skipped (no ALIS subdomain mapped)`}
+              {result.errorCount > 0 && `, ${result.errorCount} failed`}
+            </>
+          )}
         </p>
       )}
     </div>
@@ -501,7 +619,96 @@ function isPastDue(deal) {
   return deal.isOpen && deal.expectedCloseDate && new Date(deal.expectedCloseDate) < new Date();
 }
 
-function AccountDrawer({ account, onClose }) {
+/**
+ * Exposes and edits the one piece of data (server/api/companyHosts.js)
+ * that determines whether Total Capacity/Current Census populate for
+ * this account at all — Aaron asked for this (Sep 2026) after finding
+ * "Hickory Senior Living" mapped to a real but completely unrelated
+ * ALIS account's subdomain (a data-entry slip in the bulk template, not
+ * a bug), with no way to see or fix that from the dashboard itself.
+ * Saves via the same bulk-import route the template upload already uses
+ * (a single-row array), then immediately pulls fresh occupancy for just
+ * this account (POST /api/account-health/:id/refresh-occupancy) so
+ * Aaron can confirm a fix worked without waiting for the next full,
+ * ~5-minute, 93-account run.
+ */
+function AlisHostEditor({ account, companyHosts, onUpdated }) {
+  const currentHost = companyHosts.find((h) => h.hubspot_company_id === account.hubspot_company_id)?.company_host || '';
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(currentHost);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => { setValue(currentHost); }, [currentHost]);
+
+  async function saveAndRefresh(hostValue) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const importRes = await fetch('/api/company-hosts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: [{ companyName: account.company_name, hubspotCompanyId: account.hubspot_company_id, companyHost: hostValue }] }),
+      });
+      const importData = await importRes.json();
+      if (!importRes.ok) throw new Error(importData.error || 'Failed to save subdomain');
+
+      const refreshRes = await fetch(`/api/account-health/${account.hubspot_company_id}/refresh-occupancy`, { method: 'POST' });
+      const refreshData = await refreshRes.json();
+      if (!refreshRes.ok) throw new Error(refreshData.error || 'Saved, but occupancy refresh failed');
+
+      setMessage(refreshData.occupancy?.hasOccupancyData
+        ? `Refreshed — ${refreshData.occupancy.occupiedRoomDays} / ${refreshData.occupancy.totalRoomDays} occupied as of ${refreshData.occupancy.asOfDate}`
+        : 'Saved — but no occupancy data came back for this host (wrong subdomain, or this account may not have ALIS floor-plan data set up).');
+      setEditing(false);
+      await onUpdated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 p-3 border border-neutral-200 rounded-lg">
+      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">ALIS Subdomain(s)</p>
+      {editing ? (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="e.g. viva or viva1,viva2"
+            className="flex-1 text-sm border border-neutral-200 rounded-lg px-2 py-1"
+            autoFocus
+          />
+          <button onClick={() => saveAndRefresh(value)} disabled={busy} className="btn btn-sm btn-secondary">
+            {busy ? 'Saving…' : 'Save & Refresh'}
+          </button>
+          <button onClick={() => { setEditing(false); setValue(currentHost); }} disabled={busy} className="btn btn-sm btn-secondary">Cancel</button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-neutral-700">{currentHost || <span className="italic text-neutral-400">not mapped</span>}</span>
+          <div className="flex gap-3 shrink-0">
+            <button onClick={() => setEditing(true)} className="text-xs text-accent-600 hover:underline">Edit</button>
+            {currentHost && (
+              <button onClick={() => saveAndRefresh(currentHost)} disabled={busy} className="text-xs text-accent-600 hover:underline">
+                {busy ? 'Refreshing…' : 'Refresh Now'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {message && <p className="text-xs text-neutral-500 mt-1">{message}</p>}
+    </div>
+  );
+}
+
+function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
   const svc = account.serviceHealth;
   const fin = account.financialHealth;
   const openDeals = (fin?.expansionPipeline?.deals || []).filter((d) => d.isOpen);
@@ -541,6 +748,8 @@ function AccountDrawer({ account, onClose }) {
         <StatCard label="Total Capacity" value={account.total_capacity ?? '—'} sub={account.occupancy_as_of_date ? `As of ${account.occupancy_as_of_date}` : 'No ALIS subdomain mapped'} />
         <StatCard label="Current Census" value={account.current_census ?? '—'} sub={account.occupancy_pct != null ? `${pctStr(account.occupancy_pct)} occupied` : undefined} />
       </div>
+
+      <AlisHostEditor account={account} companyHosts={companyHosts} onUpdated={onUpdated} />
 
       {account.priorQbr && (
         <div className="alert alert-info mb-6">
@@ -1207,7 +1416,14 @@ export default function AccountHealthDashboard() {
         </>
       )}
 
-      {selected && <AccountDrawer account={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <AccountDrawer
+          account={accounts.find((a) => a.hubspot_company_id === selected.hubspot_company_id) || selected}
+          onClose={() => setSelected(null)}
+          companyHosts={companyHosts}
+          onUpdated={load}
+        />
+      )}
     </div>
   );
 }

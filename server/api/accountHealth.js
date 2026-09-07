@@ -1,13 +1,15 @@
 const express = require('express');
 const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
 
 const { getOwnerId, getOwnedCompanies } = require('../services/hubspotAccounts');
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
 const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
-  updateAccountHealthAging, updateAccountHealthOccupancy,
+  updateAccountHealthAging, updateAccountHealthOccupancy, createJob, setJobStatus, setItemStatus,
 } = require('../db/database');
+const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
 const { matchAgingRows } = require('../services/agingReportMatcher');
 const { renderAccountHealthPortfolioPdf, renderAccountHealthAccountPdf } = require('../services/accountHealthPdf');
@@ -416,41 +418,99 @@ function computePortfolioRollup(accounts) {
   };
 }
 
+/**
+ * Runs the actual per-account occupancy pull in the background, reporting
+ * live progress through the same job/SSE plumbing the Playwright automation
+ * jobs already use (server/db/database.js's createJob/setItemStatus,
+ * server/api/broadcaster.js's broadcast, consumed via GET /api/stream/:id)
+ * — reused as-is rather than inventing a second progress mechanism. Aaron
+ * asked for this (Sep 2026) after a real 93-account run gave no sense of
+ * whether the button was hung; each account here is its own external ALIS
+ * API call (unlike the HubSpot refresh's bulk-friendly calls), so a run
+ * over the real portfolio takes long enough that "proof of life" matters.
+ *
+ * job_items only has 'success'/'failed'/'skipped' terminal statuses, but
+ * updateJobCounts (database.js) only counts 'success' toward `completed`
+ * and 'failed' toward `failed` — 'skipped' items would never count as
+ * done and the progress bar would stall short of 100% forever for the
+ * ~87 no-mapping accounts. So "no ALIS subdomain mapped" is recorded as
+ * job_item status 'success' (it's an expected, non-error outcome, not a
+ * failure) — the skipped-vs-updated distinction is only carried in the
+ * SSE payload / final summary, not the persisted per-item status.
+ */
+async function runOccupancyRefreshJob(jobId, accounts) {
+  const emit = (event, data) => broadcast(jobId, event, data);
+  setJobStatus(jobId, 'running');
+
+  const errors = [];
+  let updated = 0;
+  let skippedNoMapping = 0;
+
+  await mapWithConcurrency(accounts, 3, async (a) => {
+    setItemStatus(jobId, a.company_name, 'running');
+    emit('item_start', { name: a.company_name });
+    try {
+      const occupancy = await getOccupancySnapshotForAccount(a.company_name, a.hubspot_company_id);
+      if (!occupancy) {
+        skippedNoMapping += 1;
+        setItemStatus(jobId, a.company_name, 'success');
+        emit('item_done', { name: a.company_name, skipped: true });
+        return;
+      }
+      updateAccountHealthOccupancy(a.hubspot_company_id, occupancy);
+      updated += 1;
+      setItemStatus(jobId, a.company_name, 'success');
+      emit('item_done', { name: a.company_name, skipped: false });
+    } catch (err) {
+      errors.push({ company: a.company_name, error: err.message });
+      setItemStatus(jobId, a.company_name, 'failed', err.message);
+      emit('item_fail', { name: a.company_name, error: err.message });
+    }
+  });
+
+  setJobStatus(jobId, 'done');
+  emit('job_done', {
+    refreshedAt: new Date().toISOString(),
+    accountsUpdated: updated,
+    accountsSkippedNoMapping: skippedNoMapping,
+    errorCount: errors.length,
+    errors,
+  });
+}
+
 // POST /api/account-health/refresh-occupancy — today's total capacity /
 // current census (+ product-type/classification breakdown) for every
 // account with a known ALIS subdomain mapping (server/api/companyHosts.js).
 // A genuinely separate, heavier external API (Basic Auth per subdomain,
 // not HubSpot) with much sparser coverage today than the HubSpot data —
 // kept as its own action/cadence, same reasoning as the aging-report
-// import, so it never slows down or blocks the main refresh.
-router.post('/refresh-occupancy', async (req, res) => {
+// import, so it never slows down or blocks the main refresh. Fires the
+// actual pull off as a tracked background job (see runOccupancyRefreshJob)
+// and responds immediately with the job id, same 202-and-don't-await
+// pattern POST /api/jobs/create already uses — the client follows
+// progress via GET /api/stream/:id.
+router.post('/refresh-occupancy', (req, res) => {
   try {
     const accounts = listAccountHealthSnapshots();
-    const errors = [];
-    let updated = 0;
-    let skippedNoMapping = 0;
-    await mapWithConcurrency(accounts, 3, async (a) => {
-      try {
-        const occupancy = await getOccupancySnapshotForAccount(a.company_name, a.hubspot_company_id);
-        if (!occupancy) {
-          skippedNoMapping += 1;
-          return;
-        }
-        updateAccountHealthOccupancy(a.hubspot_company_id, occupancy);
-        updated += 1;
-      } catch (err) {
-        errors.push({ company: a.company_name, error: err.message });
-      }
+    const id = uuidv4();
+    createJob({
+      id,
+      type: 'account-health-occupancy',
+      label: 'Account Health — Occupancy Refresh',
+      payload: {},
+      total: accounts.length,
+      items: accounts.map((a) => ({ name: a.company_name })),
     });
-    res.json({
-      refreshedAt: new Date().toISOString(),
-      accountsUpdated: updated,
-      accountsSkippedNoMapping: skippedNoMapping,
-      errorCount: errors.length,
-      errors,
+
+    runOccupancyRefreshJob(id, accounts).catch((err) => {
+      console.error(`[account-health-occupancy:${id}] Unhandled error:`, err);
+      setJobStatus(id, 'failed', err.message);
+      broadcast(id, 'job_error', { error: err.message });
     });
+
+    res.status(202).json({ id, total: accounts.length });
   } catch (err) {
-    console.error('[accountHealth] Occupancy refresh failed:', err);
+    console.error('[accountHealth] Occupancy refresh failed to start:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -481,6 +541,30 @@ router.get('/export-pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('[accountHealth] Portfolio PDF export failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/account-health/:hubspotCompanyId/refresh-occupancy — a
+// single-account version of the portfolio-wide job above. Aaron asked
+// for this (Sep 2026) after finding wrong ALIS subdomain mappings
+// (Hickory Senior Living was mapped to a real but completely unrelated
+// company's subdomain) via the drawer's new inline host editor — fixing
+// one mapping shouldn't require re-running the full ~5-minute,
+// 93-account job just to confirm the fix worked. Synchronous (one or two
+// external calls, not ~93) — no job-tracking needed at this scale.
+router.post('/:hubspotCompanyId/refresh-occupancy', async (req, res) => {
+  try {
+    const account = listAccountHealthSnapshots().find((a) => a.hubspot_company_id === req.params.hubspotCompanyId);
+    if (!account) return res.status(404).json({ error: 'No cached account health data for this company — try Refresh first.' });
+
+    const occupancy = await getOccupancySnapshotForAccount(account.company_name, account.hubspot_company_id);
+    if (!occupancy) return res.status(400).json({ error: 'No ALIS subdomain mapped for this account.' });
+
+    updateAccountHealthOccupancy(account.hubspot_company_id, occupancy);
+    res.json({ occupancy });
+  } catch (err) {
+    console.error(`[accountHealth] Single-account occupancy refresh failed for ${req.params.hubspotCompanyId}:`, err);
     res.status(500).json({ error: err.message });
   }
 });
