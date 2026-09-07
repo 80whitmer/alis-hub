@@ -18,7 +18,12 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({ origin: 'http://localhost:5173' }));
-app.use(express.json());
+// Default 100kb is too small for a base64-encoded PDF upload (the aging-
+// report import sends the file as base64 in the JSON body, same transport
+// AccountHealthImport already uses for its JSON upload) — 10mb comfortably
+// covers a much larger report than the ~30KB/9-page one this was built
+// against.
+app.use(express.json({ limit: '10mb' }));
 
 app.use('/api/jobs',    jobsRouter);
 app.use('/api/stream',  streamRouter);

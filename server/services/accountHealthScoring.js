@@ -67,9 +67,35 @@ function scoreServiceHealth(serviceHealth) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-function scoreFinancialHealth(financialHealth) {
-  if (!financialHealth) return null;
+/**
+ * `aging` is the weekly Customer Aging Report import (server/api/
+ * accountHealth.js's /import-aging-report, matched via
+ * agingReportMatcher.js) — genuinely new information the live HubSpot
+ * refresh has no equivalent for (this portal has no AR-aging property on
+ * either deals or companies), so it's scored independently of whether
+ * bridgeOnlyFieldsAbsent's weaker fallback signal below applies. Scaled
+ * by the FRACTION of the outstanding balance that's 61+ days past due,
+ * not an absolute dollar amount — that stays meaningful across a $500
+ * account and a $50,000 one without needing an ARR baseline to divide
+ * by. A 121+ day balance is treated as a distinct, worse signal (an
+ * amount that old often means something's actually stuck, not just
+ * slow-paying) — a flat additional deduction on top of the scaled one.
+ */
+function scoreAging(aging) {
+  if (!aging || !aging.totalCents || aging.totalCents <= 0) return 0;
+  const pastDueFraction = (aging.pastDue61PlusCents || 0) / aging.totalCents;
+  let deduction = Math.round(pastDueFraction * 25);
+  if ((aging.d121PlusCents || 0) > 0) deduction += 10;
+  return Math.min(35, deduction);
+}
+
+function scoreFinancialHealth(financialHealth, aging) {
+  if (!financialHealth && !aging) return null;
   let score = 100;
+
+  score -= scoreAging(aging);
+
+  if (!financialHealth) return Math.max(0, Math.min(100, Math.round(score)));
 
   if (financialHealth.rateDispute?.status === 'open') score -= 25;
 
@@ -144,10 +170,10 @@ function scoreProductHealth(productHealthScore) {
  * when NO category has any data, so the UI can show "no data" instead of a
  * false "0% healthy."
  */
-function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth, productHealthScore } = {}) {
+function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth, productHealthScore, aging } = {}) {
   const subScores = {
     service: scoreServiceHealth(serviceHealth),
-    financial: scoreFinancialHealth(financialHealth),
+    financial: scoreFinancialHealth(financialHealth, aging),
     relationship: scoreRelationshipHealth(relationshipHealth),
     product: scoreProductHealth(productHealthScore),
   };

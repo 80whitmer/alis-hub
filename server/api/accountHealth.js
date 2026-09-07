@@ -5,8 +5,11 @@ const { getOwnerId, getOwnedCompanies } = require('../services/hubspotAccounts')
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal } = require('../services/hubspotTickets');
 const { computeHealthScore } = require('../services/accountHealthScoring');
 const {
-  clearAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
+  pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
+  updateAccountHealthAging,
 } = require('../db/database');
+const { parseAgingReportPdf } = require('../services/agingReportParser');
+const { matchAgingRows } = require('../services/agingReportMatcher');
 
 /**
  * Maps getTicketSummaryForCompany's output onto the serviceHealth shape
@@ -137,13 +140,6 @@ router.post('/refresh', async (req, res) => {
     const companies = await getOwnedCompanies(ownerId);
     const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
 
-    // Only clear once the owned-company list itself is confirmed fetched —
-    // a failure before this point (network issue, bad token) leaves the
-    // previous refresh's data intact instead of wiping the table for
-    // nothing. See clearAccountHealthSnapshots' doc comment for why this
-    // wipe needs to happen at all.
-    clearAccountHealthSnapshots();
-
     // Confirmed live (Sep 2026): a full 371-company portfolio at
     // concurrency 8 hit HubSpot's ten_secondly_rolling rate limit hard —
     // 311 of 371 companies failed outright before hubspotRequest's 429
@@ -181,6 +177,12 @@ router.post('/refresh', async (req, res) => {
       }
     });
 
+    // Pruned AFTER the loop, using the company list this refresh actually
+    // confirmed — not a blanket clear beforehand, which would also wipe
+    // aging_* data (see pruneAccountHealthSnapshots' doc comment) for
+    // accounts that are still very much in scope.
+    pruneAccountHealthSnapshots(companies.map((c) => c.id));
+
     res.json({
       refreshedAt: new Date().toISOString(),
       companyCount: companies.length,
@@ -194,6 +196,95 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
+/**
+ * Groups matched aging rows by the account they resolved to — several
+ * rows commonly map to the same Home Office (confirmed live: 6 different
+ * "Viva Senior Living X" individual-community rows all matched the same
+ * "Viva Senior Living" Home Office account), so their bucket amounts are
+ * summed, not just the last one kept.
+ */
+function aggregateAgingByAccount(matched, asOfDate) {
+  const byAccountId = new Map();
+  for (const { row, account, confidence } of matched) {
+    const key = account.hubspot_company_id;
+    if (!byAccountId.has(key)) {
+      byAccountId.set(key, {
+        current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91_120: 0, d121Plus: 0, total: 0,
+        sourceRows: [],
+      });
+    }
+    const agg = byAccountId.get(key);
+    agg.current += row.current;
+    agg.d1_30 += row.d1_30;
+    agg.d31_60 += row.d31_60;
+    agg.d61_90 += row.d61_90;
+    agg.d91_120 += row.d91_120;
+    agg.d121Plus += row.d121Plus;
+    agg.total += row.total;
+    agg.sourceRows.push({ customerId: row.customerId, customerName: row.customerName, total: row.total, confidence });
+  }
+
+  const cents = (n) => Math.round(n * 100);
+  const result = new Map();
+  for (const [hubspotCompanyId, agg] of byAccountId) {
+    result.set(hubspotCompanyId, {
+      asOfDate,
+      currentCents: cents(agg.current),
+      d1_30Cents: cents(agg.d1_30),
+      d31_60Cents: cents(agg.d31_60),
+      d61_90Cents: cents(agg.d61_90),
+      d91_120Cents: cents(agg.d91_120),
+      d121PlusCents: cents(agg.d121Plus),
+      totalCents: cents(agg.total),
+      pastDue61PlusCents: cents(agg.d61_90 + agg.d91_120 + agg.d121Plus),
+      sourceRows: agg.sourceRows,
+    });
+  }
+  return result;
+}
+
+// POST /api/account-health/import-aging-report — Dave Johnson's weekly
+// Intacct "Customer Aging Report" PDF (manual upload — see
+// agingReportParser.js's doc comment for why this is manual, not
+// automatic Gmail ingestion). Body: { pdfBase64 }. Matches rows against
+// the CACHED portfolio (no live HubSpot calls) and writes per-account
+// aging_* columns directly — completely decoupled from /refresh.
+router.post('/import-aging-report', async (req, res) => {
+  try {
+    const { pdfBase64 } = req.body;
+    if (!pdfBase64) {
+      return res.status(400).json({ error: 'Body must include pdfBase64 (the PDF file, base64-encoded).' });
+    }
+
+    const buffer = Buffer.from(pdfBase64, 'base64');
+    const { asOfDate, rows, grandTotal, warnings } = await parseAgingReportPdf(buffer);
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'No rows parsed from this PDF — is it a Customer Aging Report in the expected format?' });
+    }
+
+    const accounts = listAccountHealthSnapshots();
+    const { matched, unmatched } = matchAgingRows(rows, accounts);
+    const aggregated = aggregateAgingByAccount(matched, asOfDate);
+    for (const [hubspotCompanyId, aging] of aggregated) {
+      updateAccountHealthAging(hubspotCompanyId, aging);
+    }
+
+    res.json({
+      asOfDate,
+      rowsParsed: rows.length,
+      rowsMatched: matched.length,
+      accountsUpdated: aggregated.size,
+      unmatchedCount: unmatched.length,
+      unmatchedNames: unmatched.map((r) => r.customerName),
+      grandTotal,
+      parseWarnings: warnings,
+    });
+  } catch (err) {
+    console.error('[accountHealth] Aging report import failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/account-health — the cached portfolio, instant read, plus a
 // best-effort "prior QBR" pointer per company (see
 // findRecentKpiSnapshotsByHubspotCompanyId's doc comment for why this
@@ -202,15 +293,27 @@ router.get('/', (req, res) => {
   try {
     const accounts = listAccountHealthSnapshots();
     const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
-    // subScores aren't persisted as their own column — recomputed here from
-    // the stored serviceHealth/financialHealth, a pure in-memory calculation
-    // (no HubSpot calls), so the drill-down always reflects the current
-    // scoring logic rather than whatever version last ran a refresh.
-    const enriched = accounts.map((a) => ({
-      ...a,
-      subScores: computeHealthScore({ serviceHealth: a.serviceHealth, financialHealth: a.financialHealth }).subScores,
-      priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
-    }));
+    // score/subScores aren't trusted from the stored health_score/
+    // health_band columns here — recomputed on every read, a pure
+    // in-memory calculation (no HubSpot calls), from whatever's currently
+    // cached (serviceHealth/financialHealth from the last /refresh,
+    // aging from the last /import-aging-report). Those two run on
+    // completely independent schedules, so the stored columns (last set
+    // by whichever ran most recently) would otherwise silently miss
+    // aging's contribution until the next full HubSpot refresh happened
+    // to run after it.
+    const enriched = accounts.map((a) => {
+      const { score, band, subScores } = computeHealthScore({
+        serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging,
+      });
+      return {
+        ...a,
+        health_score: score,
+        health_band: band?.label || null,
+        subScores,
+        priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
+      };
+    });
     res.json({ accounts: enriched });
   } catch (err) {
     res.status(500).json({ error: err.message });

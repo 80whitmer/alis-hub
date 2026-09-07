@@ -95,6 +95,61 @@ function RefreshButton({ onRefreshed }) {
   );
 }
 
+/**
+ * Manual weekly upload of Dave Johnson's Intacct "Customer Aging Report"
+ * PDF — see server/services/agingReportParser.js's doc comment for why
+ * this is manual rather than automatic Gmail ingestion. Sent as base64 in
+ * the JSON body, same transport KpiDashboard.jsx's AccountHealthImport
+ * already uses for its own JSON upload.
+ */
+function ImportAgingReportButton({ onImported }) {
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImporting(true);
+    setError('');
+    setResult(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const pdfBase64 = btoa(new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ''));
+      const res = await fetch('/api/account-health/import-aging-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdfBase64 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
+      setResult(data);
+      await onImported();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  }
+
+  return (
+    <div className="text-right">
+      <label className="btn btn-sm btn-secondary cursor-pointer">
+        {importing ? 'Importing…' : '📥 Import Aging Report'}
+        <input type="file" accept="application/pdf" onChange={handleFile} disabled={importing} className="hidden" />
+      </label>
+      {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
+      {result && (
+        <p className="text-xs text-neutral-500 mt-1 max-w-xs ml-auto">
+          {result.accountsUpdated} account(s) updated from {result.rowsMatched} of {result.rowsParsed} rows
+          {result.unmatchedCount > 0 && ` — ${result.unmatchedCount} row(s) didn't match any of your accounts (likely other AMs' clients)`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CategoryMixChart({ accounts }) {
   const byCategory = {};
   for (const a of accounts) {
@@ -223,6 +278,40 @@ function AccountDrawer({ account, onClose }) {
           ))}
         </ul>
       ) : <p className="text-sm text-neutral-500 italic mb-6">No open deals.</p>}
+
+      <h3 className="font-semibold text-primary-900 text-sm mb-2">AR Aging</h3>
+      {account.aging ? (
+        <div className="mb-6">
+          <p className="text-xs text-neutral-400 mb-2">As of {account.aging.asOfDate} — {account.aging.sourceRows.length} Intacct line(s) rolled up</p>
+          <table className="w-full text-sm mb-2">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase">
+                <th className="py-1">Current</th>
+                <th className="py-1 text-right">1-30</th>
+                <th className="py-1 text-right">31-60</th>
+                <th className="py-1 text-right">61-90</th>
+                <th className="py-1 text-right">91-120</th>
+                <th className="py-1 text-right">121+</th>
+                <th className="py-1 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-neutral-100">
+                <td className="py-1.5">{currencyStr(account.aging.currentCents)}</td>
+                <td className="py-1.5 text-right">{currencyStr(account.aging.d1_30Cents)}</td>
+                <td className="py-1.5 text-right">{currencyStr(account.aging.d31_60Cents)}</td>
+                <td className={`py-1.5 text-right ${account.aging.d61_90Cents > 0 ? 'text-error font-medium' : ''}`}>{currencyStr(account.aging.d61_90Cents)}</td>
+                <td className={`py-1.5 text-right ${account.aging.d91_120Cents > 0 ? 'text-error font-medium' : ''}`}>{currencyStr(account.aging.d91_120Cents)}</td>
+                <td className={`py-1.5 text-right ${account.aging.d121PlusCents > 0 ? 'text-error font-medium' : ''}`}>{currencyStr(account.aging.d121PlusCents)}</td>
+                <td className="py-1.5 text-right font-semibold">{currencyStr(account.aging.totalCents)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="text-xs text-neutral-400">
+            From: {account.aging.sourceRows.map((r) => r.customerName).join(', ')}
+          </p>
+        </div>
+      ) : <p className="text-sm text-neutral-500 italic mb-6">No aging data imported for this account yet.</p>}
 
       <h3 className="font-semibold text-primary-900 text-sm mb-2">Sub-scores</h3>
       <div className="grid grid-cols-2 gap-3">
@@ -461,6 +550,8 @@ export default function AccountHealthDashboard() {
       openDealValueCents: accounts.reduce((s, a) => s + (a.open_deal_value_cents || 0), 0),
       arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
       arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+      pastDue61PlusCents: accounts.reduce((s, a) => s + (a.aging_past_due_61_plus_cents || 0), 0),
+      agingAsOfDate: accounts.find((a) => a.aging_as_of_date)?.aging_as_of_date || null,
       avgScore,
       // Lifecycle stages come back as opaque HubSpot property-option IDs
       // (or the literal "lead" for that built-in one) — not resolved to
@@ -481,7 +572,10 @@ export default function AccountHealthDashboard() {
             {refreshResult && ` · last refresh: ${refreshResult.companyCount} accounts, ${refreshResult.errorCount} error(s)`}
           </p>
         </div>
-        <RefreshButton onRefreshed={handleRefreshed} />
+        <div className="flex gap-3">
+          <ImportAgingReportButton onImported={load} />
+          <RefreshButton onRefreshed={handleRefreshed} />
+        </div>
       </div>
 
       {error && <div className="alert alert-error mb-6"><span>⚠️</span><p className="text-sm">{error}</p></div>}
@@ -514,6 +608,10 @@ export default function AccountHealthDashboard() {
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
+            <StatCard
+              label={`Past Due 61+ Days${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`}
+              value={rollup.agingAsOfDate ? currencyStr(rollup.pastDue61PlusCents) : '—'}
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">

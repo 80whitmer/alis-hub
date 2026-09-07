@@ -260,18 +260,42 @@ async function initDb() {
       open_deal_value_cents INTEGER DEFAULT 0,
       arr_cents             INTEGER,
       arr_added_this_year_cents INTEGER,
+      aging_json             TEXT,
+      aging_total_cents       INTEGER,
+      aging_past_due_61_plus_cents INTEGER,
+      aging_as_of_date        TEXT,
       health_score         INTEGER,
       health_band          TEXT,
       refreshed_at          TEXT DEFAULT (datetime('now'))
     );
   `);
-  // arr_cents/arr_added_this_year_cents were added after this table's
-  // first release — a plain CREATE TABLE IF NOT EXISTS above won't
-  // retrofit them onto a DB file created before these columns existed
-  // (confirmed: this session's own earlier verification run already
-  // created the table without them).
+  // arr_cents/arr_added_this_year_cents/aging_* were added after this
+  // table's first release — a plain CREATE TABLE IF NOT EXISTS above
+  // won't retrofit them onto a DB file created before these columns
+  // existed (confirmed: this session's own earlier verification run
+  // already created the table without them).
   try {
     db.run(`ALTER TABLE account_health_snapshots ADD COLUMN arr_cents INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN aging_json TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN aging_total_cents INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN aging_past_due_61_plus_cents INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN aging_as_of_date TEXT;`);
   } catch {
     // Column already exists — fine.
   }
@@ -686,29 +710,59 @@ function getAuditHistorySnapshot(jobId) {
 }
 
 /**
- * Clears every row before a fresh portfolio pull — this table is meant to
- * be "current state," replaced wholesale each refresh (see its CREATE
- * TABLE comment), but nothing actually enforced that before: a company
- * that fell out of scope (e.g. the "my accounts" query narrowed from 371
- * to 109 companies once Home Office scoping was added) would otherwise
- * sit here forever as stale, never-cleaned-up data, silently inflating
- * every read.
+ * Removes any cached account NOT in `currentIds` — called AFTER a
+ * refresh's company list is known (not a blanket wipe beforehand
+ * anymore): a company that fell out of scope (e.g. the "my accounts"
+ * query narrowing from 371 to 109 once Home Office scoping was added)
+ * would otherwise sit here forever as stale, never-cleaned-up data,
+ * silently inflating every read. Deliberately NOT a delete-everything-
+ * then-reinsert — that would also wipe aging_* columns (populated on
+ * their own independent weekly upload cadence, not by the HubSpot
+ * refresh) for accounts that are still very much in scope.
  */
-function clearAccountHealthSnapshots() {
-  run('DELETE FROM account_health_snapshots');
+function pruneAccountHealthSnapshots(currentIds) {
+  if (currentIds.length === 0) {
+    run('DELETE FROM account_health_snapshots');
+    return;
+  }
+  const placeholders = currentIds.map(() => '?').join(',');
+  run(`DELETE FROM account_health_snapshots WHERE hubspot_company_id NOT IN (${placeholders})`, currentIds);
 }
 
+/**
+ * Upserts a company's HubSpot-derived fields only — aging_* columns are
+ * deliberately left out of the UPDATE clause (though still set on a
+ * genuine first INSERT, as NULL) so a refresh never clobbers aging data
+ * uploaded separately. Uses SQLite's ON CONFLICT upsert rather than
+ * INSERT OR REPLACE specifically because REPLACE deletes-then-reinserts
+ * the whole row, which would reset every column not in this statement —
+ * ON CONFLICT DO UPDATE only touches the columns actually listed.
+ */
 function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents, healthScore, healthBand,
 }) {
   const now = new Date().toISOString();
   run(
-    `INSERT OR REPLACE INTO account_health_snapshots (
+    `INSERT INTO account_health_snapshots (
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
        health_score, health_band, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET
+       company_name = excluded.company_name,
+       lifecycle_stage = excluded.lifecycle_stage,
+       service_health_json = excluded.service_health_json,
+       financial_health_json = excluded.financial_health_json,
+       open_ticket_count = excluded.open_ticket_count,
+       closed_ticket_count = excluded.closed_ticket_count,
+       open_deal_count = excluded.open_deal_count,
+       open_deal_value_cents = excluded.open_deal_value_cents,
+       arr_cents = excluded.arr_cents,
+       arr_added_this_year_cents = excluded.arr_added_this_year_cents,
+       health_score = excluded.health_score,
+       health_band = excluded.health_band,
+       refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
@@ -723,7 +777,30 @@ function listAccountHealthSnapshots() {
     ...row,
     serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
     financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
+    aging: row.aging_json ? JSON.parse(row.aging_json) : null,
   }));
+}
+
+/**
+ * Writes (or clears, if aging is null) one account's aging-report data —
+ * a plain UPDATE, not part of upsertAccountHealthSnapshot's insert/upsert,
+ * since this runs on its own independent weekly-upload cadence (see
+ * server/services/agingReportParser.js/agingReportMatcher.js), completely
+ * decoupled from the HubSpot refresh cycle.
+ */
+function updateAccountHealthAging(hubspotCompanyId, aging) {
+  run(
+    `UPDATE account_health_snapshots
+     SET aging_json = ?, aging_total_cents = ?, aging_past_due_61_plus_cents = ?, aging_as_of_date = ?
+     WHERE hubspot_company_id = ?`,
+    [
+      aging ? JSON.stringify(aging) : null,
+      aging?.totalCents ?? null,
+      aging?.pastDue61PlusCents ?? null,
+      aging?.asOfDate ?? null,
+      hubspotCompanyId,
+    ]
+  );
 }
 
 function getAccountHealthSnapshot(hubspotCompanyId) {
@@ -782,6 +859,7 @@ module.exports = {
   addUsageAuditSnapshot, getUsageAuditSnapshot,
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,
-  clearAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
+  pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
+  updateAccountHealthAging,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };
