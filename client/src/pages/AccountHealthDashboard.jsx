@@ -355,6 +355,7 @@ function ChartTypeToggle({ value, onChange }) {
 
 function CategoryMixChart({ accounts, status }) {
   const [chartType, setChartType] = useState('bar');
+  const [showLegend, setShowLegend] = useState(false);
   const byCategory = {};
   for (const a of accounts) {
     const mix = a.serviceHealth?.ticketCategoryMix || {};
@@ -373,7 +374,17 @@ function CategoryMixChart({ accounts, status }) {
 
   return (
     <>
-      <ChartTypeToggle value={chartType} onChange={setChartType} />
+      <div className="flex items-center justify-between mb-2">
+        <ChartTypeToggle value={chartType} onChange={setChartType} />
+        {chartType === 'pie' && (
+          <button
+            onClick={() => setShowLegend((v) => !v)}
+            className="text-xs px-2.5 py-1 rounded-full border border-neutral-200 text-neutral-600 bg-white hover:border-neutral-300 transition-colors"
+          >
+            {showLegend ? 'Hide Key' : 'Show Key'}
+          </button>
+        )}
+      </div>
       <ResponsiveContainer width="100%" height={480}>
         {chartType === 'pie' ? (
           <PieChart>
@@ -381,7 +392,7 @@ function CategoryMixChart({ accounts, status }) {
               {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
             </Pie>
             <Tooltip />
-            <Legend />
+            {showLegend && <Legend />}
           </PieChart>
         ) : (
           <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
