@@ -177,6 +177,7 @@ function AccountDrawer({ account, onClose }) {
         <StatCard label="Open Deals" value={account.open_deal_count} />
         <StatCard label="Open Deal Value" value={currencyStr(account.open_deal_value_cents)} />
         <StatCard label="ARR" value={account.arr_cents != null ? currencyStr(account.arr_cents) : '—'} />
+        <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(account.arr_added_this_year_cents)} />
       </div>
 
       {account.priorQbr && (
@@ -459,6 +460,7 @@ export default function AccountHealthDashboard() {
       openDeals: accounts.reduce((s, a) => s + (a.open_deal_count || 0), 0),
       openDealValueCents: accounts.reduce((s, a) => s + (a.open_deal_value_cents || 0), 0),
       arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
+      arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
       avgScore,
       // Lifecycle stages come back as opaque HubSpot property-option IDs
       // (or the literal "lead" for that built-in one) — not resolved to
@@ -511,6 +513,7 @@ export default function AccountHealthDashboard() {
             <StatCard label="Open Deals" value={rollup.openDeals} />
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
+            <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">

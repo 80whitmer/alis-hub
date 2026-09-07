@@ -94,6 +94,20 @@ async function mapLiveFinancialHealth(dealSummary) {
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {}),
+    // "ARR added this calendar year" — gross sum of closed-won deal amounts
+    // whose close date falls in the current year, not netted against
+    // cancellations/churn (the "Deals by Type" chart already has a real
+    // "cancellation" bucket) — a deliberate simplification, not an
+    // oversight: Aaron asked for "ARR added," and a true net figure would
+    // need cancellation deals' amounts to represent the ARR actually lost,
+    // which isn't confirmed to be populated/signed consistently. Reuses
+    // dealSummary.deals (already fetched, the full history) — no new
+    // HubSpot calls. "amount" is a deal's own contract value, not always
+    // guaranteed to be a true annualized figure, same caveat as the rest
+    // of this file's deal-derived numbers.
+    arrAddedThisYearCents: dealSummary.deals
+      .filter((d) => d.isWon && d.closeDate && new Date(d.closeDate).getFullYear() === new Date().getFullYear())
+      .reduce((sum, d) => sum + Math.round((d.amount || 0) * 100), 0),
   };
 }
 
@@ -158,6 +172,7 @@ router.post('/refresh', async (req, res) => {
           openDealCount: dealSummary.open,
           openDealValueCents: Math.round((dealSummary.totalOpenValue || 0) * 100),
           arrCents: company.arrCents,
+          arrAddedThisYearCents: financialHealth.arrAddedThisYearCents,
           healthScore: score,
           healthBand: band?.label || null,
         });
