@@ -34,6 +34,19 @@ const CHART_PALETTE = [BRAND.amber, BRAND.glacier, BRAND.mint, BRAND.marigold, B
 const BAND_HEX = { Unhealthy: 'DC2626', 'At Risk': 'EA580C', Stable: '2563EB', Healthy: '16A34A' };
 const HEALTH_BANDS = ['Unhealthy', 'At Risk', 'Stable', 'Healthy'];
 
+// Mirrors TeamAmDashboard.jsx's tierLabel/TIER_ORDER — see that file's copy
+// for the "0 reads as unset, not Tier 0" reasoning behind client_tier.
+// Duplicated rather than shared, same client/server small-helper pattern
+// as the rest of this file (isAtRisk below, etc.).
+const TIER_ORDER = ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5', 'Unassigned'];
+function tierLabel(tier) {
+  return (tier == null || tier === 0) ? 'Unassigned' : `Tier ${tier}`;
+}
+function tierSortIndex(name) {
+  const i = TIER_ORDER.indexOf(name);
+  return i === -1 ? 999 : i;
+}
+
 // `n` is CENTS (matching every arr_cents/arr_added_this_year_cents field
 // this file reads) — dividing by 100 here, not just formatting the raw
 // value, was missing on the first pass and inflated every dollar figure
@@ -92,6 +105,14 @@ function addIndexSlide(pptx, accounts) {
       options: { bullet: true, indentLevel: 1, color: BRAND.slate, breakLine: true },
     })),
     { text: 'Health Score Distribution', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    { text: 'Companies by Tier', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    { text: 'Tickets by Tier', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    { text: 'ARR by Tier', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
+    ...TIER_METRICS.map((key) => ({
+      text: `${TIER_METRIC_LABELS[key]}  (Bar + Pie)`,
+      options: { bullet: true, indentLevel: 1, color: BRAND.slate, breakLine: true },
+    })),
+    { text: 'Ticket Volume by Account Manager by Tier', options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true } },
     {
       text: `At-Risk Accounts  (${atRiskCount} account${atRiskCount === 1 ? '' : 's'}${atRiskPages > 1 ? `, ${atRiskPages} slides` : ''})`,
       options: { bullet: true, bold: true, color: BRAND.onyx, breakLine: true },
@@ -224,6 +245,166 @@ function addHealthDistributionSlide(pptx, accounts) {
   });
 }
 
+/** Mirrors the on-screen Companies by Tier chart — straight headcount per client_tier bucket. */
+function addCompaniesByTierSlide(pptx, accounts) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Companies by Tier');
+
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    byTier[key] = (byTier[key] || 0) + 1;
+  }
+  const data = Object.entries(byTier)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => tierSortIndex(a.name) - tierSortIndex(b.name));
+
+  if (data.length === 0) {
+    slide.addText('No account data yet.', { x: 0.5, y: 2.5, w: 9, h: 0.5, fontFace: FONT_BODY, fontSize: 14, color: BRAND.slate, align: 'center' });
+    return;
+  }
+
+  slide.addChart(pptx.ChartType.bar, [{ name: 'Companies', labels: data.map((d) => d.name), values: data.map((d) => d.value) }], {
+    x: 0.5, y: 1.1, w: 9, h: 4.2,
+    barDir: 'col',
+    chartColors: [BRAND.flame],
+    showValue: true, dataLabelPosition: 'outEnd', dataLabelFontFace: FONT_BODY, dataLabelFontSize: 11, dataLabelColor: BRAND.onyx,
+    catAxisLabelFontFace: FONT_BODY, catAxisLabelFontSize: 12,
+    valAxisLabelFontFace: FONT_BODY, valAxisLabelFontSize: 10,
+    showLegend: false,
+  });
+}
+
+/** Mirrors the on-screen Tickets by Tier chart — open/closed as two clustered (side-by-side) series, not stacked, same reasoning as the client version: a tier heavy on closed tickets and one heavy on OPEN tickets read very differently for triage. */
+function addTicketsByTierSlide(pptx, accounts) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Tickets by Tier');
+
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    if (!byTier[key]) byTier[key] = { open: 0, closed: 0 };
+    byTier[key].open += a.open_ticket_count || 0;
+    byTier[key].closed += a.closed_ticket_count || 0;
+  }
+  const names = Object.keys(byTier)
+    .filter((k) => byTier[k].open > 0 || byTier[k].closed > 0)
+    .sort((a, b) => tierSortIndex(a) - tierSortIndex(b));
+
+  if (names.length === 0) {
+    slide.addText('No ticket data yet.', { x: 0.5, y: 2.5, w: 9, h: 0.5, fontFace: FONT_BODY, fontSize: 14, color: BRAND.slate, align: 'center' });
+    return;
+  }
+
+  slide.addChart(pptx.ChartType.bar, [
+    { name: 'Open', labels: names, values: names.map((n) => byTier[n].open) },
+    { name: 'Closed', labels: names, values: names.map((n) => byTier[n].closed) },
+  ], {
+    x: 0.5, y: 1.1, w: 9, h: 4.2,
+    barDir: 'col',
+    barGrouping: 'clustered',
+    chartColors: [BRAND.scarlet, BRAND.glacier],
+    showValue: true, dataLabelPosition: 'outEnd', dataLabelFontFace: FONT_BODY, dataLabelFontSize: 9, dataLabelColor: BRAND.onyx,
+    catAxisLabelFontFace: FONT_BODY, catAxisLabelFontSize: 12,
+    valAxisLabelFontFace: FONT_BODY, valAxisLabelFontSize: 10,
+    showLegend: true, legendPos: 'b', legendFontFace: FONT_BODY, legendFontSize: 10, legendColor: BRAND.slate,
+  });
+}
+
+const TIER_METRIC_LABELS = {
+  arrCents: 'Total ARR',
+  arrAddedThisYearCents: `ARR Added (${new Date().getFullYear()})`,
+};
+const TIER_METRICS = ['arrCents', 'arrAddedThisYearCents'];
+
+/** One metric/chart-type combination on the ARR-by-Tier chart — same bar+pie-per-metric shape as addKpiByAmSlide, just grouped by client_tier instead of Account Manager. */
+function addTierByArrSlide(pptx, accounts, metricKey, chartType) {
+  const slide = pptx.addSlide();
+  const label = TIER_METRIC_LABELS[metricKey] || metricKey;
+  addSectionHeader(slide, `ARR by Tier — ${label}`);
+
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    const value = metricKey === 'arrAddedThisYearCents' ? (a.arr_added_this_year_cents || 0) : (a.arr_cents || 0);
+    byTier[key] = (byTier[key] || 0) + value;
+  }
+  const data = Object.entries(byTier)
+    .map(([name, cents]) => ({ name, cents }))
+    .filter((d) => d.cents !== 0)
+    .sort((a, b) => tierSortIndex(a.name) - tierSortIndex(b.name));
+
+  if (data.length === 0) {
+    slide.addText('No data for this metric.', { x: 0.5, y: 2.5, w: 9, h: 0.5, fontFace: FONT_BODY, fontSize: 14, color: BRAND.slate, align: 'center' });
+    return;
+  }
+
+  const labels = data.map((d) => d.name);
+  const values = data.map((d) => Math.round(d.cents / 100));
+
+  if (chartType === 'pie') {
+    slide.addChart(pptx.ChartType.doughnut, [{ name: label, labels, values }], {
+      x: 0.5, y: 1.1, w: 9, h: 4.2,
+      chartColors: CHART_PALETTE,
+      showLegend: true, legendPos: 'r', legendFontFace: FONT_BODY, legendFontSize: 10, legendColor: BRAND.slate,
+      showValue: true, dataLabelColor: BRAND.white, dataLabelFontSize: 9,
+    });
+  } else {
+    slide.addChart(pptx.ChartType.bar, [{ name: label, labels, values }], {
+      x: 0.5, y: 1.1, w: 9, h: 4.2,
+      barDir: 'bar',
+      chartColors: [BRAND.mint],
+      showValue: true, dataLabelPosition: 'outEnd', dataLabelFontFace: FONT_BODY, dataLabelFontSize: 10, dataLabelColor: BRAND.onyx,
+      catAxisLabelFontFace: FONT_BODY, catAxisLabelFontSize: 10,
+      valAxisLabelFontFace: FONT_BODY, valAxisLabelFontSize: 10,
+      showLegend: false,
+    });
+  }
+}
+
+/** Mirrors the on-screen Ticket Volume by AM by Tier chart — horizontal stacked bar, one series per tier, same combined open+closed-per-segment reasoning as the client version (the Tickets by Tier slide above already covers the open/closed split at the portfolio level). */
+function addTicketsByAmByTierSlide(pptx, accounts) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Ticket Volume by Account Manager by Tier');
+
+  const byAm = new Map();
+  const tiersSeen = new Set();
+  for (const a of accounts) {
+    const am = a.account_manager_name || 'Unassigned';
+    const tier = tierLabel(a.tier);
+    tiersSeen.add(tier);
+    if (!byAm.has(am)) byAm.set(am, {});
+    const row = byAm.get(am);
+    row[tier] = (row[tier] || 0) + (a.open_ticket_count || 0) + (a.closed_ticket_count || 0);
+  }
+  const tierKeys = [...tiersSeen].sort((a, b) => tierSortIndex(a) - tierSortIndex(b));
+  const amNames = Array.from(byAm.keys())
+    .filter((am) => tierKeys.some((t) => byAm.get(am)[t] > 0))
+    .sort((a, b) => tierKeys.reduce((s, t) => s + (byAm.get(b)[t] || 0), 0) - tierKeys.reduce((s, t) => s + (byAm.get(a)[t] || 0), 0));
+
+  if (amNames.length === 0) {
+    slide.addText('No ticket data yet.', { x: 0.5, y: 2.5, w: 9, h: 0.5, fontFace: FONT_BODY, fontSize: 14, color: BRAND.slate, align: 'center' });
+    return;
+  }
+
+  const series = tierKeys.map((t) => ({
+    name: t,
+    labels: amNames,
+    values: amNames.map((am) => byAm.get(am)[t] || 0),
+  }));
+
+  slide.addChart(pptx.ChartType.bar, series, {
+    x: 0.5, y: 1.1, w: 9, h: 4.2,
+    barDir: 'bar',
+    barGrouping: 'stacked',
+    chartColors: CHART_PALETTE,
+    showValue: false,
+    catAxisLabelFontFace: FONT_BODY, catAxisLabelFontSize: 10,
+    valAxisLabelFontFace: FONT_BODY, valAxisLabelFontSize: 10,
+    showLegend: true, legendPos: 'b', legendFontFace: FONT_BODY, legendFontSize: 9, legendColor: BRAND.slate,
+  });
+}
+
 const AT_RISK_PER_SLIDE = 5;
 // Same reasoning as the client's isAtRisk (TeamAmDashboard.jsx) —
 // Unhealthy and At Risk together, score < 60. Kept as a separate literal
@@ -312,6 +493,13 @@ async function renderTeamAmPpt(rollup, rollupByAccountManager, accounts) {
     addKpiByAmSlide(pptx, rollupByAccountManager, metricKey, 'pie');
   }
   addHealthDistributionSlide(pptx, accounts);
+  addCompaniesByTierSlide(pptx, accounts);
+  addTicketsByTierSlide(pptx, accounts);
+  for (const metricKey of TIER_METRICS) {
+    addTierByArrSlide(pptx, accounts, metricKey, 'bar');
+    addTierByArrSlide(pptx, accounts, metricKey, 'pie');
+  }
+  addTicketsByAmByTierSlide(pptx, accounts);
   addAtRiskSlides(pptx, accounts);
 
   return pptx.write({ outputType: 'nodebuffer' });

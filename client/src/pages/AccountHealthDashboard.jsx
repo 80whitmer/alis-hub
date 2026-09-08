@@ -25,6 +25,17 @@ function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 }
 
+/** notes_last_updated (HubSpot's "Last Activity Date") stored as an ISO timestamp — covers both an ALIS-initiated note/call/task and a client email/call logged back, whichever happened most recently. */
+function lastActivityStr(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** client_tier — HubSpot's Account Management Tier (1-4, based on ARR). 0/null both read as unset, not "Tier 0". */
+function tierStr(tier) {
+  return (tier == null || tier === 0) ? '—' : `Tier ${tier}`;
+}
+
 // health_band is stored as its display label (matching accountHealthScoring.js's
 // SCORE_BANDS) — this maps it back to the color key ScoreBadge/BAND_COLOR expect.
 const BAND_LABEL_TO_COLOR = { Unhealthy: 'red', 'At Risk': 'orange', Stable: 'blue', Healthy: 'green' };
@@ -1395,6 +1406,7 @@ export default function AccountHealthDashboard() {
                 <thead>
                   <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
                     <SortableHeader label="Account" column="company_name" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Tier" column="tier" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Health" column="health_score" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Open Tickets" column="open_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Closed Tickets" column="closed_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
@@ -1404,7 +1416,8 @@ export default function AccountHealthDashboard() {
                     <SortableHeader label="Aging Balance" column="aging_total_cents" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="DSO" column="dsoDays" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Total Capacity" column="total_capacity" sort={sort} onSort={toggleSort} className="pr-4" />
-                    <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Last Activity" column="last_activity_date" sort={sort} onSort={toggleSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -1427,6 +1440,7 @@ export default function AccountHealthDashboard() {
                           )}
                         </div>
                       </td>
+                      <td className="py-2 pr-4 text-neutral-500">{tierStr(a.tier)}</td>
                       <td className="py-2 pr-4"><ScoreBadge score={a.health_score} band={BAND_LABEL_TO_COLOR[a.health_band] || null} /></td>
                       <td className="py-2 pr-4 text-neutral-500">{a.open_ticket_count}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.closed_ticket_count}</td>
@@ -1438,7 +1452,10 @@ export default function AccountHealthDashboard() {
                       </td>
                       <td className="py-2 pr-4 text-neutral-500">{a.dsoDays != null ? `${a.dsoDays}d` : '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
-                      <td className="py-2 text-neutral-500">{a.current_census ?? '—'}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.current_census ?? '—'}</td>
+                      <td className="py-2 text-neutral-500">
+                        <CompanyLink account={a} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

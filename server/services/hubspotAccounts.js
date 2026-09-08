@@ -77,7 +77,17 @@ async function hubspotRequest(method, path, body, attempt = 1) {
   return res;
 }
 
-const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr'];
+// client_tier ("Client Tier" — Account Management Tier based on ARR) and
+// notes_last_updated ("Last Activity Date" — last note/call/meeting/task
+// logged for the company, covering both an ALIS-initiated reach-out and a
+// client email/call logged back) added Sep 2026 for the Tier + Last
+// Activity columns/charts on both dashboards. Confirmed live: client_tier
+// correlates with actually-managed accounts (populated alongside
+// account_manager, values 1-4), unlike the newer client_teir_2_0 field,
+// which is populated on many unmanaged/prospect companies with no
+// account_manager set and defaults to "4" — client_tier is the one that
+// reflects real AM tiering.
+const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'notes_last_updated'];
 
 /** Splits `arr` into chunks of at most `size` items — HubSpot's search endpoint's IN-filter is fine with 109 values in one call today, but this keeps a much bigger future portfolio from silently exceeding it. */
 function chunk(arr, size) {
@@ -211,6 +221,8 @@ async function getOwnedCompanies(ownerId) {
       // deal line items, which would need a far heavier historical pull
       // across the whole portfolio for the same number.
       arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
+      tier: c.properties.client_tier != null && c.properties.client_tier !== '' ? Number(c.properties.client_tier) : null,
+      lastActivityDate: c.properties.notes_last_updated || null,
     })));
     after = body.paging?.next?.after;
   } while (after);
@@ -364,6 +376,8 @@ async function getAllHomeOfficeCompanies() {
       lifecycleStage: c.properties.lifecyclestage || null,
       createdAt: c.properties.createdate || null,
       arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
+      tier: c.properties.client_tier != null && c.properties.client_tier !== '' ? Number(c.properties.client_tier) : null,
+      lastActivityDate: c.properties.notes_last_updated || null,
     })));
     after = body.paging?.next?.after;
   } while (after);

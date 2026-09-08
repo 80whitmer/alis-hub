@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, LabelList,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
 } from 'recharts';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
@@ -11,6 +11,29 @@ import { exportAtRiskAccounts } from '../utils/atRiskExport';
 
 function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+
+/** notes_last_updated (HubSpot's "Last Activity Date") — last note/call/task logged for the company, either ALIS-initiated or a client email/call logged back. */
+function lastActivityStr(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** client_tier — HubSpot's Account Management Tier (1-4, based on ARR). 0/null both read as unset, not "Tier 0". */
+function tierStr(tier) {
+  return (tier == null || tier === 0) ? '—' : `Tier ${tier}`;
+}
+
+/** Same unset handling as tierStr, but as a chart bucket label — used to group accounts by tier across the charts below. */
+function tierLabel(tier) {
+  return (tier == null || tier === 0) ? 'Unassigned' : `Tier ${tier}`;
+}
+
+const TIER_ORDER = ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5', 'Unassigned'];
+function tierSort(a, b) {
+  const ai = TIER_ORDER.indexOf(a.name);
+  const bi = TIER_ORDER.indexOf(b.name);
+  return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
 }
 
 const BAND_COLOR = { red: '#dc2626', orange: '#ea580c', blue: '#2563eb', green: '#16a34a' };
@@ -411,6 +434,194 @@ function HealthScoreDistributionChart({ accounts }) {
   );
 }
 
+/**
+ * "Number of tickets by tier" (Aaron, Sep 2026) — open vs. closed ticket
+ * volume grouped by client_tier, portfolio-wide. Open/closed kept as
+ * separate bars (not summed into one "total tickets" figure) since a
+ * tier with a lot of closed tickets and a tier with a lot of OPEN tickets
+ * read very differently for triage purposes.
+ */
+function TicketsByTierChart({ accounts }) {
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    if (!byTier[key]) byTier[key] = { name: key, open: 0, closed: 0 };
+    byTier[key].open += a.open_ticket_count || 0;
+    byTier[key].closed += a.closed_ticket_count || 0;
+  }
+  const data = Object.values(byTier).filter((d) => d.open > 0 || d.closed > 0).sort(tierSort);
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No ticket data yet — click Refresh to pull it.</p>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={360}>
+      <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+        <Tooltip />
+        <Legend />
+        <Bar dataKey="open" name="Open" fill="#dc2626" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="open" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1e293b' }} />
+        </Bar>
+        <Bar dataKey="closed" name="Closed" fill="#2563eb" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="closed" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1e293b' }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+const TIER_METRICS = [
+  { key: 'arrCents', label: 'Total ARR', format: currencyStr },
+  { key: 'arrAddedThisYearCents', label: `ARR Added (${new Date().getFullYear()})`, format: currencyStr },
+];
+
+/**
+ * "Tier by ARR" and "tier by ARR Added this year" (Aaron, Sep 2026) —
+ * one reusable chart with a metric dropdown, same bar/pie-toggle shape as
+ * KpiByAmChart, just grouped by client_tier instead of Account Manager.
+ */
+function TierByArrChart({ accounts, metricKey, setMetricKey, chartType, setChartType }) {
+  const metric = TIER_METRICS.find((m) => m.key === metricKey);
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    const value = metricKey === 'arrAddedThisYearCents' ? (a.arr_added_this_year_cents || 0) : (a.arr_cents || 0);
+    byTier[key] = (byTier[key] || 0) + value;
+  }
+  const data = Object.entries(byTier).map(([name, total]) => ({ name, total })).filter((d) => d.total !== 0).sort(tierSort);
+
+  const chartHeight = chartType === 'pie' ? 420 : Math.max(320, data.length * 56);
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)} className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5">
+          {TIER_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+        <ChartTypeToggle value={chartType} onChange={setChartType} />
+      </div>
+      {data.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No data yet for this metric — click Refresh to pull it.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={chartHeight}>
+          {chartType === 'pie' ? (
+            <PieChart>
+              <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={({ name, total }) => `${name}: ${metric.format(total)}`} isAnimationActive={false}>
+                {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+              </Pie>
+              <Tooltip formatter={(v) => metric.format(v)} />
+            </PieChart>
+          ) : (
+            <BarChart data={data} layout="vertical" margin={{ top: 8, right: 64, left: 8, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 13 }} width={100} />
+              <Tooltip formatter={(v) => metric.format(v)} />
+              <Bar dataKey="total" fill="#16a34a" radius={[0, 4, 4, 0]}>
+                <LabelList dataKey="total" position="right" formatter={metric.format} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+              </Bar>
+            </BarChart>
+          )}
+        </ResponsiveContainer>
+      )}
+    </>
+  );
+}
+
+/** "Number of companies per tier" (Aaron, Sep 2026) — a straight headcount, portfolio-wide, same bar/pie-toggle shape as the other tier charts. */
+function CompaniesByTierChart({ accounts, chartType, setChartType }) {
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    byTier[key] = (byTier[key] || 0) + 1;
+  }
+  const data = Object.entries(byTier).map(([name, total]) => ({ name, total })).sort(tierSort);
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No account data yet — click Refresh to pull it.</p>;
+  }
+
+  const chartHeight = chartType === 'pie' ? 420 : 320;
+
+  return (
+    <>
+      <div className="flex items-center justify-end mb-3">
+        <ChartTypeToggle value={chartType} onChange={setChartType} />
+      </div>
+      <ResponsiveContainer width="100%" height={chartHeight}>
+        {chartType === 'pie' ? (
+          <PieChart>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={({ name, total }) => `${name}: ${total}`} isAnimationActive={false}>
+              {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+          </PieChart>
+        ) : (
+          <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+            <Bar dataKey="total" fill="#7c3aed" radius={[4, 4, 0, 0]}>
+              <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+            </Bar>
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+    </>
+  );
+}
+
+/**
+ * "Ticket volume by AM by tier" (Aaron, Sep 2026) — a stacked bar per
+ * Account Manager, segmented by client_tier, so a spike in one AM's
+ * ticket volume can be read as "driven by their Tier 1s" vs. spread
+ * evenly. Open + closed combined into one "ticket volume" figure per
+ * segment — TicketsByTierChart above already covers the open-vs-closed
+ * split at the portfolio level.
+ */
+function TicketsByAmByTierChart({ accounts }) {
+  const byAm = new Map();
+  const tiersSeen = new Set();
+  for (const a of accounts) {
+    const am = a.account_manager_name || 'Unassigned';
+    const tier = tierLabel(a.tier);
+    tiersSeen.add(tier);
+    if (!byAm.has(am)) byAm.set(am, { name: am });
+    const row = byAm.get(am);
+    row[tier] = (row[tier] || 0) + (a.open_ticket_count || 0) + (a.closed_ticket_count || 0);
+  }
+  const tierKeys = [...tiersSeen].sort((a, b) => TIER_ORDER.indexOf(a) - TIER_ORDER.indexOf(b));
+  const data = Array.from(byAm.values())
+    .filter((r) => tierKeys.some((t) => r[t] > 0))
+    .sort((a, b) => tierKeys.reduce((s, t) => s + (b[t] || 0), 0) - tierKeys.reduce((s, t) => s + (a[t] || 0), 0));
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No ticket data yet — click Refresh to pull it.</p>;
+  }
+
+  const chartHeight = Math.max(420, data.length * 48);
+
+  return (
+    <ResponsiveContainer width="100%" height={chartHeight}>
+      <BarChart data={data} layout="vertical" margin={{ top: 8, right: 32, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
+        <YAxis type="category" dataKey="name" tick={{ fontSize: 13 }} width={140} />
+        <Tooltip />
+        <Legend />
+        {tierKeys.map((t, i) => (
+          <Bar key={t} dataKey={t} name={t} stackId="tickets" fill={PIE_COLORS[i % PIE_COLORS.length]} />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 /** Score < 60 — the Unhealthy/At Risk bands, matching accountHealthScoring.js's SCORE_BANDS boundary between At Risk and Stable. Aaron asked for "the at risk communities" (Sep 2026); read as both concerning bands together (not just the literally-labeled "At Risk" one) since Unhealthy is the more severe version of the same problem, not a separate one. */
 function isAtRisk(account) {
   return account.health_band === 'Unhealthy' || account.health_band === 'At Risk';
@@ -657,6 +868,9 @@ export default function TeamAmDashboard() {
   const [sort, setSort] = useState({ column: 'health_score', direction: 'asc' });
   const [metricKey, setMetricKey] = useState('avgScore');
   const [chartType, setChartType] = useState('bar');
+  const [tierMetricKey, setTierMetricKey] = useState('arrCents');
+  const [tierChartType, setTierChartType] = useState('bar');
+  const [companiesByTierChartType, setCompaniesByTierChartType] = useState('bar');
   const [atRiskOpen, setAtRiskOpen] = useState(false);
 
   async function load() {
@@ -784,6 +998,28 @@ export default function TeamAmDashboard() {
           </SectionCard>
           {atRiskOpen && <AtRiskDrawer accounts={atRiskAccounts} onClose={() => setAtRiskOpen(false)} />}
 
+          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide">
+            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
+          </SectionCard>
+
+          <SectionCard title="Tickets by Tier" description="Open vs. closed ticket volume grouped by Client Tier, portfolio-wide">
+            <TicketsByTierChart accounts={accounts} />
+          </SectionCard>
+
+          <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier">
+            <TierByArrChart
+              accounts={accounts}
+              metricKey={tierMetricKey}
+              setMetricKey={setTierMetricKey}
+              chartType={tierChartType}
+              setChartType={setTierChartType}
+            />
+          </SectionCard>
+
+          <SectionCard title="Ticket Volume by Account Manager by Tier" description="Open + closed tickets per AM, segmented by Client Tier">
+            <TicketsByAmByTierChart accounts={accounts} />
+          </SectionCard>
+
           <UnmappedAmSection accounts={accounts} />
 
           <SectionCard
@@ -805,6 +1041,7 @@ export default function TeamAmDashboard() {
                   <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
                     <SortableHeader label="Account" column="company_name" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Account Manager" column="account_manager_name" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Tier" column="tier" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Total Community" column="active_community_count" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Health" column="health_score" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Open Tickets" column="open_ticket_count" sort={sort} onSort={toggleSort} className="pr-4" />
@@ -812,7 +1049,8 @@ export default function TeamAmDashboard() {
                     <SortableHeader label="ARR" column="arr_cents" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Aging Balance" column="aging_total_cents" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Total Capacity" column="total_capacity" sort={sort} onSort={toggleSort} className="pr-4" />
-                    <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Last Activity" column="last_activity_date" sort={sort} onSort={toggleSort} />
                   </tr>
                 </thead>
                 <tbody>
@@ -822,6 +1060,7 @@ export default function TeamAmDashboard() {
                         <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
                       </td>
                       <td className="py-2 pr-4 text-neutral-500">{a.account_manager_name}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{tierStr(a.tier)}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.active_community_count ?? '—'}</td>
                       <td className="py-2 pr-4"><ScoreBadge score={a.health_score} band={a.health_band} /></td>
                       <td className="py-2 pr-4">{a.open_ticket_count ?? 0}</td>
@@ -829,7 +1068,10 @@ export default function TeamAmDashboard() {
                       <td className="py-2 pr-4">{currencyStr(a.arr_cents)}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.aging_total_cents != null ? currencyStr(a.aging_total_cents) : '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
-                      <td className="py-2 text-neutral-500">{a.current_census ?? '—'}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{a.current_census ?? '—'}</td>
+                      <td className="py-2 text-neutral-500">
+                        <CompanyLink account={a} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

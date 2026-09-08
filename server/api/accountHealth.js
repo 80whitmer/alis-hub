@@ -238,6 +238,8 @@ router.post('/refresh', async (req, res) => {
           activeCommunityCount: company.activeCommunityCount,
           healthScore: score,
           healthBand: band?.label || null,
+          tier: company.tier,
+          lastActivityDate: company.lastActivityDate,
         });
       } catch (err) {
         errors.push({ company: company.name, error: err.message });

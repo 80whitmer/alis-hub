@@ -172,6 +172,8 @@ async function runTeamAmRefreshJob(jobId, companies) {
         activeCommunityCount: company.activeCommunityCount,
         healthScore: score,
         healthBand: band?.label || null,
+        tier: company.tier,
+        lastActivityDate: company.lastActivityDate,
       });
       setItemStatus(jobId, company.name, 'success');
       emit('item_done', { name: company.name });
