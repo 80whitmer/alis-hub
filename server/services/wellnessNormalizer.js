@@ -273,18 +273,100 @@ function normalizeEvaluationsOverdue(evaluations, allCommunityIds) {
   return groupByCommunityAndProductType(overdue, allCommunityIds);
 }
 
+// Real evaluation `reason` values vary by account/state for "this
+// resident's first assessment" (confirmed live across samples: some
+// accounts use "Move In", others "Pre-admission" or "Initial") — every
+// name observed so far for that same underlying concept is matched, as
+// opposed to the distinct periodic follow-up reasons ("30 day", "60 day",
+// "90 day", etc.) some accounts also use, which are a separate ongoing
+// compliance cadence, not the initial move-in assessment this row tracks.
+const MOVE_IN_EVAL_REASONS = new Set(['Move In', 'Pre-admission', 'Initial']);
+// 'no_eval' = never started; 'draft' = started but not finished/signed —
+// both read as "incomplete or pending" per Aaron (Sep 2026). 'completed'
+// and 'imported' (migrated from a prior system) don't count as pending.
+const PENDING_EVAL_STATUSES = new Set(['no_eval', 'draft']);
+// How many days after physicalMoveInDate a resident still counts as
+// "recently moved in" for this row — a reasonable default covering most
+// states' initial-assessment deadlines, easy to retune if Aaron wants a
+// different window.
+const MOVE_IN_ASSESSMENT_WINDOW_DAYS = 30;
+
 /**
- * A move-in evaluation still sitting at `status: 'no_eval'` for a resident
- * who isn't Moved Out means the initial assessment was never completed —
- * same isMostCurrent/status vocabulary as evaluationsOverdue above, just a
- * different `reason` filter and no isExpired check (a never-started
- * evaluation has no expiration to check).
+ * Residents who moved in within the trailing MOVE_IN_ASSESSMENT_WINDOW_DAYS
+ * days (per historicalMoveInMoveOuts' physicalMoveInDate — plain
+ * /v1/export/residents has no move-in date at all) whose most-current
+ * initial-assessment-type evaluation is either missing (`no_eval`) or
+ * still in progress (`draft`). Refined (Sep 2026, Aaron) from an earlier
+ * version that flagged ANY resident with a pending move-in eval regardless
+ * of how long ago they moved in — which could keep flagging a years-old
+ * stale record — and that only caught `no_eval`, missing an assessment
+ * that was started but never finished. A resident with no move-in-date
+ * record at all is excluded rather than guessed at, matching this file's
+ * "don't guess" convention.
  */
-function normalizeMoveInAssessmentsPending(evaluations, allCommunityIds) {
-  const pending = evaluations.filter(
-    (r) => (r.reason === 'Move In' || r.reason === 'Pre-admission') && r.isMostCurrent === true && r.status === 'no_eval' && r.residentStatus !== 'Moved Out'
-  );
+function normalizeMoveInAssessmentsPending(evaluations, moveInsById, allCommunityIds, weekEndingDate) {
+  const cutoff = new Date(weekEndingDate);
+  cutoff.setDate(cutoff.getDate() - MOVE_IN_ASSESSMENT_WINDOW_DAYS);
+
+  const pending = evaluations.filter((r) => {
+    if (!MOVE_IN_EVAL_REASONS.has(r.reason) || r.isMostCurrent !== true || r.residentStatus === 'Moved Out') return false;
+    if (!PENDING_EVAL_STATUSES.has(r.status)) return false;
+    const moveInDate = moveInsById.get(String(r.residentId));
+    if (!moveInDate) return false;
+    const d = new Date(moveInDate);
+    return !Number.isNaN(d.getTime()) && d >= cutoff && d <= weekEndingDate;
+  });
   return groupByCommunityAndProductType(pending, allCommunityIds);
+}
+
+// ── Evaluations needing attention ────────────────────────────────────────
+
+/**
+ * Every non-Independent-Living, currently-in-house resident whose most
+ * current evaluation (ALIS's own `isMostCurrent` flag — one per resident,
+ * not scoped to a single evaluation `reason`) is expired, still in
+ * progress, more than a year old, or simply doesn't exist. Same
+ * classification order as the QBR pipeline's "Levels of Care" section
+ * (kpiNormalizer.js's normalizeCareLevelEvaluations) — deliberately not
+ * reused directly, since that function also computes revenue-leakage
+ * figures this weekly row has no use for, and returns portfolio-only
+ * totals rather than the AL/MC/community bucket shape every other row
+ * here shares (via groupByCommunityAndProductType).
+ */
+function normalizeEvaluationsNeedingAttention(evaluations, residents, allCommunityIds, weekEndingDate) {
+  const activeResidents = residents.filter((r) => r.residentStatus !== 'Moved Out' && (r.productType || '').toUpperCase() !== 'IL');
+
+  const mostCurrentByResident = new Map();
+  for (const e of evaluations) {
+    if (e.isMostCurrent) mostCurrentByResident.set(String(e.residentId), e);
+  }
+
+  const cutoff = new Date(weekEndingDate);
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+
+  const flagged = [];
+  for (const resident of activeResidents) {
+    const evalRow = mostCurrentByResident.get(String(resident.residentId));
+    const base = { communityId: resident.communityId, residentProductType: resident.productType, residentId: resident.residentId };
+
+    if (!evalRow) {
+      flagged.push({ ...base, attentionReason: 'neverEvaluated' });
+      continue;
+    }
+    if (evalRow.isExpired) {
+      flagged.push({ ...base, attentionReason: 'expired' });
+      continue;
+    }
+    if (!evalRow.isCompleted) {
+      flagged.push({ ...base, attentionReason: 'incomplete' });
+      continue;
+    }
+    const evalDate = evalRow.evaluationDate ? new Date(evalRow.evaluationDate) : null;
+    if (!evalDate || Number.isNaN(evalDate.getTime()) || evalDate < cutoff) {
+      flagged.push({ ...base, attentionReason: 'overdue' });
+    }
+  }
+  return groupByCommunityAndProductType(flagged, allCommunityIds);
 }
 
 // ── Medication exceptions ────────────────────────────────────────────────
@@ -503,6 +585,7 @@ module.exports = {
   normalizeCurrentlyHospitalized,
   normalizeEvaluationsOverdue,
   normalizeMoveInAssessmentsPending,
+  normalizeEvaluationsNeedingAttention,
   normalizeMedicationExceptions,
   normalizeStaffTrainingGaps,
   normalizeCarePointsAverage,

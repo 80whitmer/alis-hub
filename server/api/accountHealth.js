@@ -87,6 +87,9 @@ function mapLiveServiceHealth(ticketSummary) {
       createdAt: t.createdAt, daysOpen: t.daysOpen,
       nextStep: t.nextStep, isTopThree: t.isTopThree,
     })),
+    // For the Cost to Serve by Tier chart's "open + closed this calendar
+    // year" ticket count — see hubspotTickets.js's closedThisYear.
+    closedTicketCountThisYear: ticketSummary.closedThisYear,
   };
 }
 

@@ -633,7 +633,7 @@ function CostToServeTooltip({ active, payload }) {
     <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
       <p className="font-semibold text-primary-900 mb-1">{d.name}</p>
       <p className="text-neutral-600">{d.accountCount} account{d.accountCount === 1 ? '' : 's'}</p>
-      <p className="text-neutral-600">{d.tickets} ticket(s) total (open + closed)</p>
+      <p className="text-neutral-600">{d.tickets} ticket(s) (open + closed this year)</p>
       <p className="text-neutral-600">{currencyStr(d.arrCents)} total ARR</p>
       <p className="text-neutral-700 font-medium mt-1">{d.ratio.toFixed(2)} tickets per $1,000 ARR</p>
     </div>
@@ -641,22 +641,30 @@ function CostToServeTooltip({ active, payload }) {
 }
 
 /**
- * "Cost to Serve" — total ticket volume (open + closed) per $1,000 of
- * ARR, aggregated by Client Tier. Portfolio-weighted (sum tickets ÷ sum
- * ARR per tier), not an average of each account's own ratio — same
- * reasoning as the Portfolio DSO figure elsewhere on this page, so one
- * near-zero-ARR account can't blow up its whole tier's number. Aaron
- * asked for this (Sep 2026) to quantify how much more support effort
- * lower-tier accounts cost per revenue dollar than Tier 1, to help
- * justify where AM time/focus should go. Tiers with $0 ARR are excluded
- * (undefined ratio) rather than shown as a misleading infinity/zero.
+ * "Cost to Serve" — current-load ticket volume (open + closed THIS
+ * CALENDAR YEAR) per $1,000 of ARR, aggregated by Client Tier.
+ * Portfolio-weighted (sum tickets ÷ sum ARR per tier), not an average of
+ * each account's own ratio — same reasoning as the Portfolio DSO figure
+ * elsewhere on this page, so one near-zero-ARR account can't blow up its
+ * whole tier's number. Aaron asked for this (Sep 2026) to quantify how
+ * much more support effort lower-tier accounts cost per revenue dollar
+ * than Tier 1, to help justify where AM time/focus should go. Tiers with
+ * $0 ARR are excluded (undefined ratio) rather than shown as a
+ * misleading infinity/zero.
+ *
+ * Deliberately excludes tickets closed in a prior calendar year (Aaron,
+ * Sep 2026) — this metric is meant to read as current support load, not
+ * a lifetime ticket count. Uses serviceHealth.closedTicketCountThisYear
+ * (computed server-side per account — see hubspotTickets.js's
+ * closedThisYear), not the plain closed_ticket_count column, which is
+ * all-time and still correct/used elsewhere on this page.
  */
 function CostToServeByTierChart({ accounts }) {
   const byTier = {};
   for (const a of accounts) {
     const key = (a.tier == null || a.tier === 0) ? 'unset' : a.tier;
     if (!byTier[key]) byTier[key] = { tier: key, tickets: 0, arrCents: 0, accountCount: 0 };
-    byTier[key].tickets += (a.open_ticket_count || 0) + (a.closed_ticket_count || 0);
+    byTier[key].tickets += (a.open_ticket_count || 0) + (a.serviceHealth?.closedTicketCountThisYear || 0);
     byTier[key].arrCents += (a.arr_cents || 0);
     byTier[key].accountCount += 1;
   }

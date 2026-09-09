@@ -1,12 +1,13 @@
 const {
   getCommunities, getIncidents, getEvaluations, getLeaves, getStaff, getResidents,
   getOrderAdministration, getStaffComplianceDetails, getObservations, getIncidentFormData, getIncidentsV2,
-  getOccupancy,
+  getOccupancy, getHistoricalMoveInMoveOuts,
 } = require('../services/alisApiClient');
 const {
   normalizeFallsThisWeek, normalizeElopementThisWeek, normalizeBehavioralThisWeek,
   normalizeOtherIncidentsThisWeek, normalizeChangeInConditionThisWeek,
   normalizeCurrentlyHospitalized, normalizeEvaluationsOverdue, normalizeMoveInAssessmentsPending,
+  normalizeEvaluationsNeedingAttention,
   normalizeMedicationExceptions, normalizeStaffTrainingGaps, normalizeCarePointsAverage,
   scopeIncidentsThisWeek, formDataIndicatesHospitalTransfer, normalizeFallsWithHospitalTransfer,
   normalizeSentinelIncidentsThisWeek, normalizeOccupancySnapshot,
@@ -53,7 +54,8 @@ const ROW_CALCULATORS = {
   changeInCondition: (data, weekStartDate, weekEndingDate, communityIds) => normalizeChangeInConditionThisWeek(data.observations, weekEndingDate, weekStartDate, communityIds),
   hospitalCurrent: (data, weekStartDate, weekEndingDate, communityIds) => normalizeCurrentlyHospitalized(data.leaves, communityIds),
   evaluationsOverdue: (data, weekStartDate, weekEndingDate, communityIds) => normalizeEvaluationsOverdue(data.evaluations, communityIds),
-  moveInAssessments: (data, weekStartDate, weekEndingDate, communityIds) => normalizeMoveInAssessmentsPending(data.evaluations, communityIds),
+  moveInAssessments: (data, weekStartDate, weekEndingDate, communityIds) => normalizeMoveInAssessmentsPending(data.evaluations, data.moveInsById, communityIds, weekEndingDate),
+  evaluationsNeedingAttention: (data, weekStartDate, weekEndingDate, communityIds) => normalizeEvaluationsNeedingAttention(data.evaluations, data.residents, communityIds, weekEndingDate),
   medicationExceptions: (data, weekStartDate, weekEndingDate, communityIds) => normalizeMedicationExceptions(data.orderAdministration, communityIds),
   staffTrainingGaps: (data, weekStartDate, weekEndingDate, communityIds) => normalizeStaffTrainingGaps(data.staffComplianceDetails, communityIds),
 };
@@ -218,11 +220,17 @@ async function runWellnessScorecardJob(jobId, payload) {
     // week window (confirmed live: returned newest-first), instead of
     // pulling an account's entire historical note log every week.
     { key: 'observations', fn: (host) => getObservations(host, { stopBeforeDate: weekStartDate }) },
+    // For "recently moved in" scoping on the Move-In Assessments row below
+    // — plain /v1/export/residents has no move-in date at all (confirmed
+    // live), only this history-of-moves endpoint does (physicalMoveInDate).
+    // Same account-wide, no-params, single-call shape as every other
+    // endpoint here, already proven cheap enough for the QBR pipeline.
+    { key: 'moveInMoveOuts', fn: (host) => getHistoricalMoveInMoveOuts(host) },
   ];
 
-  emit('progress', { message: `Pulling incidents, evaluations, leaves, staff, staff compliance, and observation data from ${hosts.length} host(s)…` });
+  emit('progress', { message: `Pulling incidents, evaluations, leaves, staff, staff compliance, move-in/out history, and observation data from ${hosts.length} host(s)…` });
 
-  const pulled = { incidents: [], evaluations: [], leaves: [], staff: [], residents: [], staffComplianceDetails: [], observations: [] };
+  const pulled = { incidents: [], evaluations: [], leaves: [], staff: [], residents: [], staffComplianceDetails: [], observations: [], moveInMoveOuts: [] };
   const endpointErrors = [];
   for (const host of hosts) {
     const settled = await Promise.allSettled(ACCOUNT_WIDE_ENDPOINTS.map((e) => e.fn(host)));
@@ -257,6 +265,19 @@ async function runWellnessScorecardJob(jobId, payload) {
   const residents = filterByCommunity(pulled.residents, communityKeys);
   const staffComplianceDetails = filterByCommunity(pulled.staffComplianceDetails, communityKeys);
   const observations = filterByCommunity(pulled.observations, communityKeys);
+  const moveInMoveOuts = filterByCommunity(pulled.moveInMoveOuts, communityKeys);
+
+  // Latest physicalMoveInDate per resident — a resident who's moved in,
+  // out, and back in has multiple historical rows; only their current
+  // stay's move-in date matters for "recently moved in."
+  const moveInsById = new Map();
+  for (const r of moveInMoveOuts) {
+    if (!r.physicalMoveInDate) continue;
+    const existing = moveInsById.get(String(r.residentId));
+    if (!existing || new Date(r.physicalMoveInDate) > new Date(existing)) {
+      moveInsById.set(String(r.residentId), r.physicalMoveInDate);
+    }
+  }
 
   // ── Per-community pull: orderAdministration (has a communityId query
   // param and a 1-month date-range cap — well within a 7-day window), plus
@@ -323,7 +344,7 @@ async function runWellnessScorecardJob(jobId, payload) {
     }
   }
 
-  const data = { incidents, evaluations, leaves, staff, residents, staffComplianceDetails, orderAdministration, observations, staffNameByIncidentId };
+  const data = { incidents, evaluations, leaves, staff, residents, staffComplianceDetails, orderAdministration, observations, staffNameByIncidentId, moveInsById };
 
   // ── Compute each automatable row, then per-community staffing activity
   // (not in ROW_CALCULATORS since normalizeStaffActivity's shape/inputs
@@ -393,6 +414,40 @@ async function runWellnessScorecardJob(jobId, payload) {
   }
   const staffingPortfolio = normalizeStaffActivity(staff, { recencyDays: 7, referenceDate: weekEnding, residentCensus: Object.values(censusByCommunity).reduce((a, b) => a + b, 0) });
 
+  // Two role-filtered cuts of the same "% active in the last 7 days"
+  // staffing indicator above (Aaron, Sep 2026), matched against `staff`'s
+  // `securityRoles` array — ALIS's own small, clean permission-role enum
+  // (confirmed live: "Caregiver", "Caregiver - plus eval", "Medication
+  // Tech", "Nurse", "Pharmacy Administrator", "Pharmacy Tech", etc.) —
+  // not `jobRole`, a much messier ~80-value free-text job-title field
+  // that isn't what "security role" refers to in ALIS. Matched by
+  // substring against the security-role name itself, same convention as
+  // matchIncidentType elsewhere in this file, so the match is visible and
+  // adjustable without guessing at a fixed enum ALIS could change.
+  //
+  // Nurse and Health & Wellness Director roles count toward BOTH cuts
+  // (Aaron, Sep 2026) — both routinely handle medications AND caregiving
+  // duties depending on the community, so neither is exclusively one or
+  // the other. "HWD" is matched as a whole word (not a substring) so it
+  // doesn't accidentally match inside some other role name.
+  const isNurseOrHwdRole = (sr) => /nurse/i.test(sr) || /\bhwd\b/i.test(sr) || /health\s*(and|&)?\s*wellness\s*director/i.test(sr);
+  const isMedicationSecurityRole = (r) => (r.securityRoles || []).some((sr) => /medication|pharmac/i.test(sr) || isNurseOrHwdRole(sr));
+  // "Caregiver inclusive" matches any role whose name contains
+  // "Caregiver" (currently "Caregiver" and "Caregiver - plus eval"), plus
+  // Nurse/HWD per the same reasoning as the medication cut above.
+  const isCaregiverSecurityRole = (r) => (r.securityRoles || []).some((sr) => /caregiver/i.test(sr) || isNurseOrHwdRole(sr));
+
+  function staffActivityByRole(matchesRole) {
+    const byCommunity = {};
+    for (const [cid, rowsForCommunity] of Object.entries(staffByCommunity)) {
+      byCommunity[cid] = normalizeStaffActivity(rowsForCommunity.filter(matchesRole), { recencyDays: 7, referenceDate: weekEnding, residentCensus: censusByCommunity[cid] });
+    }
+    const portfolio = normalizeStaffActivity(staff.filter(matchesRole), { recencyDays: 7, referenceDate: weekEnding, residentCensus: Object.values(censusByCommunity).reduce((a, b) => a + b, 0) });
+    return { portfolio, byCommunity };
+  }
+  const medicationStaffing = staffActivityByRole(isMedicationSecurityRole);
+  const caregiverStaffing = staffActivityByRole(isCaregiverSecurityRole);
+
   // Occupancy as of weekEnding — same point-in-time treatment as staffing
   // just above (no trend arrow in this first pass; see
   // normalizeOccupancySnapshot's doc comment).
@@ -414,6 +469,8 @@ async function runWellnessScorecardJob(jobId, payload) {
     rowsWithTrend.sentinelIncidents = withTrend(rows.sentinelIncidents, prior?.summary?.rows?.sentinelIncidents);
   }
   rowsWithTrend.staffing = { portfolio: staffingPortfolio, byCommunity: staffingByCommunity };
+  rowsWithTrend.medicationStaffing = medicationStaffing;
+  rowsWithTrend.caregiverStaffing = caregiverStaffing;
   rowsWithTrend.occupancy = occupancy;
 
   // CarePoints (acuity) — sourced from the `evaluations` pull already made

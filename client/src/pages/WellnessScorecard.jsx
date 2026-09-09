@@ -22,6 +22,19 @@ function BenchmarkBadge({ diff }) {
  * portfolio-only like BenchmarkBadge, since catching this up community by
  * community is the whole point.
  */
+/** Small hover-tooltip "i" icon for a row's `note` (WELLNESS_ROWS) — a native `title` attribute rather than a custom popover component, matching DocCompletionBadge's own tooltip approach just below. */
+function InfoNote({ note }) {
+  if (!note) return null;
+  return (
+    <span
+      className="inline-flex items-center justify-center w-3.5 h-3.5 ml-1.5 rounded-full bg-neutral-200 text-neutral-600 text-[10px] font-semibold cursor-help align-middle"
+      title={note}
+    >
+      i
+    </span>
+  );
+}
+
 function DocCompletionBadge({ openDocsTotal, openDocsReporters }) {
   if (!openDocsTotal) return null;
   const title = openDocsReporters?.length
@@ -78,6 +91,7 @@ function WellnessTable({ title, snapshot, communityId, description, hideUntracke
                   <td className="py-2 pr-4 text-neutral-500">{showCategory ? row.category : ''}</td>
                   <td className="py-2 pr-4 text-neutral-800">
                     {row.label}
+                    <InfoNote note={row.note} />
                     {!communityId && <BenchmarkBadge diff={diff} />}
                     {row.hasDocCompletion && <DocCompletionBadge openDocsTotal={v.openDocsTotal} openDocsReporters={v.openDocsReporters} />}
                   </td>

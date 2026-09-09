@@ -328,10 +328,21 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
     .filter(isEnhancementRequest)
     .map((t) => ({ ...t, isTopThree: isTopEnhancement(t) }));
 
+  // Closed-this-calendar-year count, for the Cost to Serve by Tier chart
+  // (Sep 2026, Aaron): that metric is meant to read as "current support
+  // load," so a ticket closed in a prior calendar year shouldn't still be
+  // inflating this year's ratio right alongside every currently-open
+  // ticket. `closed` above stays all-time (used elsewhere, e.g. the
+  // Accounts table's plain "Closed Tickets" column) — this is a separate,
+  // narrower count just for that one chart.
+  const currentYear = new Date().getFullYear();
+  const closedThisYear = tickets.filter((t) => !t.isOpen && t.closedAt && new Date(t.closedAt).getFullYear() === currentYear).length;
+
   return {
     total: tickets.length,
     open: openTickets.length,
     closed: tickets.length - openTickets.length,
+    closedThisYear,
     focusedOpenTickets,
     enhancementTickets: { top: topEnhancementOpenTickets, lesser: lesserEnhancementOpenTickets },
     enhancementRequests,

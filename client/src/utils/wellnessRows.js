@@ -15,7 +15,8 @@
 export const WELLNESS_ROWS = [
   { category: 'Assessment & Care Planning', label: 'Average CarePoints (acuity) per current evaluation', key: 'carePointsAvg', source: 'rows', isAcuityScore: true },
   { category: 'Assessment & Care Planning', label: 'Quarterly evaluations due / overdue', key: 'evaluationsOverdue', source: 'rows' },
-  { category: 'Assessment & Care Planning', label: 'Move-in assessments incomplete or pending', key: 'moveInAssessments', source: 'rows' },
+  { category: 'Assessment & Care Planning', label: 'Move-in assessments incomplete or pending', key: 'moveInAssessments', source: 'rows', note: 'Residents who moved in within the last 30 days whose initial assessment is either missing or still in progress (not yet completed/signed). Excludes residents who moved in longer ago, and excludes stays with no move-in date on record.' },
+  { category: 'Assessment & Care Planning', label: 'Residents with evaluations needing attention', key: 'evaluationsNeedingAttention', source: 'rows', note: 'Non-Independent-Living residents whose current evaluation is expired, still in progress, more than a year old, or doesn’t exist at all — same "needs attention" definition as the QBR Levels of Care section.' },
   { category: 'Assessment & Care Planning', label: 'Care plan / service plan changes needed', key: 'carePlanChanges', source: 'manual' },
   { category: 'Assessment & Care Planning', label: 'RN delegation expired, due, or needed', key: 'rnDelegation', source: 'manual' },
 
@@ -44,7 +45,9 @@ export const WELLNESS_ROWS = [
   { category: 'Family / Resident Experience', label: 'Open family complaints or unresolved concerns', key: 'familyComplaints', source: 'manual' },
 
   { category: 'Staffing & Training', label: 'Staffing indicators affecting resident care', key: 'staffing', source: 'rows', noTrend: true },
-  { category: 'Staffing & Training', label: 'Required clinical training / competency gaps', key: 'staffTrainingGaps', source: 'rows', staffScoped: true },
+  { category: 'Staffing & Training', label: 'Medication security roles active', key: 'medicationStaffing', source: 'rows', noTrend: true, note: 'Staff with a "Medication"- or "Pharmacy"-named ALIS security role (e.g. Medication Tech, Pharmacy Administrator, Pharmacy Tech), plus Nurse and Health & Wellness Director roles, who logged into ALIS in the last 7 days — as a % of all enabled staff holding one of those roles.' },
+  { category: 'Staffing & Training', label: 'Caregiver security roles active', key: 'caregiverStaffing', source: 'rows', noTrend: true, note: 'Staff with a "Caregiver"-named ALIS security role (e.g. Caregiver, Caregiver - plus eval), plus Nurse and Health & Wellness Director roles, who logged into ALIS in the last 7 days — as a % of all enabled staff holding one of those roles.' },
+  { category: 'Staffing & Training', label: 'Required clinical training / competency gaps', key: 'staffTrainingGaps', source: 'rows', staffScoped: true, note: 'Incomplete or expired required staff compliance items (trainings, certifications, etc.) from ALIS’s staff compliance module. Counts each outstanding item, not each staff member — one person with 3 overdue items counts as 3. Reflects the current state of all records, not just new gaps from this week.' },
 
   { category: 'Systems & Documentation', label: 'Care tracking / charting incomplete or overdue', key: 'careTracking', source: 'manual' },
   { category: 'Systems & Documentation', label: 'Pull-cord response exceptions / delayed responses', key: 'pullCord', source: 'manual' },

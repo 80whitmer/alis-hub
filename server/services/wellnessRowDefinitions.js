@@ -10,6 +10,7 @@
 const WELLNESS_ROWS = [
   { category: 'Assessment & Care Planning', label: 'Quarterly evaluations due / overdue', key: 'evaluationsOverdue', source: 'rows' },
   { category: 'Assessment & Care Planning', label: 'Move-in assessments incomplete or pending', key: 'moveInAssessments', source: 'rows' },
+  { category: 'Assessment & Care Planning', label: 'Residents with evaluations needing attention', key: 'evaluationsNeedingAttention', source: 'rows' },
   { category: 'Assessment & Care Planning', label: 'Care plan / service plan changes needed', key: 'carePlanChanges', source: 'manual' },
   { category: 'Assessment & Care Planning', label: 'RN delegation expired, due, or needed', key: 'rnDelegation', source: 'manual' },
 
@@ -37,6 +38,8 @@ const WELLNESS_ROWS = [
   { category: 'Family / Resident Experience', label: 'Open family complaints or unresolved concerns', key: 'familyComplaints', source: 'manual' },
 
   { category: 'Staffing & Training', label: 'Staffing indicators affecting resident care', key: 'staffing', source: 'rows', noTrend: true },
+  { category: 'Staffing & Training', label: 'Medication security roles active', key: 'medicationStaffing', source: 'rows', noTrend: true },
+  { category: 'Staffing & Training', label: 'Caregiver security roles active', key: 'caregiverStaffing', source: 'rows', noTrend: true },
   { category: 'Staffing & Training', label: 'Required clinical training / competency gaps', key: 'staffTrainingGaps', source: 'rows', staffScoped: true },
 
   { category: 'Systems & Documentation', label: 'Care tracking / charting incomplete or overdue', key: 'careTracking', source: 'manual' },
