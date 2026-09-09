@@ -36,6 +36,12 @@ const TICKET_PROPERTIES = [
   'hs_lastmodifieddate',
   'closed_date',
   'top_3',
+  // Free-text "Next Step" — confirmed live (Sep 2026) via the tickets
+  // properties endpoint: internal name `next_step` (textarea, group
+  // "ticketinformation"). A real per-ticket property, unlike deals' own
+  // `hs_next_step` (a different property on a different object type) —
+  // just never pulled here before now.
+  'next_step',
 ];
 
 // The literal HubSpot pipeline-stage label a ticket must resolve to for it
@@ -241,6 +247,7 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
       // own ranking of their top enhancement asks, independent of pipeline
       // stage (see topThreeEnhancements below for why both are tracked).
       topThreeRank: t.properties.top_3 || null,
+      nextStep: t.properties.next_step || null,
       // Needs nothing but HUBSPOT_PORTAL_ID (no extra API call) — same
       // ticketUrl() used by enrichRepeatIssueFlags/enrichOpenTickets below,
       // now attached to every live-pulled ticket so the Support Review /
@@ -308,12 +315,26 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
     !FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel) && !isTopEnhancement(t) && !isLesserEnhancement(t)
   ));
 
+  // Broader "Enhancement Requests" bucket for the portfolio-wide Enhancement
+  // Requests dashboard section (Sep 2026, Aaron): every OPEN ticket whose
+  // category_2_0 is the portal's own "Enhancement" option (confirmed live
+  // via the tickets properties endpoint — value and label are both literally
+  // "Enhancement") OR whose subject mentions "enhancement" — independent of
+  // the Top 3 tag/stage machinery above. A ticket can be a plain
+  // Enhancement-categorized request without ever being ranked/staged Top 3,
+  // and vice versa, so `isTopThree` is carried per-item rather than assumed.
+  const isEnhancementRequest = (t) => t.category === 'Enhancement' || /enhancement/i.test(t.subject || '');
+  const enhancementRequests = openTickets
+    .filter(isEnhancementRequest)
+    .map((t) => ({ ...t, isTopThree: isTopEnhancement(t) }));
+
   return {
     total: tickets.length,
     open: openTickets.length,
     closed: tickets.length - openTickets.length,
     focusedOpenTickets,
     enhancementTickets: { top: topEnhancementOpenTickets, lesser: lesserEnhancementOpenTickets },
+    enhancementRequests,
     otherOpenTickets,
     byCategory,
     agingOpenTickets,
@@ -363,6 +384,14 @@ const DEAL_PROPERTIES = [
   // meaning), so no separate due-date property is needed for that.
   'hs_next_step',
   'notes_next_activity_date',
+  // The deal's own Deal Owner — deliberately separate from the
+  // account_manager property read on the company. A deal can be (and
+  // often is) closed by a different person than whoever currently owns
+  // the account it rolls up to (Aaron, Sep 2026: "deals they closed
+  // personally instead of deals that may have been added to portfolio
+  // but were not added by them personally"). Resolved to a name the same
+  // way account_manager is, via getAccountManagerName.
+  'hubspot_owner_id',
 ];
 
 /** Deal IDs associated with a company, via the v4 associations API — same cursor pagination as getTicketIdsForCompany above, for the same reason. */
@@ -470,6 +499,7 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
       isWon: p.hs_is_closed_won === 'true',
       nextStep: p.hs_next_step || null,
       nextActivityDate: p.notes_next_activity_date || null,
+      dealOwnerId: p.hubspot_owner_id || null,
       url: hubspotRecordUrl('deal', d.id),
     };
   });

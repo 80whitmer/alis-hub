@@ -5,9 +5,11 @@ import {
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
+import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
+import { exportUnassignedTierAccounts } from '../utils/unassignedTierExport';
 
 function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -59,17 +61,25 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-function SectionCard({ title, children, description, action }) {
+function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = true }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const open = !collapsible || expanded;
   return (
     <div className="card mb-8">
       <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-primary-900">{title}</h2>
+        <div
+          className={collapsible ? 'cursor-pointer select-none' : ''}
+          onClick={collapsible ? () => setExpanded((v) => !v) : undefined}
+        >
+          <h2 className="text-lg font-semibold text-primary-900 flex items-center gap-2">
+            {collapsible && <span className="text-xs text-neutral-400">{open ? '▼' : '▶'}</span>}
+            {title}
+          </h2>
           {description && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
-      {children}
+      {open && children}
     </div>
   );
 }
@@ -334,8 +344,13 @@ const METRICS = [
   { key: 'closedTickets', label: 'Closed Tickets', format: (v) => v },
   { key: 'dealsThisYearOpen', label: `${new Date().getFullYear()} Open Deals`, format: (v) => v },
   { key: 'dealsThisYearClosed', label: `${new Date().getFullYear()} Closed Deals`, format: (v) => v },
-  { key: 'arrCents', label: 'Total ARR', format: currencyStr },
+  // Same underlying arrAddedThisYearCents field as the ARR Added stat card
+  // and the "ARR by Tier" chart's metric of the same name — closed-WON
+  // deals' ARR value only (Aaron confirmed, Sep 2026: not closed-lost).
+  // Kept right next to the "Closed Deals" count above since that's the
+  // metric it's the dollar-value companion to.
   { key: 'arrAddedThisYearCents', label: `ARR Added (${new Date().getFullYear()})`, format: currencyStr },
+  { key: 'arrCents', label: 'Total ARR', format: currencyStr },
   { key: 'totalCapacity', label: 'Total Capacity', format: (v) => v },
   { key: 'currentCensus', label: 'Current Census', format: (v) => v },
 ];
@@ -468,6 +483,70 @@ function TicketsByTierChart({ accounts }) {
         </Bar>
         <Bar dataKey="closed" name="Closed" fill="#2563eb" radius={[4, 4, 0, 0]}>
           <LabelList dataKey="closed" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1e293b' }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+const TIER_COST_COLOR = { 'Tier 1': '#16a34a', 'Tier 2': '#2563eb', 'Tier 3': '#ea580c', 'Tier 4': '#dc2626', Unassigned: '#737373' };
+
+function CostToServeTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+      <p className="font-semibold text-primary-900 mb-1">{d.name}</p>
+      <p className="text-neutral-600">{d.accountCount} account{d.accountCount === 1 ? '' : 's'}</p>
+      <p className="text-neutral-600">{d.tickets} ticket(s) total (open + closed)</p>
+      <p className="text-neutral-600">{currencyStr(d.arrCents)} total ARR</p>
+      <p className="text-neutral-700 font-medium mt-1">{d.ratio.toFixed(2)} tickets per $1,000 ARR</p>
+    </div>
+  );
+}
+
+/**
+ * "Cost to Serve" — total ticket volume (open + closed) per $1,000 of
+ * ARR, aggregated by Client Tier, portfolio-wide. Portfolio-weighted
+ * (sum tickets ÷ sum ARR per tier), not an average of each account's own
+ * ratio, so one near-zero-ARR account can't blow up its whole tier's
+ * number. Aaron asked for this (Sep 2026) to quantify how much more
+ * support effort lower-tier accounts cost per revenue dollar than Tier
+ * 1, across the whole team, to help justify where AM time/focus should
+ * go. Tiers with $0 ARR are excluded (undefined ratio) rather than shown
+ * as a misleading infinity/zero.
+ */
+function CostToServeByTierChart({ accounts }) {
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    if (!byTier[key]) byTier[key] = { name: key, tickets: 0, arrCents: 0, accountCount: 0 };
+    byTier[key].tickets += (a.open_ticket_count || 0) + (a.closed_ticket_count || 0);
+    byTier[key].arrCents += (a.arr_cents || 0);
+    byTier[key].accountCount += 1;
+  }
+  const data = Object.values(byTier)
+    .filter((d) => d.arrCents > 0)
+    .sort(tierSort)
+    .map((d) => ({ ...d, ratio: (d.tickets * 100000) / d.arrCents }));
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No ARR/ticket data yet — click Refresh to pull it.</p>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={360}>
+      <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+        <YAxis
+          tick={{ fontSize: 12 }}
+          label={{ value: 'Tickets per $1,000 ARR', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#737373' } }}
+        />
+        <Tooltip content={<CostToServeTooltip />} />
+        <Bar dataKey="ratio" radius={[4, 4, 0, 0]}>
+          {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
+          <LabelList dataKey="ratio" position="top" formatter={(v) => v.toFixed(2)} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -694,6 +773,75 @@ function AtRiskDrawer({ accounts, onClose }) {
   );
 }
 
+/** Same unset handling as tierLabel's "Unassigned" bucket — no client_tier property set (or the literal 0) in HubSpot. */
+function isUnassignedTier(account) {
+  return account.tier == null || account.tier === 0;
+}
+
+/**
+ * Scrollable drawer of every account with no Client Tier set — the
+ * "Unassigned" bucket on the Ticket Volume by Account Manager by Tier
+ * chart (Aaron, Sep 2026) — so these can be worked through and tiered in
+ * HubSpot rather than staying an opaque bar segment. Sorted by Account
+ * Manager then company name so accounts needing the same person's
+ * attention group together.
+ */
+function UnassignedTierDrawer({ accounts, onClose }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const sorted = useMemo(
+    () => [...accounts].sort((a, b) =>
+      (a.account_manager_name || '').localeCompare(b.account_manager_name || '') || a.company_name.localeCompare(b.company_name)),
+    [accounts]
+  );
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportUnassignedTierAccounts(accounts);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Drawer
+      title="Unassigned Tier Companies"
+      subtitle={`${accounts.length} account${accounts.length === 1 ? '' : 's'} with no Client Tier set in HubSpot`}
+      onClose={onClose}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={handleExport} disabled={exporting} className="btn btn-secondary btn-sm">
+            {exporting ? 'Exporting…' : '⬇ Export to Excel'}
+          </button>
+          {exportError && <p className="text-xs text-error">{exportError}</p>}
+        </div>
+      }
+    >
+      {sorted.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">Every account has a Client Tier set — nothing to clean up.</p>
+      ) : (
+        <div className="space-y-3">
+          {sorted.map((a) => (
+            <div key={a.hubspot_company_id} className="border border-neutral-200 rounded-lg p-3">
+              <div className="flex items-center justify-between gap-3">
+                <CompanyLink account={a} className="font-medium text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                <span className="text-xs text-neutral-400 shrink-0">{currencyStr(a.arr_cents)} ARR</span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-0.5">
+                {a.account_manager_name} · {a.open_ticket_count || 0} open / {a.closed_ticket_count || 0} closed ticket(s)
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
 /** True for an account with no real Account Manager name attached — either no account_manager property at all ("Unassigned") or a real owner ID this app doesn't have a name mapped for ("Other AM (id)", see ACCOUNT_MANAGER_NAMES in hubspotAccounts.js). */
 function isUnmappedAm(account) {
   return account.account_manager_name === 'Unassigned' || account.account_manager_name?.startsWith('Other AM');
@@ -784,6 +932,7 @@ function UnmappedAmSection({ accounts }) {
     <SectionCard
       title="Needs an Account Manager"
       description={`${unmappedAccounts.length} accounts with no real AM name — ${unassignedCount} Unassigned, ${otherAmCount} with an unmapped ID`}
+      defaultExpanded={false}
       action={
         <button
           onClick={handleExport}
@@ -872,6 +1021,7 @@ export default function TeamAmDashboard() {
   const [tierChartType, setTierChartType] = useState('bar');
   const [companiesByTierChartType, setCompaniesByTierChartType] = useState('bar');
   const [atRiskOpen, setAtRiskOpen] = useState(false);
+  const [unassignedTierOpen, setUnassignedTierOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -932,6 +1082,7 @@ export default function TeamAmDashboard() {
   }, [accounts]);
 
   const atRiskAccounts = useMemo(() => accounts.filter(isAtRisk), [accounts]);
+  const unassignedTierAccounts = useMemo(() => accounts.filter(isUnassignedTier), [accounts]);
 
   return (
     <div>
@@ -975,7 +1126,7 @@ export default function TeamAmDashboard() {
             <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
           </div>
 
-          <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team">
+          <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team" defaultExpanded={false}>
             <KpiByAmChart
               rollupByAccountManager={rollupByAccountManager}
               metricKey={metricKey}
@@ -984,43 +1135,6 @@ export default function TeamAmDashboard() {
               setChartType={setChartType}
             />
           </SectionCard>
-
-          <SectionCard
-            title="Health Score Distribution"
-            description="How many accounts fall into each health band, portfolio-wide"
-            action={
-              <button onClick={() => setAtRiskOpen(true)} className="btn btn-secondary btn-sm">
-                View At-Risk Accounts ({atRiskAccounts.length})
-              </button>
-            }
-          >
-            <HealthScoreDistributionChart accounts={accounts} />
-          </SectionCard>
-          {atRiskOpen && <AtRiskDrawer accounts={atRiskAccounts} onClose={() => setAtRiskOpen(false)} />}
-
-          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide">
-            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
-          </SectionCard>
-
-          <SectionCard title="Tickets by Tier" description="Open vs. closed ticket volume grouped by Client Tier, portfolio-wide">
-            <TicketsByTierChart accounts={accounts} />
-          </SectionCard>
-
-          <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier">
-            <TierByArrChart
-              accounts={accounts}
-              metricKey={tierMetricKey}
-              setMetricKey={setTierMetricKey}
-              chartType={tierChartType}
-              setChartType={setTierChartType}
-            />
-          </SectionCard>
-
-          <SectionCard title="Ticket Volume by Account Manager by Tier" description="Open + closed tickets per AM, segmented by Client Tier">
-            <TicketsByAmByTierChart accounts={accounts} />
-          </SectionCard>
-
-          <UnmappedAmSection accounts={accounts} />
 
           <SectionCard
             title="Accounts"
@@ -1079,6 +1193,62 @@ export default function TeamAmDashboard() {
               {filtered.length === 0 && <p className="text-sm text-neutral-500 italic py-4">No accounts match "{search}".</p>}
             </div>
           </SectionCard>
+
+          <SectionCard
+            title="Health Score Distribution"
+            description="How many accounts fall into each health band, portfolio-wide"
+            defaultExpanded={false}
+            action={
+              <button onClick={() => setAtRiskOpen(true)} className="btn btn-secondary btn-sm">
+                View At-Risk Accounts ({atRiskAccounts.length})
+              </button>
+            }
+          >
+            <HealthScoreDistributionChart accounts={accounts} />
+          </SectionCard>
+          {atRiskOpen && <AtRiskDrawer accounts={atRiskAccounts} onClose={() => setAtRiskOpen(false)} />}
+
+          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
+            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
+          </SectionCard>
+
+          <SectionCard title="Tickets by Tier" description="Open vs. closed ticket volume grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
+            <TicketsByTierChart accounts={accounts} />
+          </SectionCard>
+
+          <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests tile above">
+            <EnhancementRequestsSection accounts={accounts} includeAccountManager />
+          </SectionCard>
+
+          <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>
+            <CostToServeByTierChart accounts={accounts} />
+          </SectionCard>
+
+          <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
+            <TierByArrChart
+              accounts={accounts}
+              metricKey={tierMetricKey}
+              setMetricKey={setTierMetricKey}
+              chartType={tierChartType}
+              setChartType={setTierChartType}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="Ticket Volume by Account Manager by Tier"
+            description="Open + closed tickets per AM, segmented by Client Tier"
+            defaultExpanded={false}
+            action={
+              <button onClick={() => setUnassignedTierOpen(true)} className="btn btn-secondary btn-sm">
+                View Unassigned Tier Companies ({unassignedTierAccounts.length})
+              </button>
+            }
+          >
+            <TicketsByAmByTierChart accounts={accounts} />
+          </SectionCard>
+          {unassignedTierOpen && <UnassignedTierDrawer accounts={unassignedTierAccounts} onClose={() => setUnassignedTierOpen(false)} />}
+
+          <UnmappedAmSection accounts={accounts} />
         </>
       )}
       <BackToTopButton />

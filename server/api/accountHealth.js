@@ -8,6 +8,7 @@ const { computeHealthScore, computeDsoDays } = require('../services/accountHealt
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError, createJob, setJobStatus, setItemStatus,
+  listRecurringCalls, upsertRecurringCall, deleteRecurringCall,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -77,6 +78,15 @@ function mapLiveServiceHealth(ticketSummary) {
     })),
     enhancementLesserCount: ticketSummary.enhancementTickets.lesser.length,
     otherOpenCount: ticketSummary.otherOpenTickets.length,
+    // Flat per-account list for the portfolio-wide Enhancement Requests
+    // section (EnhancementRequestsSection.jsx, shared with teamAm.js) —
+    // broader than enhancementTopItems above (see hubspotTickets.js's
+    // isEnhancementRequest), open tickets only.
+    enhancementRequests: ticketSummary.enhancementRequests.map((t) => ({
+      ticketId: t.id, subject: t.subject, url: t.url,
+      createdAt: t.createdAt, daysOpen: t.daysOpen,
+      nextStep: t.nextStep, isTopThree: t.isTopThree,
+    })),
   };
 }
 
@@ -369,10 +379,15 @@ router.post('/import-aging-report', async (req, res) => {
 function getEnrichedAccounts() {
   const accounts = listAccountHealthSnapshots();
   const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
+  // Manually-entered, never touched by a HubSpot refresh — see the
+  // recurring_calls CREATE TABLE comment (database.js) for why this is
+  // hand-maintained rather than calendar-synced.
+  const recurringCallByCompanyId = new Map(listRecurringCalls().map((r) => [r.hubspot_company_id, r]));
   return accounts.map((a) => {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
     });
+    const recurringCall = recurringCallByCompanyId.get(a.hubspot_company_id);
     return {
       ...a,
       health_score: score,
@@ -381,6 +396,13 @@ function getEnrichedAccounts() {
       dsoDays: computeDsoDays(a.aging, a.arr_cents),
       hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
       priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
+      recurringCall: recurringCall ? {
+        cadence: recurringCall.cadence,
+        nextCallDate: recurringCall.next_call_date,
+        calendarLink: recurringCall.calendar_link,
+        notes: recurringCall.notes,
+        updatedAt: recurringCall.updated_at,
+      } : null,
     };
   });
 }
@@ -574,6 +596,42 @@ router.post('/:hubspotCompanyId/refresh-occupancy', async (req, res) => {
   } catch (err) {
     setAccountHealthOccupancyError(req.params.hubspotCompanyId, err.message);
     console.error(`[accountHealth] Single-account occupancy refresh failed for ${req.params.hubspotCompanyId}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/account-health/:hubspotCompanyId/recurring-call — Aaron asked
+// (Sep 2026) for a way to track recurring client call cadence
+// (weekly/bi-weekly/monthly) on the dashboard. No calendar API
+// integration exists in this app (see the recurring_calls CREATE TABLE
+// comment in database.js), so this is hand-entered from the drawer
+// rather than synced — cadence, next call date, and an optional pasted
+// link to the actual recurring calendar event/series (works with any
+// calendar provider, since it's just a stored URL, not a live API call).
+router.put('/:hubspotCompanyId/recurring-call', (req, res) => {
+  try {
+    const { hubspotCompanyId } = req.params;
+    const account = listAccountHealthSnapshots().find((a) => a.hubspot_company_id === hubspotCompanyId);
+    if (!account) return res.status(404).json({ error: 'No cached account health data for this company — try Refresh first.' });
+
+    const { cadence, nextCallDate, calendarLink, notes } = req.body;
+    upsertRecurringCall({ hubspotCompanyId, cadence, nextCallDate, calendarLink, notes });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[accountHealth] Recurring-call save failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/account-health/:hubspotCompanyId/recurring-call — clears
+// the row entirely (vs. saving with blank fields) so the account drops
+// out of the Recurring Calls table.
+router.delete('/:hubspotCompanyId/recurring-call', (req, res) => {
+  try {
+    deleteRecurringCall(req.params.hubspotCompanyId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[accountHealth] Recurring-call delete failed:', err);
     res.status(500).json({ error: err.message });
   }
 });

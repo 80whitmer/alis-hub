@@ -389,6 +389,29 @@ async function initDb() {
     // Column already exists — fine.
   }
 
+  // Manually-maintained recurring-call cadence per account (Aaron, Sep
+  // 2026) — this app has no calendar API integration (no OAuth flow for
+  // any provider exists anywhere in the codebase; HubSpot's own
+  // private-app token is a static-token pattern, not something a
+  // calendar OAuth flow could be modeled on), so this is hand-entered
+  // rather than synced. A separate table, not columns on
+  // account_health_snapshots, for the same reason aging_json/occupancy_*
+  // are already independent of the refresh cycle there: this data has
+  // its own update cadence (whenever Aaron edits it), completely
+  // decoupled from HubSpot refreshes, and must never be touched by
+  // pruneAccountHealthSnapshots. Account Health Dashboard only, per
+  // Aaron's own scoping — not mirrored into team_am_snapshots.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS recurring_calls (
+      hubspot_company_id TEXT PRIMARY KEY,
+      cadence             TEXT,
+      next_call_date      TEXT,
+      calendar_link       TEXT,
+      notes               TEXT,
+      updated_at          TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   // A deliberately SEPARATE table from account_health_snapshots above, not
   // an added column — Aaron's call (Sep 2026): the personal Account Health
   // Dashboard's refresh already does a destructive prune
@@ -955,6 +978,32 @@ function updateAccountHealthOccupancy(hubspotCompanyId, occupancy) {
   );
 }
 
+/** Every manually-entered recurring-call row — see the recurring_calls CREATE TABLE comment above for why this is hand-entered rather than calendar-synced. */
+function listRecurringCalls() {
+  return queryAll('SELECT * FROM recurring_calls');
+}
+
+/** Upserts one account's recurring-call cadence/next-date/calendar-link/notes — all four fields optional, null clears a field rather than leaving the old value. */
+function upsertRecurringCall({ hubspotCompanyId, cadence, nextCallDate, calendarLink, notes }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO recurring_calls (hubspot_company_id, cadence, next_call_date, calendar_link, notes, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET
+       cadence = excluded.cadence,
+       next_call_date = excluded.next_call_date,
+       calendar_link = excluded.calendar_link,
+       notes = excluded.notes,
+       updated_at = excluded.updated_at`,
+    [hubspotCompanyId, cadence || null, nextCallDate || null, calendarLink || null, notes || null, now]
+  );
+}
+
+/** Clears a recurring-call row entirely (vs. upserting with all-null fields) — used by the "Clear" action so the account drops out of the Recurring Calls table instead of lingering as an all-empty row. */
+function deleteRecurringCall(hubspotCompanyId) {
+  run('DELETE FROM recurring_calls WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+}
+
 /**
  * Records why the last occupancy pull failed for one account — Aaron
  * asked (Sep 2026) after a real 94-account run came back "2 failed"
@@ -1145,6 +1194,7 @@ module.exports = {
   addAuditHistorySnapshot, getAuditHistorySnapshot,
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError,
+  listRecurringCalls, upsertRecurringCall, deleteRecurringCall,
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging, getTeamAmSnapshot,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };

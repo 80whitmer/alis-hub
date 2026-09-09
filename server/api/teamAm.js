@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 
-const { getAllHomeOfficeCompanies } = require('../services/hubspotAccounts');
+const { getAllHomeOfficeCompanies, getAccountManagerName } = require('../services/hubspotAccounts');
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
 const { computeHealthScore, computeDsoDays, explainRisk } = require('../services/accountHealthScoring');
 const {
@@ -62,6 +62,15 @@ function mapLiveServiceHealth(ticketSummary) {
     })),
     enhancementLesserCount: ticketSummary.enhancementTickets.lesser.length,
     otherOpenCount: ticketSummary.otherOpenTickets.length,
+    // Flat per-account list for the portfolio-wide Enhancement Requests
+    // section (EnhancementRequestsSection.jsx, shared with accountHealth.js)
+    // — broader than enhancementTopItems above (see hubspotTickets.js's
+    // isEnhancementRequest), open tickets only.
+    enhancementRequests: ticketSummary.enhancementRequests.map((t) => ({
+      ticketId: t.id, subject: t.subject, url: t.url,
+      createdAt: t.createdAt, daysOpen: t.daysOpen,
+      nextStep: t.nextStep, isTopThree: t.isTopThree,
+    })),
   };
 }
 
@@ -74,7 +83,7 @@ async function mapLiveFinancialHealth(dealSummary) {
   const currentYear = new Date().getFullYear();
   const arrAddedThisYearDeals = dealSummary.deals
     .filter((d) => d.isWon && d.closeDate && new Date(d.closeDate).getFullYear() === currentYear)
-    .map((d) => ({ ...d, arrValueCents: Math.round((d.arrValue || 0) * 100) }));
+    .map((d) => ({ ...d, arrValueCents: Math.round((d.arrValue || 0) * 100), dealOwnerName: getAccountManagerName(d.dealOwnerId) }));
   const dealsWithTasks = await Promise.all(dealsForView.map(async (d) => ({
     ...d,
     tasks: await getOpenTasksForDeal(d.id),
@@ -102,14 +111,22 @@ async function mapLiveFinancialHealth(dealSummary) {
     arrAddedThisYearCents: arrAddedThisYearDeals.reduce((sum, d) => sum + d.arrValueCents, 0),
     arrAddedThisYearDeals: arrAddedThisYearDeals.map((d) => ({
       name: d.name, arrValueCents: d.arrValueCents, closeDate: d.closeDate,
-      pipeline: d.pipeline, stage: d.stage, url: d.url,
+      pipeline: d.pipeline, stage: d.stage, url: d.url, dealOwnerName: d.dealOwnerName,
     })),
-    // 2026-specific open/closed deal counts for the "2026 deals" KPI Aaron
-    // asked for on this dashboard specifically (not part of
-    // accountHealth.js's shape) — closeDate falling in the current
-    // calendar year, split by isOpen.
-    dealsThisYearOpenCount: dealsForView.filter((d) => d.isOpen && d.closeDate && new Date(d.closeDate).getFullYear() === currentYear).length,
-    dealsThisYearClosedCount: dealsForView.filter((d) => !d.isOpen && d.closeDate && new Date(d.closeDate).getFullYear() === currentYear).length,
+    // "2026 deals" KPI (Aaron) — every deal (won or lost) with a
+    // closedate in the current calendar year, tagged with its own Deal
+    // Owner and open/closed status so computeRollupByAccountManager can
+    // attribute it to whoever actually closed/is working the deal, not
+    // to whoever currently owns the account (Aaron, Sep 2026: "deals
+    // they closed personally instead of deals that may have been added
+    // to portfolio but were not added by them personally"). Sourced from
+    // dealSummary.deals — the account's full deal history, already
+    // fetched, no extra HubSpot calls — rather than the 90-day-bounded
+    // dealsForView/closedDeals set, so a deal closed back in February
+    // isn't silently missed by September.
+    dealsThisYear: dealSummary.deals
+      .filter((d) => d.closeDate && new Date(d.closeDate).getFullYear() === currentYear)
+      .map((d) => ({ isOpen: !d.isClosed, dealOwnerName: getAccountManagerName(d.dealOwnerId) })),
   };
 }
 
@@ -351,6 +368,39 @@ function getEnrichedTeamAmAccounts() {
 }
 
 /** One rollup bucket per Account Manager — reuses the exact same summable-fields shape accountHealth.js's computePortfolioRollup already established, just grouped first. */
+/**
+ * Deal-level metrics (2026 Open/Closed Deals, ARR Added) are attributed
+ * to the deal's own HubSpot Deal Owner, not to whoever currently owns
+ * the account — a deal an AM personally closed should count for them
+ * even if the account was later reassigned to someone else, and an
+ * account's current AM shouldn't get credit for a deal they didn't
+ * touch (Aaron, Sep 2026). Built as one flat pass over every account's
+ * raw per-deal data (financialHealth.dealsThisYear / .arrAddedThisYearDeals,
+ * both tagged with dealOwnerName in mapLiveFinancialHealth above) rather
+ * than the byAm account grouping below, since a deal's owner and its
+ * account's owner are independent properties.
+ */
+function computeDealMetricsByOwner(accounts) {
+  const byOwner = new Map();
+  function bucket(ownerName) {
+    const key = ownerName || 'Unassigned';
+    if (!byOwner.has(key)) byOwner.set(key, { dealsThisYearOpen: 0, dealsThisYearClosed: 0, arrAddedThisYearCents: 0 });
+    return byOwner.get(key);
+  }
+  for (const a of accounts) {
+    const fin = a.financialHealth;
+    for (const d of fin?.dealsThisYear || []) {
+      const b = bucket(d.dealOwnerName);
+      if (d.isOpen) b.dealsThisYearOpen += 1;
+      else b.dealsThisYearClosed += 1;
+    }
+    for (const d of fin?.arrAddedThisYearDeals || []) {
+      bucket(d.dealOwnerName).arrAddedThisYearCents += d.arrValueCents;
+    }
+  }
+  return byOwner;
+}
+
 function computeRollupByAccountManager(accounts) {
   const byAm = new Map();
   for (const a of accounts) {
@@ -358,24 +408,54 @@ function computeRollupByAccountManager(accounts) {
     if (!byAm.has(key)) byAm.set(key, []);
     byAm.get(key).push(a);
   }
-  return Array.from(byAm.entries()).map(([accountManagerName, amAccounts]) => {
+
+  const dealMetricsByOwner = computeDealMetricsByOwner(accounts);
+
+  const rows = Array.from(byAm.entries()).map(([accountManagerName, amAccounts]) => {
     const scored = amAccounts.filter((a) => a.health_score != null);
     const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
+    const dealMetrics = dealMetricsByOwner.get(accountManagerName);
+    dealMetricsByOwner.delete(accountManagerName); // consumed — any left over get their own row below
     return {
       accountManagerName,
       totalAccounts: amAccounts.length,
       totalCommunities: amAccounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
       openTickets: amAccounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
       closedTickets: amAccounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
-      dealsThisYearOpen: amAccounts.reduce((s, a) => s + (a.financialHealth?.dealsThisYearOpenCount || 0), 0),
-      dealsThisYearClosed: amAccounts.reduce((s, a) => s + (a.financialHealth?.dealsThisYearClosedCount || 0), 0),
+      dealsThisYearOpen: dealMetrics?.dealsThisYearOpen || 0,
+      dealsThisYearClosed: dealMetrics?.dealsThisYearClosed || 0,
       arrCents: amAccounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
-      arrAddedThisYearCents: amAccounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+      arrAddedThisYearCents: dealMetrics?.arrAddedThisYearCents || 0,
       totalCapacity: amAccounts.reduce((s, a) => s + (a.total_capacity || 0), 0),
       currentCensus: amAccounts.reduce((s, a) => s + (a.current_census || 0), 0),
       avgScore,
     };
-  }).sort((a, b) => b.totalAccounts - a.totalAccounts);
+  });
+
+  // Anyone left in dealMetricsByOwner closed/is working a deal but
+  // doesn't currently own any account outright (e.g. their deal's
+  // account was since reassigned to a different AM) — still surfaced as
+  // its own row so the ARR/deal count isn't silently dropped, just with
+  // no account-level stats (they aren't an "account manager" in the
+  // accounts-owned sense here, only a deal owner).
+  for (const [accountManagerName, dealMetrics] of dealMetricsByOwner.entries()) {
+    rows.push({
+      accountManagerName,
+      totalAccounts: 0,
+      totalCommunities: 0,
+      openTickets: 0,
+      closedTickets: 0,
+      dealsThisYearOpen: dealMetrics.dealsThisYearOpen,
+      dealsThisYearClosed: dealMetrics.dealsThisYearClosed,
+      arrCents: 0,
+      arrAddedThisYearCents: dealMetrics.arrAddedThisYearCents,
+      totalCapacity: 0,
+      currentCensus: 0,
+      avgScore: null,
+    });
+  }
+
+  return rows.sort((a, b) => b.totalAccounts - a.totalAccounts);
 }
 
 // GET /api/team-am — the cached portal-wide portfolio, instant read, plus

@@ -5,6 +5,7 @@ import {
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
+import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -106,17 +107,25 @@ function CompanyLink({ account, children, className = 'text-accent-600 hover:und
   );
 }
 
-function SectionCard({ title, children, description, action }) {
+function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = true }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const open = !collapsible || expanded;
   return (
     <div className="card mb-8">
       <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-primary-900">{title}</h2>
+        <div
+          className={collapsible ? 'cursor-pointer select-none' : ''}
+          onClick={collapsible ? () => setExpanded((v) => !v) : undefined}
+        >
+          <h2 className="text-lg font-semibold text-primary-900 flex items-center gap-2">
+            {collapsible && <span className="text-xs text-neutral-400">{open ? '▼' : '▶'}</span>}
+            {title}
+          </h2>
           {description && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
-      {children}
+      {open && children}
     </div>
   );
 }
@@ -579,6 +588,110 @@ function CategoryMixChart({ accounts, status }) {
   );
 }
 
+/** Buckets each account's already-computed open_ticket_count / closed_ticket_count by client_tier (1-4, or "Unset" for 0/null) — same tier field/labeling as tierStr, no new data fetch needed. */
+function TicketsByTierChart({ accounts }) {
+  const byTier = {};
+  for (const a of accounts) {
+    const key = (a.tier == null || a.tier === 0) ? 'unset' : a.tier;
+    if (!byTier[key]) byTier[key] = { tier: key, open: 0, closed: 0 };
+    byTier[key].open += a.open_ticket_count || 0;
+    byTier[key].closed += a.closed_ticket_count || 0;
+  }
+  const data = Object.values(byTier)
+    .sort((a, b) => (a.tier === 'unset' ? 1 : b.tier === 'unset' ? -1 : a.tier - b.tier))
+    .map((d) => ({ ...d, name: d.tier === 'unset' ? 'Unset' : `Tier ${d.tier}` }));
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No ticket data yet — click Refresh to pull it.</p>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={360}>
+      <BarChart data={data} margin={{ top: 8, right: 24, left: 0, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+        <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+        <Tooltip />
+        <Legend />
+        <Bar dataKey="open" name="Open" fill="#dc2626" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="open" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1e293b' }} />
+        </Bar>
+        <Bar dataKey="closed" name="Closed" fill="#2563eb" radius={[4, 4, 0, 0]}>
+          <LabelList dataKey="closed" position="top" style={{ fontSize: 12, fontWeight: 600, fill: '#1e293b' }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+const TIER_COST_COLOR = { 'Tier 1': '#16a34a', 'Tier 2': '#2563eb', 'Tier 3': '#ea580c', 'Tier 4': '#dc2626', Unset: '#737373' };
+
+function CostToServeTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+      <p className="font-semibold text-primary-900 mb-1">{d.name}</p>
+      <p className="text-neutral-600">{d.accountCount} account{d.accountCount === 1 ? '' : 's'}</p>
+      <p className="text-neutral-600">{d.tickets} ticket(s) total (open + closed)</p>
+      <p className="text-neutral-600">{currencyStr(d.arrCents)} total ARR</p>
+      <p className="text-neutral-700 font-medium mt-1">{d.ratio.toFixed(2)} tickets per $1,000 ARR</p>
+    </div>
+  );
+}
+
+/**
+ * "Cost to Serve" — total ticket volume (open + closed) per $1,000 of
+ * ARR, aggregated by Client Tier. Portfolio-weighted (sum tickets ÷ sum
+ * ARR per tier), not an average of each account's own ratio — same
+ * reasoning as the Portfolio DSO figure elsewhere on this page, so one
+ * near-zero-ARR account can't blow up its whole tier's number. Aaron
+ * asked for this (Sep 2026) to quantify how much more support effort
+ * lower-tier accounts cost per revenue dollar than Tier 1, to help
+ * justify where AM time/focus should go. Tiers with $0 ARR are excluded
+ * (undefined ratio) rather than shown as a misleading infinity/zero.
+ */
+function CostToServeByTierChart({ accounts }) {
+  const byTier = {};
+  for (const a of accounts) {
+    const key = (a.tier == null || a.tier === 0) ? 'unset' : a.tier;
+    if (!byTier[key]) byTier[key] = { tier: key, tickets: 0, arrCents: 0, accountCount: 0 };
+    byTier[key].tickets += (a.open_ticket_count || 0) + (a.closed_ticket_count || 0);
+    byTier[key].arrCents += (a.arr_cents || 0);
+    byTier[key].accountCount += 1;
+  }
+  const data = Object.values(byTier)
+    .filter((d) => d.arrCents > 0)
+    .sort((a, b) => (a.tier === 'unset' ? 1 : b.tier === 'unset' ? -1 : a.tier - b.tier))
+    .map((d) => ({
+      ...d,
+      name: d.tier === 'unset' ? 'Unset' : `Tier ${d.tier}`,
+      ratio: (d.tickets * 100000) / d.arrCents,
+    }));
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No ARR/ticket data yet — click Refresh to pull it.</p>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={360}>
+      <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+        <YAxis
+          tick={{ fontSize: 12 }}
+          label={{ value: 'Tickets per $1,000 ARR', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#737373' } }}
+        />
+        <Tooltip content={<CostToServeTooltip />} />
+        <Bar dataKey="ratio" radius={[4, 4, 0, 0]}>
+          {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
+          <LabelList dataKey="ratio" position="top" formatter={(v) => v.toFixed(2)} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
 function DealTypeTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -750,10 +863,147 @@ function AlisHostEditor({ account, companyHosts, onUpdated }) {
   );
 }
 
+const CADENCE_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly', 'Quarterly', 'Other'];
+
+/**
+ * Manually-maintained recurring-call cadence per account (Aaron, Sep
+ * 2026) — this app has no calendar API integration (no OAuth flow for
+ * any calendar provider exists anywhere in this codebase, and HubSpot's
+ * own static private-app token isn't a pattern that generalizes to one),
+ * so cadence/next-date/notes are entered by hand here rather than synced.
+ * The calendar link is just a pasted URL to the real recurring event/
+ * series in whatever calendar tool is actually used — works with any
+ * provider since it's a stored link, not a live API call, and clicking
+ * it opens that real calendar entry directly.
+ */
+function RecurringCallEditor({ account, onUpdated }) {
+  const rc = account.recurringCall;
+  const [editing, setEditing] = useState(false);
+  const [cadence, setCadence] = useState(rc?.cadence || '');
+  const [nextCallDate, setNextCallDate] = useState(rc?.nextCallDate?.slice(0, 10) || '');
+  const [calendarLink, setCalendarLink] = useState(rc?.calendarLink || '');
+  const [notes, setNotes] = useState(rc?.notes || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  function resetFields() {
+    setCadence(rc?.cadence || '');
+    setNextCallDate(rc?.nextCallDate?.slice(0, 10) || '');
+    setCalendarLink(rc?.calendarLink || '');
+    setNotes(rc?.notes || '');
+  }
+
+  useEffect(() => { resetFields(); }, [rc?.cadence, rc?.nextCallDate, rc?.calendarLink, rc?.notes]);
+
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/account-health/${account.hubspot_company_id}/recurring-call`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cadence: cadence || null, nextCallDate: nextCallDate || null, calendarLink: calendarLink || null, notes: notes || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      setEditing(false);
+      await onUpdated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clear() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/account-health/${account.hubspot_company_id}/recurring-call`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to clear');
+      setEditing(false);
+      await onUpdated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 p-3 border border-neutral-200 rounded-lg">
+      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Recurring Call</p>
+      {editing ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <select value={cadence} onChange={(e) => setCadence(e.target.value)} className="text-sm border border-neutral-200 rounded-lg px-2 py-1">
+              <option value="">No cadence</option>
+              {CADENCE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <input
+              type="date"
+              value={nextCallDate}
+              onChange={(e) => setNextCallDate(e.target.value)}
+              className="text-sm border border-neutral-200 rounded-lg px-2 py-1"
+            />
+          </div>
+          <input
+            type="url"
+            value={calendarLink}
+            onChange={(e) => setCalendarLink(e.target.value)}
+            placeholder="Link to the recurring calendar event (optional)"
+            className="w-full text-sm border border-neutral-200 rounded-lg px-2 py-1"
+          />
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Notes (optional)"
+            className="w-full text-sm border border-neutral-200 rounded-lg px-2 py-1"
+          />
+          <div className="flex items-center gap-2">
+            <button onClick={save} disabled={busy} className="btn btn-sm btn-secondary">{busy ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => { setEditing(false); resetFields(); }} disabled={busy} className="btn btn-sm btn-secondary">Cancel</button>
+            {rc && <button onClick={clear} disabled={busy} className="text-xs text-error hover:underline ml-auto">Clear</button>}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-sm text-neutral-700">
+            {rc?.cadence ? (
+              <>
+                <span className="font-medium">{rc.cadence}</span>
+                {rc.nextCallDate && <span className="text-neutral-500"> · next {rc.nextCallDate.slice(0, 10)}</span>}
+                {rc.calendarLink && (
+                  <>
+                    {' · '}
+                    <a href={rc.calendarLink} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">Open Calendar Event ↗</a>
+                  </>
+                )}
+                {rc.notes && <p className="text-neutral-500 text-xs mt-1">{rc.notes}</p>}
+              </>
+            ) : <span className="italic text-neutral-400">no recurring call set</span>}
+          </div>
+          <button onClick={() => setEditing(true)} className="text-xs text-accent-600 hover:underline shrink-0">Edit</button>
+        </div>
+      )}
+      {error && <p className="text-xs text-error mt-1">{error}</p>}
+    </div>
+  );
+}
+
 function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
   const svc = account.serviceHealth;
   const fin = account.financialHealth;
   const openDeals = (fin?.expansionPipeline?.deals || []).filter((d) => d.isOpen);
+  // All-time closed count — totalDeals/openDealsCount already cover the
+  // account's full deal history (see mapLiveFinancialHealth's doc comment
+  // server-side), so this needs no new data, just totalDeals minus the
+  // open count already shown right next to it.
+  const closedDealCount = fin?.totalDeals != null
+    ? Math.max(0, fin.totalDeals - (fin.expansionPipeline?.openDealsCount || 0))
+    : null;
 
   return (
     <Drawer
@@ -781,7 +1031,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
       <div className="grid grid-cols-2 gap-3 mb-6">
         <StatCard label="Open Tickets" value={account.open_ticket_count} sub="Client Submitted + In Progress" />
         <StatCard label="Closed Tickets" value={account.closed_ticket_count} />
-        <StatCard label="Open Deals" value={account.open_deal_count} />
+        <StatCard label="Open Deals" value={account.open_deal_count} sub={closedDealCount != null ? `${closedDealCount} closed (all-time)` : undefined} />
         <StatCard label="Open Deal Value" value={currencyStr(account.open_deal_value_cents)} />
         <StatCard label="ARR" value={account.arr_cents != null ? currencyStr(account.arr_cents) : '—'} />
         <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(account.arr_added_this_year_cents)} />
@@ -792,6 +1042,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
       </div>
 
       <AlisHostEditor account={account} companyHosts={companyHosts} onUpdated={onUpdated} />
+      <RecurringCallEditor account={account} onUpdated={onUpdated} />
 
       {account.priorQbr && (
         <div className="alert alert-info mb-6">
@@ -943,14 +1194,18 @@ function flattenArrAddedDeals(accounts) {
 }
 
 /**
- * The actual deals behind the "ARR Added" roll-up tile — Aaron asked (Sep
- * 2026) for this after the figure jumped once arrAddedThisYearCents
- * switched from summing `amount` to `arr_value`, since a portfolio-wide
- * sum with no way to see what's in it isn't trustworthy on its own.
+ * Rollup of every account with a recurring-call cadence set — hand-
+ * entered per account via RecurringCallEditor in the drawer (no calendar
+ * API integration exists to auto-populate this, see that component's
+ * doc comment). Sorted by next call date ascending by default (soonest
+ * first, nulls last) so this reads as an actionable "what's coming up"
+ * list, not just a static reference table. Row click opens the same
+ * AccountDrawer the main Accounts table uses — cadence/date/link/notes
+ * are edited there, not inline in this table.
  */
-function ArrAddedDealsSection({ accounts }) {
-  const deals = useMemo(() => flattenArrAddedDeals(accounts), [accounts]);
-  const [sort, setSort] = useState({ column: 'arrValueCents', direction: 'desc' });
+function RecurringCallsSection({ accounts, onSelect }) {
+  const rows = useMemo(() => accounts.filter((a) => a.recurringCall?.cadence), [accounts]);
+  const [sort, setSort] = useState({ column: 'nextCallDate', direction: 'asc' });
 
   function toggleSort(column) {
     setSort((prev) => (prev.column === column
@@ -961,7 +1216,93 @@ function ArrAddedDealsSection({ accounts }) {
   const sorted = useMemo(() => {
     const { column, direction } = sort;
     const dir = direction === 'asc' ? 1 : -1;
-    return [...deals].sort((a, b) => {
+    return [...rows].sort((a, b) => {
+      const av = column === 'company_name' ? a.company_name : a.recurringCall?.[column];
+      const bv = column === 'company_name' ? b.company_name : b.recurringCall?.[column];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
+    });
+  }, [rows, sort]);
+
+  return (
+    <SectionCard
+      title="Recurring Calls"
+      description={`${rows.length} account(s) with a recurring call cadence set — edit cadence/date/link from an account's drawer`}
+      defaultExpanded={false}
+    >
+      {rows.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No recurring calls tracked yet — open an account in the table below and set one from its drawer.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                <SortableHeader label="Account" column="company_name" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="Cadence" column="cadence" sort={sort} onSort={toggleSort} className="pr-4" />
+                <SortableHeader label="Next Call" column="nextCallDate" sort={sort} onSort={toggleSort} className="pr-4" />
+                <th className="pb-2 pr-4">Calendar</th>
+                <th className="pb-2">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((a) => (
+                <tr key={a.hubspot_company_id} className="border-t border-neutral-100 cursor-pointer hover:bg-neutral-50" onClick={() => onSelect(a)}>
+                  <td className="py-2 pr-4 font-medium text-neutral-700">{a.company_name}</td>
+                  <td className="py-2 pr-4 text-neutral-500">{a.recurringCall.cadence}</td>
+                  <td className="py-2 pr-4 text-neutral-500">{a.recurringCall.nextCallDate ? a.recurringCall.nextCallDate.slice(0, 10) : '—'}</td>
+                  <td className="py-2 pr-4">
+                    {a.recurringCall.calendarLink ? (
+                      <a
+                        href={a.recurringCall.calendarLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-accent-600 hover:underline"
+                      >
+                        Open ↗
+                      </a>
+                    ) : <span className="text-neutral-400">—</span>}
+                  </td>
+                  <td className="py-2 text-neutral-500 truncate max-w-xs">{a.recurringCall.notes || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+/**
+ * The actual deals behind the "ARR Added" roll-up tile — Aaron asked (Sep
+ * 2026) for this after the figure jumped once arrAddedThisYearCents
+ * switched from summing `amount` to `arr_value`, since a portfolio-wide
+ * sum with no way to see what's in it isn't trustworthy on its own.
+ */
+function ArrAddedDealsSection({ accounts }) {
+  const deals = useMemo(() => flattenArrAddedDeals(accounts), [accounts]);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState({ column: 'arrValueCents', direction: 'desc' });
+
+  function toggleSort(column) {
+    setSort((prev) => (prev.column === column
+      ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      : { column, direction: 'asc' }));
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? deals.filter((d) => d.companyName?.toLowerCase().includes(q)) : deals;
+  }, [deals, search]);
+
+  const sorted = useMemo(() => {
+    const { column, direction } = sort;
+    const dir = direction === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
       const av = a[column];
       const bv = b[column];
       if (av == null && bv == null) return 0;
@@ -970,17 +1311,34 @@ function ArrAddedDealsSection({ accounts }) {
       if (typeof av === 'string') return av.localeCompare(bv) * dir;
       return (av - bv) * dir;
     });
-  }, [deals, sort]);
+  }, [filtered, sort]);
 
   const totalCents = deals.reduce((s, d) => s + d.arrValueCents, 0);
+  const filteredTotalCents = filtered.reduce((s, d) => s + d.arrValueCents, 0);
 
   return (
     <SectionCard
       title="ARR Added This Year — Contributing Deals"
-      description={`${deals.length} closed-won deal(s) totaling ${currencyStr(totalCents)}`}
+      description={
+        search.trim()
+          ? `${filtered.length} of ${deals.length} closed-won deal(s) shown, matching "${search.trim()}" — totaling ${currencyStr(filteredTotalCents)}`
+          : `${deals.length} closed-won deal(s) totaling ${currencyStr(totalCents)}`
+      }
+      defaultExpanded={false}
+      action={
+        <input
+          type="text"
+          placeholder="Search accounts…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-56"
+        />
+      }
     >
       {deals.length === 0 ? (
         <p className="text-sm text-neutral-500 italic">No closed-won deals with an ARR value this year yet.</p>
+      ) : sorted.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic py-4">No deals for accounts matching "{search.trim()}".</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1067,6 +1425,7 @@ function DealsSection({ accounts, search }) {
           ? `Open + recently-closed (90 days) — ${filtered.length} of ${allDeals.length} shown, matching "${search.trim()}"`
           : `Open + recently-closed (90 days) across every account — ${filtered.length} of ${allDeals.length} shown`
       }
+      defaultExpanded={false}
     >
       {allDeals.length === 0 ? (
         <p className="text-sm text-neutral-500 italic">
@@ -1255,6 +1614,7 @@ export default function AccountHealthDashboard() {
     return {
       totalAccounts: accounts.length,
       totalCommunities: accounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
+      recurringCallCount: accounts.filter((a) => a.recurringCall?.cadence).length,
       openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
       closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
       enhancementTop: accounts.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
@@ -1335,6 +1695,11 @@ export default function AccountHealthDashboard() {
             <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts-table">Jump to table ↓</JumpLink>} />
             <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
             <StatCard
+              label="Recurring Calls Tracked"
+              value={rollup.recurringCallCount}
+              sub={<JumpLink to="recurring-calls">Jump to table ↓</JumpLink>}
+            />
+            <StatCard
               label="Open Tickets"
               value={rollup.openTickets}
               sub="Client Submitted + In Progress"
@@ -1386,6 +1751,10 @@ export default function AccountHealthDashboard() {
               value={rollup.portfolioDsoDays != null ? `${rollup.portfolioDsoDays}d` : '—'}
               sub="Rudimentary — AR balance ÷ daily revenue rate, not true invoice-to-payment DSO"
             />
+          </div>
+
+          <div id="recurring-calls">
+            <RecurringCallsSection accounts={accounts} onSelect={setSelected} />
           </div>
 
           <div id="accounts-table">
@@ -1465,13 +1834,22 @@ export default function AccountHealthDashboard() {
           </SectionCard>
           </div>
 
-          <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload">
+          <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload" defaultExpanded={false}>
             <CategoryMixChart accounts={accounts} status="open" />
           </SectionCard>
-          <SectionCard title="Closed Tickets by Category 2.0" description="Aggregated across every account — historical mix">
+          <SectionCard title="Closed Tickets by Category 2.0" description="Aggregated across every account — historical mix" defaultExpanded={false}>
             <CategoryMixChart accounts={accounts} status="closed" />
           </SectionCard>
-          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR">
+          <SectionCard title="Ticket Volume by Client Tier" description="Open + closed tickets aggregated by Account Management Tier" defaultExpanded={false}>
+            <TicketsByTierChart accounts={accounts} />
+          </SectionCard>
+          <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests tile above">
+            <EnhancementRequestsSection accounts={accounts} />
+          </SectionCard>
+          <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>
+            <CostToServeByTierChart accounts={accounts} />
+          </SectionCard>
+          <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR" defaultExpanded={false}>
             <DealTypeChart accounts={accounts} />
           </SectionCard>
 
