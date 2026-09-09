@@ -311,3 +311,47 @@ system of record.
   }
 }
 ```
+
+## Wins & Kudos (`wins_kudos`) — added Sept 2026
+
+A new top-level array, sibling to `serviceHealth`/`financialHealth`/`relationshipHealth`: client/prospect
+quotes and testimonial-style signal worth surfacing on the dashboard and in
+the QBR deck (renewals, references, reminding the team why an account
+matters) — not otherwise captured anywhere structured today.
+
+**Naming note:** this field (and alis-hub's consumption of it) uses
+snake_case — `wins_kudos`, `quote`, `attribution` — matching the skill's
+*actual* current output shape (see `reproduce_payload.json`, which already
+uses `meta`/`service_health`/etc., not this doc's original camelCase), not
+the rest of this file's documented-but-stale camelCase convention. That
+pre-existing drift is a separate cleanup worth reconciling with whoever
+owns the skill; this addition just follows the real shape rather than
+compounding the mismatch.
+
+```json
+"wins_kudos": [
+  {
+    "quote": "What sets us apart is your team's responsiveness and warmth.",
+    "attribution": "Prospect, FWD 2026",
+    "context": "Said during a hallway conversation after the Lights Over the Lake event",
+    "date": "2026-08-14",
+    "type": "prospect_quote",
+    "source": "HubSpot note",
+    "confidence": "high"
+  }
+]
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `quote` | string | The actual words, verbatim where captured. Don't fabricate to fill the section. |
+| `attribution` | string | Who said it (name/role), or an anonymized descriptor if a name isn't capturable (e.g. "Prospect at FWD 2026"). |
+| `context` | string, nullable | What prompted it. If `quote` is a paraphrase rather than verbatim, say so here. |
+| `date` | string (date) | `YYYY-MM-DD`. |
+| `type` | enum | `client_quote` \| `prospect_quote` \| `reference_offer` \| `superfan_signal` \| `other`. |
+| `source` | string, nullable | e.g. `"HubSpot note"`, `"Gmail"`, `"Calendar"`, `"manual"`. |
+| `confidence` | enum | `high` \| `medium` \| `low` — `medium`/`low` when paraphrasing rather than quoting directly, same convention as this schema's other synthesized fields. |
+
+Emit `wins_kudos: []` when nothing is found this period, rather than
+omitting the field — same convention as every other section of this
+schema.

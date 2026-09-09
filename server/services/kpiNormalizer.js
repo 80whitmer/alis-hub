@@ -217,6 +217,127 @@ function normalizeDemographics(residents = []) {
   };
 }
 
+// ── Upcoming birthdays & decade milestones ───────────────────────────────
+
+/** Resident `dob` is 'MM/DD/YYYY'; staff `dateOfBirth` is an ISO date-time. Returns a UTC Date (month/day only matters to callers here) or null if missing/unparseable. */
+function parseBirthdate(raw) {
+  if (!raw) return null;
+  const mdy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+  if (mdy) {
+    const [, m, d, y] = mdy;
+    return new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  }
+  const iso = new Date(raw);
+  return Number.isNaN(iso.getTime()) ? null : iso;
+}
+
+/**
+ * The concrete Date `birthdate`'s month/day falls on within
+ * [windowStart, windowEnd] (inclusive, UTC calendar days), or null if it
+ * doesn't land in the window this year or next — checking both handles a
+ * window that crosses a Dec 31 -> Jan 1 boundary without special-casing it.
+ */
+function nextBirthdayInWindow(birthdate, windowStart, windowEnd) {
+  if (!birthdate) return null;
+  const start = new Date(Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth(), windowStart.getUTCDate()));
+  const end = new Date(Date.UTC(windowEnd.getUTCFullYear(), windowEnd.getUTCMonth(), windowEnd.getUTCDate()));
+  for (const year of [start.getUTCFullYear(), end.getUTCFullYear()]) {
+    const candidate = new Date(Date.UTC(year, birthdate.getUTCMonth(), birthdate.getUTCDate()));
+    if (candidate >= start && candidate <= end) return candidate;
+  }
+  return null;
+}
+
+function personName(r, nameKeys) {
+  return firstDefined(r, nameKeys) || [r.firstName, r.lastName].filter(Boolean).join(', ') || null;
+}
+
+/**
+ * Residents/staff with a birthday landing in [windowStart, windowEnd].
+ * Callers choose the window's meaning: kpiExport.js uses a forward-looking
+ * ~90 days from periodEnd (a deliberate exception to every other QBR metric
+ * being retrospective over the period just reviewed — there's no natural
+ * "birthdays that happened last quarter" framing worth celebrating in a
+ * deck delivered after the fact), wellnessExport.js uses the next 14 days
+ * from weekEnding. Only active residents/staff are considered — a former
+ * resident's or staff member's birthday isn't something to surface.
+ * Decade-milestone flags (90/100/110...) are resident-only per the original
+ * ask; staff birthdays don't carry a milestone flag. `dobCoverage` reports
+ * how many active records actually have a birthdate on file, since staff
+ * coverage in particular is partial (~1/3 of records in accounts checked so
+ * far) and the UI needs to disclose that rather than imply completeness.
+ */
+function normalizeUpcomingBirthdays(residents = [], staff = [], { windowStart, windowEnd } = {}) {
+  const start = new Date(windowStart);
+  const end = new Date(windowEnd);
+  const activeResidents = residents.filter((r) => r.isActiveResident);
+  const activeStaff = staff.filter((r) => r.isActive);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return {
+      residents: [],
+      staff: [],
+      dobCoverage: {
+        residents: { withDob: activeResidents.filter((r) => firstDefined(r, ['dob'])).length, total: activeResidents.length },
+        staff: { withDob: activeStaff.filter((r) => firstDefined(r, ['dateOfBirth'])).length, total: activeStaff.length },
+      },
+    };
+  }
+
+  const residentHits = [];
+  let residentsWithDob = 0;
+  for (const r of activeResidents) {
+    const birthdate = parseBirthdate(firstDefined(r, ['dob']));
+    if (birthdate) residentsWithDob++;
+    const hit = nextBirthdayInWindow(birthdate, start, end);
+    if (!hit) continue;
+    const turningAge = hit.getUTCFullYear() - birthdate.getUTCFullYear();
+    residentHits.push({
+      residentId: r.residentId,
+      name: personName(r, ['fullName', 'residentName']),
+      communityId: r.communityId,
+      turningAge,
+      birthdayDate: hit.toISOString().slice(0, 10),
+      isDecadeMilestone: turningAge % 10 === 0,
+      isMajorMilestone: turningAge >= 90 && turningAge % 10 === 0,
+    });
+  }
+  residentHits.sort((a, b) => a.birthdayDate.localeCompare(b.birthdayDate));
+
+  const staffHits = [];
+  let staffWithDob = 0;
+  for (const r of activeStaff) {
+    const birthdate = parseBirthdate(firstDefined(r, ['dateOfBirth']));
+    if (birthdate) staffWithDob++;
+    const hit = nextBirthdayInWindow(birthdate, start, end);
+    if (!hit) continue;
+    staffHits.push({
+      staffId: r.staffId,
+      name: personName(r, ['fullName', 'staffName', 'name']),
+      communityId: r.communityId,
+      jobRole: firstDefined(r, ['jobRole', 'role', 'title']) || null,
+      birthdayDate: hit.toISOString().slice(0, 10),
+    });
+  }
+  staffHits.sort((a, b) => a.birthdayDate.localeCompare(b.birthdayDate));
+
+  return {
+    residents: residentHits,
+    staff: staffHits,
+    dobCoverage: {
+      residents: { withDob: residentsWithDob, total: activeResidents.length },
+      staff: { withDob: staffWithDob, total: activeStaff.length },
+    },
+  };
+}
+
+/** `windowEnd` for normalizeUpcomingBirthdays's forward-looking QBR window — see kpiExport.js's call site. */
+function addDays(dateStr, days) {
+  const d = new Date(dateStr);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 // ── Length of stay + move-out reasons ────────────────────────────────────
 
 function daysBetween(startIso, endIso) {
@@ -1428,6 +1549,8 @@ module.exports = {
   diffMetric,
   normalizeOccupancy,
   normalizeDemographics,
+  normalizeUpcomingBirthdays,
+  addDays,
   normalizeLengthOfStayAndMoveOuts,
   normalizeAdmissionsDischarges,
   normalizeCareLevelEvaluations,

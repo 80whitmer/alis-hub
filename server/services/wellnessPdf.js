@@ -126,8 +126,44 @@ function buildOccupancySection(snapshot) {
   </div>`;
 }
 
+/**
+ * Next 14 days, mirroring the on-screen UpcomingBirthdaysPanel
+ * (client/src/components/UpcomingBirthdaysPanel.jsx) and its data source,
+ * server/services/kpiNormalizer.js's normalizeUpcomingBirthdays. Kept as
+ * its own small section rather than forced into buildTable's fixed
+ * AL/MC/Total row shape, same rationale as buildOccupancySection above.
+ */
+function buildBirthdaysSection(snapshot) {
+  const data = snapshot.upcomingBirthdays;
+  const residents = data?.residents || [];
+  const staff = data?.staff || [];
+  if (residents.length === 0 && staff.length === 0) return '';
+
+  const fmtDate = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const list = (items, describe) => items.length
+    ? `<ul style="margin:0; padding-left:16px; font-size:10px; line-height:1.6;">
+        ${items.map((item) => `<li>${escapeHtml(item.name || '—')} — ${escapeHtml(describe(item))} <span style="color:#909295;">(${fmtDate(item.birthdayDate)})</span></li>`).join('\n')}
+      </ul>`
+    : '<p style="font-size:10px; color:#909295; margin:0;">None in this window.</p>';
+
+  return `
+  <div class="scorecard">
+    <h2>Upcoming Birthdays &amp; Milestones — next 14 days</h2>
+    <div style="padding:10px; border:1px solid #e5e5e5; border-top:none; display:flex; gap:24px;">
+      <div style="flex:1">
+        <h3 style="font-size:11px;margin:0 0 6px;">Residents</h3>
+        ${list(residents, (r) => `turning ${r.turningAge}${r.isMajorMilestone ? ' 🎉' : ''}`)}
+      </div>
+      <div style="flex:1">
+        <h3 style="font-size:11px;margin:0 0 6px;">Staff</h3>
+        ${list(staff, (s) => s.jobRole || 'Staff')}
+      </div>
+    </div>
+  </div>`;
+}
+
 function buildHtml(snapshot) {
-  const sections = [buildOccupancySection(snapshot), buildTable('Portfolio', snapshot, null)]
+  const sections = [buildOccupancySection(snapshot), buildBirthdaysSection(snapshot), buildTable('Portfolio', snapshot, null)]
     .concat(snapshot.communities.map((c) => buildTable(c.name, snapshot, String(c.communityId))))
     .join('\n');
 

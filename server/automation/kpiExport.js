@@ -7,7 +7,7 @@ const {
   getOrderAdministration,
 } = require('../services/alisApiClient');
 const {
-  normalizeOccupancy, normalizeDemographics, normalizeLengthOfStayAndMoveOuts,
+  normalizeOccupancy, normalizeDemographics, normalizeUpcomingBirthdays, addDays, normalizeLengthOfStayAndMoveOuts,
   normalizeAdmissionsDischarges, normalizeCareLevelEvaluations, normalizeRecurringRevenue, normalizeInvoiceCharges, normalizeOutstandingInvoices,
   normalizeDso, normalizePpd,
   normalizeFalls, normalizeIncidentCompletion, normalizeSentinelIncidents, normalizeHospitalVisits, normalizeDiagnoses, normalizeCareCompletion,
@@ -704,6 +704,15 @@ async function runKpiExportJob(jobId, payload) {
 
   const occupancy = normalizeOccupancy(occupancyRows, { billedResidentIds });
   const demographics = normalizeDemographics(scopedResidents);
+  // Deliberate exception to every other normalizer here being retrospective
+  // over [periodStart, periodEnd]: a QBR is delivered after the quarter
+  // closes, so "birthdays that happened last quarter" isn't a useful
+  // celebration — this looks ~90 days forward from periodEnd instead, per
+  // Aaron (Sep 2026).
+  const upcomingBirthdays = normalizeUpcomingBirthdays(scopedResidents, scopedStaff, {
+    windowStart: periodEnd,
+    windowEnd: addDays(periodEnd, 90),
+  });
   const lengthOfStay = normalizeLengthOfStayAndMoveOuts(scopedMoveInsAndOuts, { communities });
   const admissionsDischarges = normalizeAdmissionsDischarges(communityScopedMoveInsAndOuts, periodStart, periodEnd);
   const careLevelEvaluations = normalizeCareLevelEvaluations(scopedEvaluations, scopedResidents, periodEnd);
@@ -741,7 +750,7 @@ async function runKpiExportJob(jobId, payload) {
   const dso = normalizeDso(scopedInvoiceCharges, scopedOutstandingInvoices, { periodStart, periodEnd, communities });
   const ppd = normalizePpd(scopedInvoiceCharges, occupancyRows, { periodStart, periodEnd, communities });
 
-  const normalized = { occupancy, demographics, lengthOfStay, admissionsDischarges, careLevelEvaluations, recurringRevenue, billedRevenue, outstandingInvoiceSummary, dso, ppd, falls, incidentCompletion, sentinelIncidents, hospitalVisits, diagnosisPrevalence, prnAdministration, careCompletion, staffActivity };
+  const normalized = { occupancy, demographics, upcomingBirthdays, lengthOfStay, admissionsDischarges, careLevelEvaluations, recurringRevenue, billedRevenue, outstandingInvoiceSummary, dso, ppd, falls, incidentCompletion, sentinelIncidents, hospitalVisits, diagnosisPrevalence, prnAdministration, careCompletion, staffActivity };
 
   const benchmark = getLatestBenchmarks();
   const diffs = computeBenchmarkDiffs(normalized, benchmark);

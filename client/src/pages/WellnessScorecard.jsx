@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { resolveWellnessRow, getVisibleWellnessRows } from '../utils/wellnessRows';
 import { exportWellnessScorecard } from '../utils/wellnessScorecardExport';
 import BackToTopButton from '../components/BackToTopButton';
+import UpcomingBirthdaysPanel, { hasUpcomingBirthdays } from '../components/UpcomingBirthdaysPanel';
 
 function BenchmarkBadge({ diff }) {
   if (!diff || diff.benchmark == null) return null;
@@ -262,6 +263,16 @@ export default function WellnessScorecard() {
       <p className="text-xs text-neutral-400 mb-6 max-w-3xl">
         Medication exceptions reflect ALIS's own order-administration status flags (a dose marked "exception" or never recorded) — a client has reported this flag being set incorrectly for a passed dose, so treat this row as a starting point for review, not a final tally.
       </p>
+
+      {hasUpcomingBirthdays(snapshot.upcomingBirthdays) && (
+        <div className="card mb-8">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-primary-900">Upcoming Birthdays & Milestones</h2>
+            <p className="text-sm text-neutral-500">Next 14 days, based on birthdate data already on file in ALIS</p>
+          </div>
+          <UpcomingBirthdaysPanel data={snapshot.upcomingBirthdays} />
+        </div>
+      )}
 
       <OccupancySection occupancy={snapshot.rows?.occupancy} />
 

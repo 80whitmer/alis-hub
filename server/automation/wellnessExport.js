@@ -13,7 +13,7 @@ const {
   withTrend, withCarePointsTrend,
 } = require('../services/wellnessNormalizer');
 const { shouldTrackSentinelIncidents } = require('../services/companyFeatures');
-const { normalizeStaffActivity, diffMetric, estimateResidentDays } = require('../services/kpiNormalizer');
+const { normalizeStaffActivity, diffMetric, estimateResidentDays, normalizeUpcomingBirthdays, addDays } = require('../services/kpiNormalizer');
 const { getLatestBenchmarks } = require('../services/alis500Benchmarks');
 const { setJobStatus, setItemStatus, syncJobItems, addWellnessSnapshot, getPriorWellnessSnapshot } = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
@@ -447,6 +447,16 @@ async function runWellnessScorecardJob(jobId, payload) {
 
   const manualRows = Object.fromEntries(MANUAL_ROW_KEYS.map((key) => [key, null]));
 
+  // Forward-looking (next 14 days from weekEnding), not point-in-time like
+  // the rest of this report — a weekly ops report should prompt "coming up
+  // this week or next," not report what already happened. Doesn't fit the
+  // AL/MC/count `rows` shape every WELLNESS_ROWS entry uses, so it's kept
+  // top-level rather than forced into `rows`.
+  const upcomingBirthdays = normalizeUpcomingBirthdays(residents, staff, {
+    windowStart: weekEnding,
+    windowEnd: addDays(weekEnding, 14),
+  });
+
   const summary = {
     companyName,
     companyHost: payload.companyHost,
@@ -454,6 +464,7 @@ async function runWellnessScorecardJob(jobId, payload) {
     communities: communities.map((c) => ({ name: c.name, communityId: c.communityId, host: c.host })),
     rows: rowsWithTrend,
     manualRows,
+    upcomingBirthdays,
     benchmarkDiffs,
     benchmarkQuarter: benchmark.quarter,
     dataWarnings,

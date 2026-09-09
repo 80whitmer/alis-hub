@@ -527,6 +527,61 @@ function addFinancialSlide(pptx, { billedRevenue, recurringRevenue, outstandingI
   });
 }
 
+/**
+ * Only called when normalizeUpcomingBirthdays found something in-window —
+ * see buildQbrDeck's gating. Forward-looking (~90 days from periodEnd), a
+ * deliberate exception to this deck otherwise being entirely retrospective
+ * — see kpiExport.js's call site for why. Residents and staff share one
+ * combined, date-sorted list; a resident hitting a decade milestone (90,
+ * 100, ...) gets a statusPill badge, matching addAccountHealthImportSlide's
+ * pill treatment for anything worth visually calling out.
+ */
+function addBirthdayMilestonesSlide(pptx, upcomingBirthdays) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Upcoming Birthdays & Milestones');
+  slide.addText('Next ~90 days, based on birthdate data on file in ALIS — staff coverage varies by account.', {
+    x: 0.5, y: 1.0, w: 9, h: 0.3, fontFace: FONT_BODY, fontSize: 10, italic: true, color: BRAND.slate,
+  });
+
+  const entries = [
+    ...(upcomingBirthdays.residents || []).map((r) => ({ ...r, kind: 'Resident' })),
+    ...(upcomingBirthdays.staff || []).map((s) => ({ ...s, kind: s.jobRole || 'Staff' })),
+  ].sort((a, b) => a.birthdayDate.localeCompare(b.birthdayDate));
+
+  // Caps at 8 rows to fit one slide at this row height — a "+N more" note
+  // covers overflow rather than paginating onto a second slide.
+  const shown = entries.slice(0, 8);
+  const rowH = 0.42;
+  let y = 1.45;
+  shown.forEach((entry, i) => {
+    slide.addShape('roundRect', {
+      x: 0.5, y, w: 9, h: rowH - 0.06, rectRadius: 0.05,
+      fill: { color: i % 2 === 0 ? BRAND.pageBg : BRAND.white },
+      line: { color: BRAND.cardBorder, width: 1 },
+    });
+    const dateLabel = new Date(`${entry.birthdayDate}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    slide.addText(entry.name || '—', {
+      x: 0.65, y, w: 3.6, h: rowH - 0.06, fontFace: FONT_HEAD, fontSize: 11, bold: true, color: BRAND.onyx, valign: 'middle', margin: 0,
+    });
+    slide.addText(`${entry.kind}${entry.turningAge != null ? ` — turning ${entry.turningAge}` : ''}`, {
+      x: 4.35, y, w: 3.2, h: rowH - 0.06, fontFace: FONT_BODY, fontSize: 9.5, color: BRAND.slate, valign: 'middle', margin: 0,
+    });
+    slide.addText(dateLabel, {
+      x: 7.6, y, w: 1.0, h: rowH - 0.06, fontFace: FONT_BODY, fontSize: 9.5, color: BRAND.slate, valign: 'middle', margin: 0,
+    });
+    if (entry.isMajorMilestone) {
+      statusPill(slide, 8.65, y + (rowH - 0.06 - 0.26) / 2, 0.85, `🎉 ${entry.turningAge}`, BRAND.amber);
+    }
+    y += rowH;
+  });
+
+  if (entries.length > shown.length) {
+    slide.addText(`+${entries.length - shown.length} more — see the full list on the dashboard.`, {
+      x: 0.5, y: y + 0.05, w: 9, h: 0.25, fontFace: FONT_BODY, fontSize: 8, italic: true, color: BRAND.slate,
+    });
+  }
+}
+
 /** Only called when a qbr-export skill JSON has been imported for this job — see buildQbrDeck's gating. */
 function addAccountHealthImportSlide(pptx, hubspotHealth) {
   const slide = pptx.addSlide();
@@ -548,6 +603,46 @@ function addAccountHealthImportSlide(pptx, hubspotHealth) {
     statCard(slide, 0.5, 3.0, 'Split Pay Pending', String(fin.split_pay_pending_count?.value ?? '—'), null);
     statCard(slide, 3.4, 3.0, 'Open Deals', String(fin.open_deals?.value?.length ?? 0), null);
     statCard(slide, 6.3, 3.0, 'Rate Dispute', fin.rate_dispute_active?.value ? 'Active' : 'None', null);
+  }
+}
+
+/**
+ * Only called when the qbr-export skill's import included a wins_kudos
+ * array — see buildQbrDeck's gating. Same alternating-row-card visual as
+ * addReleaseRecommendationsSlide just below, capped at 5 (quotes run longer
+ * than a release description, so fewer rows fit one slide cleanly than that
+ * slide's cap of 6).
+ */
+function addWinsKudosSlide(pptx, winsKudos) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Wins & Kudos');
+  slide.addText('Client and prospect signal captured this period — for renewals, references, and the team.', {
+    x: 0.5, y: 1.05, w: 9, h: 0.3, fontFace: FONT_BODY, fontSize: 10, italic: true, color: BRAND.slate,
+  });
+
+  const entries = winsKudos.slice(0, 5);
+  const rowH = 0.72;
+  let y = 1.5;
+  entries.forEach((entry, i) => {
+    slide.addShape('roundRect', {
+      x: 0.5, y, w: 9, h: rowH - 0.08, rectRadius: 0.05,
+      fill: { color: i % 2 === 0 ? BRAND.pageBg : BRAND.white },
+      line: { color: BRAND.cardBorder, width: 1 },
+    });
+    slide.addText(`"${entry.quote}"`, {
+      x: 0.65, y: y + 0.06, w: 8.7, h: 0.38, fontFace: FONT_BODY, fontSize: 10, italic: true, color: BRAND.onyx, valign: 'top', margin: 0,
+    });
+    const meta = [entry.attribution, entry.date].filter(Boolean).join('  ·  ');
+    slide.addText(meta, {
+      x: 0.65, y: y + 0.44, w: 8.7, h: 0.2, fontFace: FONT_HEAD, fontSize: 9, bold: true, color: BRAND.amber, valign: 'top', margin: 0,
+    });
+    y += rowH;
+  });
+
+  if (winsKudos.length > entries.length) {
+    slide.addText(`+${winsKudos.length - entries.length} more — see the full list on the dashboard.`, {
+      x: 0.5, y: y + 0.05, w: 9, h: 0.25, fontFace: FONT_BODY, fontSize: 8, italic: true, color: BRAND.slate,
+    });
   }
 }
 
@@ -1072,6 +1167,8 @@ async function buildQbrDeck(snapshot, options = {}) {
   const hasSentinelIncidents = Boolean(normalized.sentinelIncidents?.hasData && normalized.sentinelIncidents.total > 0);
   const hasFinancialData = includeBilling && Boolean(normalized.billedRevenue?.hasBillingData || normalized.recurringRevenue?.hasBillingData || normalized.outstandingInvoiceSummary?.hasBillingData);
   const hasHubspotHealth = includeHubspot && Boolean(hubspotHealth);
+  const hasBirthdayData = Boolean(normalized.upcomingBirthdays?.residents?.length || normalized.upcomingBirthdays?.staff?.length);
+  const hasWinsKudos = includeHubspot && Boolean(hubspotHealth?.wins_kudos?.length);
   const hasReleaseRecommendations = Boolean(releaseRecommendations?.releases?.length);
   const openTickets = hubspotHealth?.service_health?.open_tickets?.value || [];
   const hasDealActivity = includeHubspot && Boolean(
@@ -1125,7 +1222,9 @@ async function buildQbrDeck(snapshot, options = {}) {
     ['Levels of Care', hasLevelsOfCareData],
     ['Sentinel Incidents', hasSentinelIncidents],
     ['Financial', hasFinancialData],
+    ['Upcoming Birthdays & Milestones', hasBirthdayData],
     ['Account Health (HubSpot)', hasHubspotHealth],
+    ['Wins & Kudos', hasWinsKudos],
     ['Recent ALIS Platform Releases', hasReleaseRecommendations],
     ['Deal-Related Activity', hasDealActivity],
   ]) {
@@ -1156,6 +1255,7 @@ async function buildQbrDeck(snapshot, options = {}) {
   addKeyStatsSlide(pptx, { normalized, diffs });
   if (hasOccupancyBreakdown) addOccupancySlide(pptx, normalized.occupancy);
   if (hasResidentMovement) addResidentMovementSlide(pptx, { admissionsDischarges: normalized.admissionsDischarges, demographics: normalized.demographics, lengthOfStay: normalized.lengthOfStay });
+  if (hasBirthdayData) addBirthdayMilestonesSlide(pptx, normalized.upcomingBirthdays);
   if (hasLevelsOfCareData) addLevelsOfCareSlide(pptx, normalized.careLevelEvaluations, includeBilling);
   if (hasSentinelIncidents) addSentinelIncidentsSlide(pptx, normalized.sentinelIncidents);
   if (hasFinancialData) addFinancialSlide(pptx, { billedRevenue: normalized.billedRevenue, recurringRevenue: normalized.recurringRevenue, outstandingInvoiceSummary: normalized.outstandingInvoiceSummary, dso: normalized.dso, ppd: normalized.ppd });
@@ -1163,6 +1263,7 @@ async function buildQbrDeck(snapshot, options = {}) {
   if (showTopThreeEnhancements) addTopThreeEnhancementsSlide(pptx, ticketSummary);
   if (showHubspotDeals) addDealActivitySlide(pptx, dealSummary);
   if (hasHubspotHealth) addAccountHealthImportSlide(pptx, hubspotHealth);
+  if (hasWinsKudos) addWinsKudosSlide(pptx, hubspotHealth.wins_kudos);
   if (hasReleaseRecommendations) addReleaseRecommendationsSlide(pptx, releaseRecommendations, companyName);
   if (showProjectStatus) addProjectStatusSlide(pptx, hubspotHealth);
   if (showEnhancementRequests) addEnhancementRequestsSlide(pptx, ticketSummary, hubspotHealth);

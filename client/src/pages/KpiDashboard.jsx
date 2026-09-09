@@ -11,6 +11,7 @@ import { exportLos } from '../utils/losExport';
 import { exportIncidentCompletion } from '../utils/incidentCompletionExport';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
+import UpcomingBirthdaysPanel, { hasUpcomingBirthdays } from '../components/UpcomingBirthdaysPanel';
 
 const SEVERITY_BADGE = {
   risk: 'badge-error',
@@ -1403,6 +1404,49 @@ function AccountHealthImport({ jobId, hubspotHealth, initialWarning, onImported 
   );
 }
 
+/**
+ * Reads `hubspotHealth.wins_kudos` — no separate import UI, it rides on the
+ * same account-health-export JSON already uploaded via AccountHealthImport
+ * above. Renders nothing (via the caller's hasWinsKudos check) until the
+ * qbr-export skill starts emitting the field.
+ */
+function WinsKudosSection({ hubspotHealth }) {
+  const items = hubspotHealth?.wins_kudos || [];
+  if (items.length === 0) return null;
+
+  const sorted = [...items].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const TYPE_LABEL = {
+    client_quote: 'Client quote',
+    prospect_quote: 'Prospect quote',
+    reference_offer: 'Reference offer',
+    superfan_signal: 'Superfan signal',
+    other: 'Kudos',
+  };
+
+  return (
+    <SectionCard title="Wins & Kudos" description="Client and prospect quotes from the account-health-export skill — for renewals, references, and reminding the team why this account matters">
+      <div className="space-y-4">
+        {sorted.map((item, i) => (
+          <div key={i} className="border-l-2 border-amber-300 pl-4 py-1">
+            <p className="text-sm italic text-neutral-800">&ldquo;{item.quote}&rdquo;</p>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5 text-xs text-neutral-500">
+              {item.attribution && <span className="font-semibold text-neutral-700">{item.attribution}</span>}
+              {item.date && <span>{item.date}</span>}
+              {item.type && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">{TYPE_LABEL[item.type] || item.type}</span>
+              )}
+              {item.confidence && item.confidence !== 'high' && (
+                <span className="italic text-neutral-400">({item.confidence} confidence)</span>
+              )}
+            </div>
+            {item.context && <p className="text-xs text-neutral-400 mt-1">{item.context}</p>}
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
 function ReleaseRecommendationsImport({ jobId, releaseRecommendations, initialWarning, onImported }) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
@@ -1790,6 +1834,13 @@ export default function KpiDashboard() {
         )}
       </SectionCard>
 
+      {/* 5b. UPCOMING BIRTHDAYS & MILESTONES */}
+      {hasUpcomingBirthdays(normalized.upcomingBirthdays) && (
+        <SectionCard title="Upcoming Birthdays & Milestones" description="Residents and staff with a birthday in the next ~90 days, based on birthdate data already on file in ALIS">
+          <UpcomingBirthdaysPanel data={normalized.upcomingBirthdays} />
+        </SectionCard>
+      )}
+
       {/* 6. LEVELS OF CARE */}
       <SectionCard title="Levels of Care" description="Care-level evaluation compliance — excludes Independent Living residents">
         <CareLevelEvaluations data={normalized.careLevelEvaluations} communities={summary.communities} companyName={summary.companyName} />
@@ -1996,6 +2047,8 @@ export default function KpiDashboard() {
         initialWarning={hubspotHealthImportWarning}
         onImported={(newSummary) => setSnapshot((prev) => ({ ...prev, summary: newSummary }))}
       />
+
+      <WinsKudosSection hubspotHealth={hubspotHealth} />
 
       <ReleaseRecommendationsImport
         jobId={jobId}
