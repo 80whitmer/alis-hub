@@ -140,11 +140,11 @@ export default function AlisPayTicketsCard({ accounts, includeAccountManager = f
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="card text-left w-full hover:border-accent-300 border border-transparent transition-colors"
+        className="group card relative text-left w-full transition-all duration-200 hover:scale-105 hover:z-10 hover:shadow-xl"
       >
-        <p className="text-xs text-neutral-500 uppercase tracking-wide">Open ALIS Pay Tickets</p>
-        <p className="text-2xl font-bold text-primary-900 mt-1">{items.length}</p>
-        <p className="text-xs text-accent-600 mt-0.5">View all →</p>
+        <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">Open ALIS Pay Tickets</p>
+        <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{items.length}</p>
+        <p className="text-xs group-hover:text-sm text-accent-600 mt-0.5 transition-[font-size]">View all →</p>
       </button>
       {open && <AlisPayDrawer items={items} includeAccountManager={includeAccountManager} onClose={() => setOpen(false)} />}
     </>

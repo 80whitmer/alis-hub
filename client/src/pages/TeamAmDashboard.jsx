@@ -73,7 +73,7 @@ function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to sectio
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: jumpTo } }))}
-        className="group card relative w-full text-left transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl"
+        className="group card relative w-full text-left transition-all duration-200 hover:scale-105 hover:z-10 hover:shadow-xl"
       >
         <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">{label}</p>
         <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{value}</p>
@@ -165,7 +165,7 @@ function QuickJumpNav({ sections, className = '', large = false }) {
   const hoverText = large ? 'group-hover:text-base' : 'group-hover:text-sm';
   const gridCols = large ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2';
   return (
-    <div className={`group card relative transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl ${className}`}>
+    <div className={`group card relative transition-all duration-200 hover:scale-105 hover:z-10 hover:shadow-xl ${className}`}>
       <p className={`${baseText} ${hoverText} text-neutral-500 uppercase tracking-wide font-semibold mb-3 transition-[font-size]`}>Jump to Section</p>
       <ul className={`grid ${gridCols} gap-x-6 gap-y-2`}>
         {sections.map((title) => (

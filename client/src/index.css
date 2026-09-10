@@ -51,21 +51,26 @@ body {
    =========================================================================== */
 
 /* Cards — Clean, minimal containers with subtle shadows. Hover state is a
-   lasting, soft yellow wash (bg/border/shadow) for as long as the cursor
-   stays over it, plus a slight darkening of the tile's own content so
-   text reads a bit more crisply against it — Aaron asked (Sep 2026) for
-   hover to read as more than a faint shadow change, then went through two
-   more passes: first to soften an animated shimmer sweep that had been
-   here, then to drop the shimmer entirely, shift the wash from the warm
-   orange accent to a calmer yellow, and darken the text slightly, since
-   the shimmer read as overdone. */
+   lasting, soft yellow wash (bg/shadow) for as long as the cursor stays
+   over it, plus a slight darkening of the tile's own content so text
+   reads a bit more crisply against it, and a bold accent-orange outline
+   — Aaron asked (Sep 2026) for hover to read as more than a faint shadow
+   change, then went through several more passes: soften an animated
+   shimmer sweep that had been here, drop the shimmer entirely and shift
+   the wash to a calmer yellow, then (once individual tiles started
+   growing on hover — see StatCard's `jumpTo` prop and QuickJumpNav in
+   both dashboard files) bring the border back to a bold, unmistakably
+   orange outline so a "hovered, about to jump" tile reads clearly even
+   mid-enlarge. `border-2` (up from the base 1px) needs no layout-shift
+   guard — `* { box-sizing: border-box }` up top keeps the box the same
+   size either way. */
 @layer components {
   .card {
     @apply relative bg-white border border-neutral-200 rounded-lg p-6 shadow-sm transition-all duration-300;
   }
 
   .card:hover {
-    @apply shadow-md border-yellow-300;
+    @apply shadow-md border-2 border-accent-500;
     background-color: rgba(250, 204, 21, 0.08);
     filter: contrast(1.05) brightness(0.97);
   }
