@@ -673,6 +673,52 @@ function TicketsByTierChart({ accounts }) {
   );
 }
 
+/** Same shape as TeamAmDashboard.jsx's chart of the same name — how many accounts (not communities/tickets) fall into each Client Tier, portfolio-wide. Duplicated locally rather than shared, matching TicketsByTierChart/CostToServeByTierChart just above (this file's established per-page-duplication convention), and uses this file's own "unset" tier-key convention (label "Unset") to stay consistent with its siblings rather than Team AM's "Unassigned." */
+function CompaniesByTierChart({ accounts, chartType, setChartType }) {
+  const byTier = {};
+  for (const a of accounts) {
+    const key = (a.tier == null || a.tier === 0) ? 'unset' : a.tier;
+    byTier[key] = (byTier[key] || 0) + 1;
+  }
+  const data = Object.entries(byTier)
+    .map(([tier, total]) => ({ tier, total, name: tier === 'unset' ? 'Unset' : `Tier ${tier}` }))
+    .sort((a, b) => (a.tier === 'unset' ? 1 : b.tier === 'unset' ? -1 : a.tier - b.tier));
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No account data yet — click Refresh to pull it.</p>;
+  }
+
+  const chartHeight = chartType === 'pie' ? 420 : 320;
+
+  return (
+    <>
+      <div className="flex items-center justify-end mb-3">
+        <ChartTypeToggle value={chartType} onChange={setChartType} />
+      </div>
+      <ResponsiveContainer width="100%" height={chartHeight}>
+        {chartType === 'pie' ? (
+          <PieChart>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={({ name, total }) => `${name}: ${total}`} isAnimationActive={false}>
+              {data.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+            </Pie>
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+          </PieChart>
+        ) : (
+          <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+            <Bar dataKey="total" fill="#7c3aed" radius={[4, 4, 0, 0]}>
+              <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+            </Bar>
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+    </>
+  );
+}
+
 const TIER_COST_COLOR = { 'Tier 1': '#16a34a', 'Tier 2': '#2563eb', 'Tier 3': '#ea580c', 'Tier 4': '#dc2626', Unset: '#737373' };
 
 function CostToServeTooltip({ active, payload }) {
@@ -1594,6 +1640,7 @@ export default function AccountHealthDashboard() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [refreshResult, setRefreshResult] = useState(null);
+  const [companiesByTierChartType, setCompaniesByTierChartType] = useState('bar');
 
   async function load() {
     setLoading(true);
@@ -1814,6 +1861,7 @@ export default function AccountHealthDashboard() {
               sections={[
                 'Recurring Calls',
                 'Accounts',
+                'Companies by Tier',
                 'Open Tickets by Category 2.0',
                 'Closed Tickets by Category 2.0',
                 'Ticket Volume by Client Tier',
@@ -1902,6 +1950,10 @@ export default function AccountHealthDashboard() {
               </table>
               {filtered.length === 0 && <p className="text-sm text-neutral-500 italic py-4">No accounts match "{search}".</p>}
             </div>
+          </SectionCard>
+
+          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
+            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
           </SectionCard>
 
           <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload" defaultExpanded={false}>
