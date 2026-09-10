@@ -1139,7 +1139,7 @@ function DealList({ title, deals }) {
           return (
             <div key={i} className="flex justify-between text-sm gap-2">
               <span className="text-neutral-700 truncate">
-                {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{label}</a> : label}
+                {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{label}</a> : label}
               </span>
               <span className="text-neutral-500 shrink-0">{d.dealstage || d.stage}{closeDate ? ` · ${closeDate}` : ''}</span>
             </div>
@@ -1357,7 +1357,7 @@ function AccountHealthImport({ jobId, hubspotHealth, initialWarning, onImported 
                   return (
                     <li key={j} className="truncate">
                       {url ? (
-                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{label2}</a>
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{label2}</a>
                       ) : label2}
                       {status && <span className="text-neutral-400"> — {status}</span>}
                       {nextStep && <div className="text-neutral-400 italic pl-3">↳ {nextStep}</div>}
@@ -1900,7 +1900,7 @@ export default function KpiDashboard() {
                         .map((t) => (
                           <div key={t.id} className="text-sm">
                             {t.url ? (
-                              <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline font-medium break-words">
+                              <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline break-words">
                                 {t.subject || `Ticket #${t.id}`}
                               </a>
                             ) : (
@@ -1937,7 +1937,7 @@ export default function KpiDashboard() {
                     {dealSummary.openDeals.map((d) => (
                       <div key={d.id} className="text-sm">
                         {d.url ? (
-                          <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline font-medium break-words">{d.name}</a>
+                          <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline break-words">{d.name}</a>
                         ) : (
                           <span className="font-medium text-neutral-700 break-words">{d.name}</span>
                         )}
@@ -2005,7 +2005,7 @@ export default function KpiDashboard() {
                   {ticketSummary.topThreeEnhancements.misaligned.map((t) => (
                     <p key={t.id} className="text-sm">
                       {t.url ? (
-                        <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline font-medium">{t.subject || `Ticket #${t.id}`}</a>
+                        <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline ">{t.subject || `Ticket #${t.id}`}</a>
                       ) : (
                         <span className="font-medium">{t.subject || `Ticket #${t.id}`}</span>
                       )}
@@ -2022,7 +2022,7 @@ export default function KpiDashboard() {
                 <div key={t.id} className="flex items-start justify-between gap-4 text-sm py-2 border-b border-neutral-100 last:border-0">
                   <div>
                     {t.url ? (
-                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline font-medium break-words">{t.subject || `Ticket #${t.id}`}</a>
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline break-words">{t.subject || `Ticket #${t.id}`}</a>
                     ) : (
                       <span className="font-medium text-neutral-700 break-words">{t.subject || `Ticket #${t.id}`}</span>
                     )}

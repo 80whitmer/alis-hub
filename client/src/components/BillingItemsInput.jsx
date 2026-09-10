@@ -81,7 +81,7 @@ export default function BillingItemsInput({ items, onChange, error, setError }) 
           onClick={() => setActiveTab('table')}
           className={`px-4 py-2 font-medium text-sm transition-all ${
             activeTab === 'table'
-              ? 'border-b-2 border-accent-500 text-accent-600'
+              ? 'border-b-2 border-accent-500 font-medium text-cool-glacier'
               : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >
@@ -91,7 +91,7 @@ export default function BillingItemsInput({ items, onChange, error, setError }) 
           onClick={() => setActiveTab('excel')}
           className={`px-4 py-2 font-medium text-sm transition-all ${
             activeTab === 'excel'
-              ? 'border-b-2 border-accent-500 text-accent-600'
+              ? 'border-b-2 border-accent-500 font-medium text-cool-glacier'
               : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >
@@ -101,7 +101,7 @@ export default function BillingItemsInput({ items, onChange, error, setError }) 
           onClick={() => setActiveTab('json')}
           className={`px-4 py-2 font-medium text-sm transition-all ${
             activeTab === 'json'
-              ? 'border-b-2 border-accent-500 text-accent-600'
+              ? 'border-b-2 border-accent-500 font-medium text-cool-glacier'
               : 'text-neutral-600 hover:text-neutral-900'
           }`}
         >

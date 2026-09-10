@@ -128,7 +128,7 @@ function JobDrawer({ jobId, onClose }) {
             <Link
               to={`/jobs/${job.id}`}
               onClick={onClose}
-              className="text-sm text-accent-600 hover:text-accent-700 font-medium"
+              className="text-sm font-medium text-cool-glacier hover:underline"
             >
               Open full job page →
             </Link>
@@ -584,7 +584,7 @@ export default function Dashboard() {
           <p className="text-sm text-neutral-500 mt-2">
             {query ? `${filteredJobs.length} of ${jobs.length}` : jobs.length} job{(query ? filteredJobs.length : jobs.length) === 1 ? '' : 's'} tracked
           </p>
-          <p className="text-xs text-accent-600 font-medium mt-1">
+          <p className="text-xs font-medium text-cool-glacier mt-1">
             Every automation job, from kickoff to done
           </p>
         </div>

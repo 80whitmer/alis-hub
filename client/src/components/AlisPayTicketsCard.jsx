@@ -116,7 +116,7 @@ function AlisPayDrawer({ items, includeAccountManager, onClose }) {
                   {includeAccountManager && <td className="py-2 pr-4 text-neutral-500">{t.accountManagerName}</td>}
                   <td className="py-2 pr-4">
                     {t.url ? (
-                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{t.subject}</a>
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a>
                     ) : t.subject}
                   </td>
                   <td className="py-2 pr-4 text-neutral-500">{t.stage || '—'}</td>
@@ -144,7 +144,7 @@ export default function AlisPayTicketsCard({ accounts, includeAccountManager = f
       >
         <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">Open ALIS Pay Tickets</p>
         <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{items.length}</p>
-        <p className="text-xs group-hover:text-sm text-accent-600 mt-0.5 transition-[font-size]">View all →</p>
+        <p className="text-xs group-hover:text-sm font-medium text-cool-glacier mt-0.5 transition-[font-size]">View all →</p>
       </button>
       {open && <AlisPayDrawer items={items} includeAccountManager={includeAccountManager} onClose={() => setOpen(false)} />}
     </>

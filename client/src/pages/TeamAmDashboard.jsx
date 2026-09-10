@@ -78,7 +78,7 @@ function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to sectio
         <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">{label}</p>
         <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{value}</p>
         {note && <p className="text-xs group-hover:text-sm text-neutral-400 mt-0.5 transition-[font-size]">{note}</p>}
-        <p className="text-xs group-hover:text-sm text-accent-600 font-medium mt-0.5 transition-[font-size]">{jumpLabel}</p>
+        <p className="text-xs group-hover:text-sm font-medium text-cool-glacier mt-0.5 transition-[font-size]">{jumpLabel}</p>
       </button>
     );
   }
@@ -104,7 +104,7 @@ function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to sectio
 function StatGroup({ title, children }) {
   return (
     <div className="mb-6">
-      <p className="text-xs font-semibold text-accent-600 uppercase tracking-wide mb-3">{title}</p>
+      <p className="text-xs font-semibold text-cool-glacier uppercase tracking-wide mb-3">{title}</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {children}
       </div>
@@ -194,7 +194,7 @@ function SortableHeader({ label, column, sort, onSort, className = '' }) {
   );
 }
 
-function CompanyLink({ account, children, className = 'text-accent-600 hover:underline' }) {
+function CompanyLink({ account, children, className = 'font-medium text-cool-glacier hover:underline' }) {
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
     <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={className}>
@@ -1119,7 +1119,7 @@ function UnmappedAmSection({ accounts }) {
                   <td className="py-1.5 pr-3">{d.companyName}</td>
                   <td className="py-1.5 pr-3 text-neutral-500">{d.accountManagerLabel}</td>
                   <td className="py-1.5 pr-3">
-                    {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{d.name}</a> : d.name}
+                    {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
                   </td>
                   <td className="py-1.5 pr-3 text-neutral-500">{d.stage}</td>
                   <td className="py-1.5 pr-3 text-right text-neutral-500">{currencyStr(d.valueCents)}</td>
@@ -1149,7 +1149,7 @@ function UnmappedAmSection({ accounts }) {
                   <td className="py-1.5 pr-3">{t.companyName}</td>
                   <td className="py-1.5 pr-3 text-neutral-500">{t.accountManagerLabel}</td>
                   <td className="py-1.5 pr-3">
-                    {t.url ? <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{t.subject}</a> : t.subject}
+                    {t.url ? <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a> : t.subject}
                   </td>
                   <td className="py-1.5 pr-3 text-neutral-500">{t.type}</td>
                   <td className="py-1.5 text-neutral-500">{t.stage}</td>
@@ -1250,7 +1250,7 @@ export default function TeamAmDashboard() {
           <p className="text-sm text-neutral-500 mt-2">
             {rollup.totalAccounts} Home Office accounts across {rollup.totalAms} Account Managers
           </p>
-          <p className="text-xs text-accent-600 font-medium mt-1">
+          <p className="text-xs font-medium text-cool-glacier mt-1">
             Proactive health · portfolio financials · data you can trust
           </p>
           <p className="text-xs text-neutral-400 mt-1">

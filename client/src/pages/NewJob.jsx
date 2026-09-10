@@ -343,7 +343,7 @@ export default function NewJob() {
           Create Automation Job
         </h1>
         <p className="text-neutral-600 mt-2">Pick a job type, then fill in the details below</p>
-        <p className="text-xs text-accent-600 font-medium mt-1">
+        <p className="text-xs font-medium text-cool-glacier mt-1">
           From one click to a completed run
         </p>
       </div>
@@ -445,7 +445,7 @@ export default function NewJob() {
           {!isGLSync && selectedTemplate !== 'create-communities' && (
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="text-sm text-accent-600 hover:text-accent-700 font-medium"
+              className="text-sm font-medium text-cool-glacier hover:underline"
             >
               {showAdvanced ? '← Use Form' : 'Advanced JSON →'}
             </button>

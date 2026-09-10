@@ -204,9 +204,15 @@ export default {
           '@apply text-base leading-relaxed text-neutral-700': {},
         },
 
-        // Links
+        // Links — cool-glacier blue rather than the warm accent scale
+        // (Sep 2026, Aaron: warm-accent labelling/links read as an error
+        // message, "reverse that vibe") — the warm scale's own error color
+        // is Scarlet (#e22405), nearly identical to accent-600 Flame
+        // (#ec4303), so any text in that family reads as alarm regardless
+        // of intent. Blue is the universal "this is a link" signal and
+        // reads as neither warm-CTA nor danger.
         'a': {
-          '@apply text-accent-500 hover:text-accent-600 transition-colors duration-200': {},
+          '@apply text-cool-glacier hover:underline transition-colors duration-200': {},
         },
 
         // Input Elements

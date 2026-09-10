@@ -56,7 +56,7 @@ function tierSort(a, b) {
 function CompanyLink({ account, children }) {
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
-    <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">
+    <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">
       {children}
     </a>
   );
@@ -347,7 +347,7 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
                   {includeAccountManager && <td className="py-2 pr-4 text-neutral-500">{t.accountManagerName}</td>}
                   <td className="py-2 pr-4">
                     {t.url ? (
-                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{t.subject}</a>
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a>
                     ) : t.subject}
                   </td>
                   <td className="py-2 pr-4 text-neutral-500 whitespace-nowrap">{t.createdAt ? t.createdAt.slice(0, 10) : '—'}</td>

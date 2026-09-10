@@ -178,7 +178,7 @@ export default function FormAnalyzer() {
                     <div className="text-xs text-neutral-600">Total Fields</div>
                   </div>
                   <div className="p-3 bg-accent-50 rounded-lg">
-                    <div className="text-2xl font-bold text-accent-600">
+                    <div className="text-2xl font-bold text-cool-glacier">
                       {results.summary.matched_fields}
                     </div>
                     <div className="text-xs text-neutral-600">Matched</div>

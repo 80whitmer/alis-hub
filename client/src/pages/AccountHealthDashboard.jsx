@@ -92,7 +92,7 @@ function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to sectio
         <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">{label}</p>
         <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{value}</p>
         {note && <p className="text-xs group-hover:text-sm text-neutral-400 mt-0.5 transition-[font-size]">{note}</p>}
-        <p className="text-xs group-hover:text-sm text-accent-600 font-medium mt-0.5 transition-[font-size]">{jumpLabel}</p>
+        <p className="text-xs group-hover:text-sm font-medium text-cool-glacier mt-0.5 transition-[font-size]">{jumpLabel}</p>
       </button>
     );
   }
@@ -118,7 +118,7 @@ function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to sectio
 function StatGroup({ title, children }) {
   return (
     <div className="mb-6">
-      <p className="text-xs font-semibold text-accent-600 uppercase tracking-wide mb-3">{title}</p>
+      <p className="text-xs font-semibold text-cool-glacier uppercase tracking-wide mb-3">{title}</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {children}
       </div>
@@ -126,7 +126,7 @@ function StatGroup({ title, children }) {
   );
 }
 
-function CompanyLink({ account, children, className = 'text-accent-600 hover:underline' }) {
+function CompanyLink({ account, children, className = 'font-medium text-cool-glacier hover:underline' }) {
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
     <a
@@ -980,9 +980,9 @@ function AlisHostEditor({ account, companyHosts, onUpdated }) {
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm text-neutral-700">{currentHost || <span className="italic text-neutral-400">not mapped</span>}</span>
           <div className="flex gap-3 shrink-0">
-            <button onClick={() => setEditing(true)} className="text-xs text-accent-600 hover:underline">Edit</button>
+            <button onClick={() => setEditing(true)} className="text-xs font-medium text-cool-glacier hover:underline">Edit</button>
             {currentHost && (
-              <button onClick={() => saveAndRefresh(currentHost)} disabled={busy} className="text-xs text-accent-600 hover:underline">
+              <button onClick={() => saveAndRefresh(currentHost)} disabled={busy} className="text-xs font-medium text-cool-glacier hover:underline">
                 {busy ? 'Refreshing…' : 'Refresh Now'}
               </button>
             )}
@@ -1115,14 +1115,14 @@ function RecurringCallEditor({ account, onUpdated }) {
                 {rc.calendarLink && (
                   <>
                     {' · '}
-                    <a href={rc.calendarLink} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">Open Calendar Event ↗</a>
+                    <a href={rc.calendarLink} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">Open Calendar Event ↗</a>
                   </>
                 )}
                 {rc.notes && <p className="text-neutral-500 text-xs mt-1">{rc.notes}</p>}
               </>
             ) : <span className="italic text-neutral-400">no recurring call set</span>}
           </div>
-          <button onClick={() => setEditing(true)} className="text-xs text-accent-600 hover:underline shrink-0">Edit</button>
+          <button onClick={() => setEditing(true)} className="text-xs font-medium text-cool-glacier hover:underline shrink-0">Edit</button>
         </div>
       )}
       {error && <p className="text-xs text-error mt-1">{error}</p>}
@@ -1148,7 +1148,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
       subtitle={
         <>
           {account.hubspotUrl ? (
-            <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">
+            <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">
               Open in HubSpot
             </a>
           ) : `HubSpot company ${account.hubspot_company_id}`}
@@ -1199,7 +1199,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
         <ul className="text-sm mb-6 space-y-1">
           {svc.agedTickets.map((t) => (
             <li key={t.ticketId} className="flex justify-between gap-2">
-              <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline truncate">{t.subject}</a>
+              <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">{t.subject}</a>
               <span className="text-neutral-400 shrink-0">{t.ageDays}d · {t.stage}</span>
             </li>
           ))}
@@ -1213,7 +1213,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
             <ul className="space-y-1 mb-2">
               {svc.enhancementTopItems.map((t) => (
                 <li key={t.ticketId} className="flex justify-between gap-2">
-                  <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline truncate">
+                  <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">
                     {t.rank ? `#${t.rank} · ` : ''}{t.subject}
                   </a>
                   <span className="text-neutral-400 shrink-0">{t.stage}</span>
@@ -1237,7 +1237,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
             <li key={i}>
               <div className="flex justify-between gap-2">
                 {d.url ? (
-                  <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline truncate">{d.name}</a>
+                  <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">{d.name}</a>
                 ) : <span className="text-neutral-700 truncate">{d.name}</span>}
                 <span className={`shrink-0 ${isPastDue(d) ? 'text-error font-medium' : 'text-neutral-400'}`}>
                   {d.stage} · {currencyStr(d.valueCents)}{d.expectedCloseDate ? ` · due ${d.expectedCloseDate.slice(0, 10)}${isPastDue(d) ? ' (past due)' : ''}` : ''}
@@ -1397,7 +1397,7 @@ function RecurringCallsSection({ accounts, onSelect }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()}
-                        className="text-accent-600 hover:underline"
+                        className="font-medium text-cool-glacier hover:underline"
                       >
                         Open ↗
                       </a>
@@ -1494,7 +1494,7 @@ function ArrAddedDealsSection({ accounts }) {
                 <tr key={`${d.hubspotCompanyId}:${d.name}:${i}`} className="border-t border-neutral-100">
                   <td className="py-2 pr-4 text-neutral-700">{d.companyName}</td>
                   <td className="py-2 pr-4">
-                    {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{d.name}</a> : d.name}
+                    {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
                   </td>
                   <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
                   <td className="py-2 pr-4 text-neutral-500">{d.stage}</td>
@@ -1616,7 +1616,7 @@ function DealsSection({ accounts, search }) {
                         <td className="py-2 pr-4 text-neutral-700">{d.companyName}</td>
                         <td className="py-2 pr-4">
                           {d.url ? (
-                            <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent-600 hover:underline">{d.name}</a>
+                            <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a>
                           ) : d.name}
                         </td>
                         <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
@@ -1634,7 +1634,7 @@ function DealsSection({ accounts, search }) {
                           ) : (
                             <button
                               onClick={() => setExpandedKey(expandedKey === key ? null : key)}
-                              className="text-accent-600 hover:underline text-xs"
+                              className="font-medium text-cool-glacier hover:underline text-xs"
                             >
                               {tasks.length} open {expandedKey === key ? '▲' : '▼'}
                             </button>
@@ -1793,7 +1793,7 @@ export default function AccountHealthDashboard() {
             {rollup.totalAccounts} HubSpot accounts you own
             {refreshResult && ` · last refresh: ${refreshResult.companyCount} accounts, ${refreshResult.errorCount} error(s)`}
           </p>
-          <p className="text-xs text-accent-600 font-medium mt-1">
+          <p className="text-xs font-medium text-cool-glacier mt-1">
             Proactive health · portfolio financials · data you can trust
           </p>
           {refreshResult?.excludedInactiveCommunities?.length > 0 && (
