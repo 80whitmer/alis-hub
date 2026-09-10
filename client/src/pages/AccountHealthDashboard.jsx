@@ -174,22 +174,25 @@ function SectionCard({ title, children, description, action, collapsible = true,
   );
 }
 
-/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. Grows and its text sizes up on hover (Aaron, Sep 2026) so a card that's mostly small print doesn't get overlooked next to the big-number stat tiles around it — `relative` + `hover:z-10` keeps the scaled-up card drawing on top of its neighbors instead of being clipped underneath them. */
-function QuickJumpNav({ sections, className = '' }) {
+/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. Grows and its text sizes up on hover (Aaron, Sep 2026) so a card that's mostly small print doesn't get overlooked next to the big-number stat tiles around it — `relative` + `hover:z-10` keeps the scaled-up card drawing on top of its neighbors instead of being clipped underneath them. `large` (Aaron, Sep 2026: "make it the width of the section") drops it out of the stat grid entirely to run full-width, with a third link column and a size step up across the board (text-sm resting / text-base on hover, vs. text-xs/text-sm) so the extra width doesn't just turn into empty space around small text. */
+function QuickJumpNav({ sections, className = '', large = false }) {
   function jumpTo(title) {
     window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }));
   }
+  const baseText = large ? 'text-sm' : 'text-xs';
+  const hoverText = large ? 'group-hover:text-base' : 'group-hover:text-sm';
+  const gridCols = large ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2';
   return (
     <div className={`group card relative transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl ${className}`}>
-      <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide font-semibold mb-3 transition-[font-size]">Jump to Section</p>
-      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+      <p className={`${baseText} ${hoverText} text-neutral-500 uppercase tracking-wide font-semibold mb-3 transition-[font-size]`}>Jump to Section</p>
+      <ul className={`grid ${gridCols} gap-x-6 gap-y-2`}>
         {sections.map((title) => (
           <li key={title} className="flex items-start gap-2">
             <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent-300 shrink-0" aria-hidden="true" />
             <button
               type="button"
               onClick={() => jumpTo(title)}
-              className="text-left text-xs group-hover:text-sm leading-snug text-neutral-600 hover:text-accent-600 hover:underline transition-[font-size]"
+              className={`text-left ${baseText} ${hoverText} leading-snug text-neutral-600 hover:text-accent-600 hover:underline transition-[font-size]`}
             >
               {title}
             </button>
@@ -1908,25 +1911,25 @@ export default function AccountHealthDashboard() {
             <AlisPayTicketsCard accounts={accounts} />
           </StatGroup>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-            <QuickJumpNav
-              sections={[
-                'Recurring Calls',
-                'Accounts',
-                'Companies by Tier',
-                'Community Revenue & Occupancy',
-                'Open Tickets by Category 2.0',
-                'Closed Tickets by Category 2.0',
-                'Ticket Volume by Client Tier',
-                'Cost to Serve by Tier',
-                'Top 3 Enhancement Requests',
-                'Enhancement Requests',
-                'Deals by Type',
-                'ARR Added This Year — Contributing Deals',
-                'All Deals',
-              ]}
-            />
-          </div>
+          <QuickJumpNav
+            large
+            className="mb-8"
+            sections={[
+              'Recurring Calls',
+              'Accounts',
+              'Companies by Tier',
+              'Community Revenue & Occupancy',
+              'Open Tickets by Category 2.0',
+              'Closed Tickets by Category 2.0',
+              'Ticket Volume by Client Tier',
+              'Cost to Serve by Tier',
+              'Top 3 Enhancement Requests',
+              'Enhancement Requests',
+              'Deals by Type',
+              'ARR Added This Year — Contributing Deals',
+              'All Deals',
+            ]}
+          />
 
           <RecurringCallsSection accounts={accounts} onSelect={setSelected} />
 
