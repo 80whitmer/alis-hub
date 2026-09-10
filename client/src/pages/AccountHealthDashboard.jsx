@@ -1806,19 +1806,24 @@ export default function AccountHealthDashboard() {
             <StatCard
               label="Open Tickets"
               value={rollup.openTickets}
-              sub="Client Submitted + In Progress"
+              sub={<>Client Submitted + In Progress<br /><JumpLink to="open-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink></>}
             />
-            <StatCard label="Closed Tickets" value={rollup.closedTickets} />
+            <StatCard label="Closed Tickets" value={rollup.closedTickets} sub={<JumpLink to="closed-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink>} />
             <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
             <StatCard
               label="Enhancement Requests"
               value={rollup.enhancementTop + rollup.enhancementLesser}
-              sub={`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
+              sub={
+                <>
+                  {`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
+                  <br /><JumpLink to="enhancement-requests">Jump to list ↓</JumpLink>
+                </>
+              }
             />
             <TopThreeEnhancementsCard accounts={accounts} />
             <AlisPayTicketsCard accounts={accounts} />
-            <StatCard label="Open Deals" value={rollup.openDeals} />
-            <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
+            <StatCard label="Open Deals" value={rollup.openDeals} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
+            <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard
               label={`ARR Added (${new Date().getFullYear()})`}

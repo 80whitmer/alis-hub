@@ -150,6 +150,22 @@ function CompanyLink({ account, children, className = 'text-accent-600 hover:und
   );
 }
 
+/** Smooth-scrolls to a section by id, expanding it first if it's a collapsed SectionCard — same JUMP_EVENT SectionCard/QuickJumpNav use above, so a stat tile's jump link never lands on a collapsed card. `to` is the section's slugified id (see slugify()). */
+function JumpLink({ to, children }) {
+  return (
+    <a
+      href={`#${to}`}
+      onClick={(e) => {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: to } }));
+      }}
+      className="text-xs text-accent-600 hover:underline"
+    >
+      {children}
+    </a>
+  );
+}
+
 /**
  * Job-tracked refresh — same SSE + poll-fallback pattern as
  * AccountHealthDashboard.jsx's RefreshOccupancyButton, copied rather
@@ -1218,13 +1234,21 @@ export default function TeamAmDashboard() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <StatCard label="Account Managers" value={rollup.totalAms} />
-            <StatCard label="Total Accounts" value={rollup.totalAccounts} />
+            <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts">Jump to table ↓</JumpLink>} />
             <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
-            <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
-            <StatCard label="Open Tickets" value={rollup.openTickets} sub="Client Submitted + In Progress" />
-            <StatCard label="Closed Tickets" value={rollup.closedTickets} />
-            <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
-            <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
+            <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} sub={<JumpLink to="health-score-distribution">Jump to breakdown ↓</JumpLink>} />
+            <StatCard
+              label="Open Tickets"
+              value={rollup.openTickets}
+              sub={<>Client Submitted + In Progress<br /><JumpLink to="tickets-by-tier">Jump to breakdown ↓</JumpLink></>}
+            />
+            <StatCard label="Closed Tickets" value={rollup.closedTickets} sub={<JumpLink to="tickets-by-tier">Jump to breakdown ↓</JumpLink>} />
+            <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} sub={<JumpLink to="arr-by-tier">Jump to breakdown ↓</JumpLink>} />
+            <StatCard
+              label={`ARR Added (${new Date().getFullYear()})`}
+              value={currencyStr(rollup.arrAddedThisYearCents)}
+              sub={<JumpLink to="arr-by-tier">Jump to breakdown ↓</JumpLink>}
+            />
             <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
             <AlisPayTicketsCard accounts={accounts} includeAccountManager />
             <QuickJumpNav
