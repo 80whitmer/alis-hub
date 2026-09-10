@@ -1236,6 +1236,7 @@ export default function TeamAmDashboard() {
                 'Health Score Distribution',
                 'Companies by Tier',
                 'Tickets by Tier',
+                'Top 3 Enhancement Requests',
                 'Enhancement Requests',
                 'Cost to Serve by Tier',
                 'ARR by Tier',
@@ -1339,7 +1340,11 @@ export default function TeamAmDashboard() {
             <TicketsByTierChart accounts={accounts} />
           </SectionCard>
 
-          <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests tile above">
+          <SectionCard title="Top 3 Enhancement Requests" description="Every account's staged Top 3 Enhancement Request, portfolio-wide">
+            <EnhancementRequestsSection accounts={accounts} includeAccountManager topThreeOnly />
+          </SectionCard>
+
+          <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests section above">
             <EnhancementRequestsSection accounts={accounts} includeAccountManager />
           </SectionCard>
 

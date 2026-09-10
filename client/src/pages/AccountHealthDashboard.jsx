@@ -1865,6 +1865,7 @@ export default function AccountHealthDashboard() {
                 'Open Tickets by Category 2.0',
                 'Closed Tickets by Category 2.0',
                 'Ticket Volume by Client Tier',
+                'Top 3 Enhancement Requests',
                 'Enhancement Requests',
                 'Community Revenue & Occupancy',
                 'Cost to Serve by Tier',
@@ -1965,7 +1966,10 @@ export default function AccountHealthDashboard() {
           <SectionCard title="Ticket Volume by Client Tier" description="Open + closed tickets aggregated by Account Management Tier" defaultExpanded={false}>
             <TicketsByTierChart accounts={accounts} />
           </SectionCard>
-          <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests tile above">
+          <SectionCard title="Top 3 Enhancement Requests" description="Every account's staged Top 3 Enhancement Request, portfolio-wide">
+            <EnhancementRequestsSection accounts={accounts} topThreeOnly />
+          </SectionCard>
+          <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests section above">
             <EnhancementRequestsSection accounts={accounts} />
           </SectionCard>
           <SectionCard

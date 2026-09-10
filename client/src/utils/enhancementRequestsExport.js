@@ -12,7 +12,7 @@ function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 }
 
-export async function exportEnhancementRequests(items, includeAccountManager = false) {
+export async function exportEnhancementRequests(items, includeAccountManager = false, topThreeOnly = false) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'alis-hub';
   workbook.created = new Date();
@@ -55,7 +55,7 @@ export async function exportEnhancementRequests(items, includeAccountManager = f
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'Enhancement-Requests.xlsx';
+  a.download = topThreeOnly ? 'Top-3-Enhancement-Requests.xlsx' : 'Enhancement-Requests.xlsx';
   document.body.appendChild(a);
   a.click();
   a.remove();

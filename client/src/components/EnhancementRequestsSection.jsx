@@ -22,6 +22,16 @@ import { exportEnhancementRequests } from '../utils/enhancementRequestsExport';
  * prop: Account Health Dashboard's accounts are all owned by the same AM
  * (whoever's logged in — see getOwnedCompanies), so that column would be a
  * constant there and is simply omitted.
+ *
+ * `topThreeOnly` (Sep 2026, Aaron) renders this exact same component
+ * filtered to `isTopThree` items — used for a dedicated "Top 3 Enhancement
+ * Requests" section placed just above the general one on both dashboards,
+ * distinct from TopThreeEnhancementsCard.jsx's stat-tile-that-opens-a-drawer
+ * (that one stays as the quick-glance/portfolio-wide count at the top of
+ * the page; this is the same full stats/chart/table treatment as "all
+ * enhancement requests," just pre-filtered). The "Top 3?" column and the
+ * redundant "Also Ranked Top 3" stat tile are hidden in this mode since
+ * every row would trivially read "Yes."
  */
 
 function currencyStr(cents) {
@@ -217,12 +227,15 @@ function EnhancementCalendarHeatmap({ items }) {
   );
 }
 
-export default function EnhancementRequestsSection({ accounts, includeAccountManager = false }) {
+export default function EnhancementRequestsSection({ accounts, includeAccountManager = false, topThreeOnly = false }) {
   const [sort, setSort] = useState({ column: 'daysOpen', direction: 'desc' });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
 
-  const items = useMemo(() => flattenEnhancementRequests(accounts, includeAccountManager), [accounts, includeAccountManager]);
+  const items = useMemo(() => {
+    const all = flattenEnhancementRequests(accounts, includeAccountManager);
+    return topThreeOnly ? all.filter((t) => t.isTopThree) : all;
+  }, [accounts, includeAccountManager, topThreeOnly]);
 
   const avgAgeDays = items.length
     ? Math.round(items.reduce((sum, t) => sum + (t.daysOpen || 0), 0) / items.length)
@@ -253,7 +266,7 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
     setExporting(true);
     setExportError('');
     try {
-      await exportEnhancementRequests(items, includeAccountManager);
+      await exportEnhancementRequests(items, includeAccountManager, topThreeOnly);
     } catch (err) {
       setExportError(err.message);
     } finally {
@@ -263,19 +276,21 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+      <div className={`grid grid-cols-2 ${topThreeOnly ? '' : 'md:grid-cols-3'} gap-4 mb-6`}>
         <div className="card">
-          <p className="text-xs text-neutral-500 uppercase tracking-wide">Open Enhancement Requests</p>
+          <p className="text-xs text-neutral-500 uppercase tracking-wide">{topThreeOnly ? 'Top 3 Enhancement Requests' : 'Open Enhancement Requests'}</p>
           <p className="text-2xl font-bold text-primary-900 mt-1">{items.length}</p>
         </div>
         <div className="card">
           <p className="text-xs text-neutral-500 uppercase tracking-wide">Average Age</p>
           <p className="text-2xl font-bold text-primary-900 mt-1">{avgAgeDays != null ? `${avgAgeDays}d` : '—'}</p>
         </div>
-        <div className="card">
-          <p className="text-xs text-neutral-500 uppercase tracking-wide">Also Ranked Top 3</p>
-          <p className="text-2xl font-bold text-primary-900 mt-1">{topThreeCount}</p>
-        </div>
+        {!topThreeOnly && (
+          <div className="card">
+            <p className="text-xs text-neutral-500 uppercase tracking-wide">Also Ranked Top 3</p>
+            <p className="text-2xl font-bold text-primary-900 mt-1">{topThreeCount}</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -290,7 +305,7 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
       </div>
 
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-primary-900 text-sm">All Open Enhancement Requests</h3>
+        <h3 className="font-semibold text-primary-900 text-sm">{topThreeOnly ? 'Top 3 Enhancement Requests' : 'All Open Enhancement Requests'}</h3>
         <div className="flex items-center gap-3">
           <button onClick={handleExport} disabled={exporting || items.length === 0} className="btn btn-secondary btn-sm">
             {exporting ? 'Exporting…' : '⬇ Export to Excel'}
@@ -300,7 +315,9 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-neutral-500 italic">No open enhancement requests found — click Refresh to pull the latest.</p>
+        <p className="text-sm text-neutral-500 italic">
+          {topThreeOnly ? 'No accounts have a Top 3 Enhancement Request set yet.' : 'No open enhancement requests found — click Refresh to pull the latest.'}
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -314,7 +331,9 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
                 <SortableHeader label="Request Date" column="createdAt" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader label="Days Open" column="daysOpen" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader label="Next Step" column="nextStep" sort={sort} onSort={toggleSort} className="pr-4" />
-                <SortableHeader label="Top 3?" column="isTopThree" sort={sort} onSort={toggleSort} className="pr-4" />
+                {!topThreeOnly && (
+                  <SortableHeader label="Top 3?" column="isTopThree" sort={sort} onSort={toggleSort} className="pr-4" />
+                )}
                 <SortableHeader label="Tier" column="tier" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader label="Size" column="totalCapacity" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader label="ARR" column="arrCents" sort={sort} onSort={toggleSort} className="pr-4" />
@@ -334,7 +353,7 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
                   <td className="py-2 pr-4 text-neutral-500 whitespace-nowrap">{t.createdAt ? t.createdAt.slice(0, 10) : '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500">{t.daysOpen ?? '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500 max-w-xs truncate" title={t.nextStep || ''}>{t.nextStep || '—'}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{t.isTopThree ? 'Yes' : 'No'}</td>
+                  {!topThreeOnly && <td className="py-2 pr-4 text-neutral-500">{t.isTopThree ? 'Yes' : 'No'}</td>}
                   <td className="py-2 pr-4 text-neutral-500">{tierStr(t.tier)}</td>
                   <td className="py-2 pr-4 text-neutral-500">{t.totalCapacity ?? '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500">{currencyStr(t.arrCents)}</td>
