@@ -309,18 +309,17 @@ function CompanyHostMappingButtons({ accounts, companyHosts, onImported }) {
     }
   }
 
+  const subdomainStatus = `${mappedCount} of ${accounts.length} accounts have a known ALIS subdomain`;
+
   return (
-    <div className="text-right">
-      <p className="text-xs text-neutral-400 mb-1">{mappedCount} of {accounts.length} accounts have a known ALIS subdomain</p>
-      <div className="flex gap-2 justify-end">
-        <button onClick={handleDownload} className="btn btn-sm btn-secondary">📋 Download Subdomain Template</button>
-        <label className="btn btn-sm btn-secondary cursor-pointer">
-          {importing ? 'Importing…' : '📤 Upload Completed Template'}
-          <input type="file" accept=".xlsx" onChange={handleUpload} disabled={importing} className="hidden" />
-        </label>
-      </div>
-      {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
-      {result && <p className="text-xs text-neutral-500 mt-1 max-w-xs ml-auto">{result.imported} subdomain(s) imported{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}</p>}
+    <div className="flex items-center gap-2">
+      <button onClick={handleDownload} className="btn btn-sm btn-secondary" title={subdomainStatus}>📋 Download Subdomain Template</button>
+      <label className="btn btn-sm btn-secondary cursor-pointer" title={subdomainStatus}>
+        {importing ? 'Importing…' : '📤 Upload Completed Template'}
+        <input type="file" accept=".xlsx" onChange={handleUpload} disabled={importing} className="hidden" />
+      </label>
+      {error && <p className="text-xs text-error max-w-xs">{error}</p>}
+      {result && <p className="text-xs text-neutral-500 max-w-xs">{result.imported} subdomain(s) imported{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}</p>}
     </div>
   );
 }
@@ -1749,7 +1748,7 @@ export default function AccountHealthDashboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-6 mb-6">
         <div>
           <h1 className="text-3xl font-bold text-primary-900">Account Health</h1>
           <p className="text-sm text-neutral-500 mt-1">
@@ -1762,15 +1761,21 @@ export default function AccountHealthDashboard() {
             </p>
           )}
         </div>
-        <div className="flex flex-wrap gap-3 justify-end max-w-2xl">
-          <ExportButtons
-            onExcel={() => exportAccountHealthPortfolioExcel(accounts, rollup)}
-            onPdf={() => downloadPdf('/api/account-health/export-pdf', 'Account-Health-Portfolio.pdf')}
-          />
-          <ImportAgingReportButton onImported={load} />
-          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
-          <RefreshOccupancyButton onRefreshed={load} />
-          <RefreshButton onRefreshed={handleRefreshed} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <ExportButtons
+              onExcel={() => exportAccountHealthPortfolioExcel(accounts, rollup)}
+              onPdf={() => downloadPdf('/api/account-health/export-pdf', 'Account-Health-Portfolio.pdf')}
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <ImportAgingReportButton onImported={load} />
+            <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
+          </div>
+          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <RefreshOccupancyButton onRefreshed={load} />
+            <RefreshButton onRefreshed={handleRefreshed} />
+          </div>
         </div>
       </div>
 

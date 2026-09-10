@@ -1204,7 +1204,7 @@ export default function TeamAmDashboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-6 mb-6">
         <div>
           <h1 className="text-3xl font-bold text-primary-900">Team AM Dashboard</h1>
           <p className="text-sm text-neutral-500 mt-1">
@@ -1214,10 +1214,14 @@ export default function TeamAmDashboard() {
             Census/capacity shown only where already known from the personal Account Health Dashboard's own occupancy refresh — this page never calls ALIS directly.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3 justify-end max-w-2xl">
-          <ExportPptButton />
-          <ImportAgingReportButton onImported={load} />
-          <RefreshButton onRefreshed={load} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <ExportPptButton />
+            <ImportAgingReportButton onImported={load} />
+          </div>
+          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <RefreshButton onRefreshed={load} />
+          </div>
         </div>
       </div>
 
