@@ -1750,8 +1750,11 @@ export default function AccountHealthDashboard() {
     <div>
       <div className="flex items-start justify-between gap-6 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-primary-900">Account Health</h1>
-          <p className="text-sm text-neutral-500 mt-1">
+          <h1 className="flex items-center gap-3 text-5xl font-bold text-primary-900">
+            <img src="/butterfly-icon.png" alt="" className="h-11 w-auto" />
+            Account Health
+          </h1>
+          <p className="text-sm text-neutral-500 mt-2">
             {rollup.totalAccounts} HubSpot accounts you own
             {refreshResult && ` · last refresh: ${refreshResult.companyCount} accounts, ${refreshResult.errorCount} error(s)`}
           </p>
@@ -1761,18 +1764,20 @@ export default function AccountHealthDashboard() {
             </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <ExportButtons
               onExcel={() => exportAccountHealthPortfolioExcel(accounts, rollup)}
               onPdf={() => downloadPdf('/api/account-health/export-pdf', 'Account-Health-Portfolio.pdf')}
             />
           </div>
-          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <ImportAgingReportButton onImported={load} />
+          </div>
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
           </div>
-          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <RefreshOccupancyButton onRefreshed={load} />
             <RefreshButton onRefreshed={handleRefreshed} />
           </div>
