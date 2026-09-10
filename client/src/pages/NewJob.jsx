@@ -338,8 +338,14 @@ export default function NewJob() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-primary-900 mb-2">Create Automation Job</h1>
-        <p className="text-neutral-600">Pick a job type, then fill in the details below</p>
+        <h1 className="flex items-center gap-3 text-5xl font-bold text-primary-900">
+          <img src="/butterfly-icon.png" alt="" className="h-11 w-auto" />
+          Create Automation Job
+        </h1>
+        <p className="text-neutral-600 mt-2">Pick a job type, then fill in the details below</p>
+        <p className="text-xs text-accent-600 font-medium mt-1">
+          From one click to a completed run
+        </p>
       </div>
 
       {/* Template selector — icon-first tiles, description on demand via the ⓘ

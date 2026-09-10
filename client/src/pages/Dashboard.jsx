@@ -575,12 +575,18 @@ export default function Dashboard() {
   return (
     <div>
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-3xl font-bold text-primary-900">Job Board</h1>
-          <span className="badge badge-neutral">
-            {query ? `${filteredJobs.length} of ${jobs.length}` : jobs.length}
-          </span>
+      <div className="flex items-start justify-between gap-6 mb-6">
+        <div>
+          <h1 className="flex items-center gap-3 text-5xl font-bold text-primary-900">
+            <img src="/butterfly-icon.png" alt="" className="h-11 w-auto" />
+            Job Board
+          </h1>
+          <p className="text-sm text-neutral-500 mt-2">
+            {query ? `${filteredJobs.length} of ${jobs.length}` : jobs.length} job{(query ? filteredJobs.length : jobs.length) === 1 ? '' : 's'} tracked
+          </p>
+          <p className="text-xs text-accent-600 font-medium mt-1">
+            Every automation job, from kickoff to done
+          </p>
         </div>
         <Link to="/new-job" className="btn btn-accent">+ New Job</Link>
       </div>
