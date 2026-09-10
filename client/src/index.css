@@ -51,42 +51,23 @@ body {
    =========================================================================== */
 
 /* Cards — Clean, minimal containers with subtle shadows. Hover state is a
-   two-stage effect: a soft warm shimmer sweeps across the tile once on
-   hover-in (::before, self-clearing via its own transition), then settles
-   into a lasting, barely-there accent wash (bg/border/shadow) for as long
-   as the cursor stays over it — Aaron asked (Sep 2026) for hover to read
-   as more than a faint shadow change, then asked for a second pass to
-   soften the sweep and lighten the wash so existing dark text keeps
-   popping against it rather than fighting a heavier tint. The sweep uses
-   `position: relative` + an absolutely-positioned pseudo-element rather
-   than `overflow: hidden` clipping, so it never risks cutting off a
-   dropdown/tooltip that legitimately overflows a card's bounds elsewhere
-   in the app. */
+   lasting, soft yellow wash (bg/border/shadow) for as long as the cursor
+   stays over it, plus a slight darkening of the tile's own content so
+   text reads a bit more crisply against it — Aaron asked (Sep 2026) for
+   hover to read as more than a faint shadow change, then went through two
+   more passes: first to soften an animated shimmer sweep that had been
+   here, then to drop the shimmer entirely, shift the wash from the warm
+   orange accent to a calmer yellow, and darken the text slightly, since
+   the shimmer read as overdone. */
 @layer components {
   .card {
     @apply relative bg-white border border-neutral-200 rounded-lg p-6 shadow-sm transition-all duration-300;
   }
 
-  .card::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(115deg, transparent 25%, rgba(251, 178, 25, 0.14) 50%, transparent 75%);
-    transform: translateX(-150%);
-    opacity: 0;
-    pointer-events: none;
-    transition: transform 0.7s ease, opacity 0.2s ease;
-  }
-
   .card:hover {
-    @apply shadow-md border-accent-200;
-    background-color: rgba(251, 178, 25, 0.045);
-  }
-
-  .card:hover::before {
-    transform: translateX(150%);
-    opacity: 1;
+    @apply shadow-md border-yellow-300;
+    background-color: rgba(250, 204, 21, 0.08);
+    filter: contrast(1.05) brightness(0.97);
   }
 
   .card-sm {
