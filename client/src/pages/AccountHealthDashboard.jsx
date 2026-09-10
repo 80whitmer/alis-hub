@@ -77,6 +77,27 @@ function StatCard({ label, value, sub }) {
   );
 }
 
+/**
+ * Labeled cluster of stat tiles — the top-of-page grid is grouped into
+ * four of these (Sep 2026, Aaron: "arrange the tiles to tell the story
+ * TC/Evan/Gary are looking to tell") rather than one flat 18-tile grid,
+ * so the page reads as a narrative instead of an alphabet soup of
+ * numbers: portfolio health first (Gary's tier-aware, proactive-attention
+ * instinct), then financial/occupancy rollups (Evan's Viva-style ask),
+ * then data freshness/trust (Trisha's provenance concerns), then the
+ * day-to-day support-ticket detail underneath all three.
+ */
+function StatGroup({ title, children }) {
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-accent-600 uppercase tracking-wide mb-3">{title}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** Smooth-scrolls to a section by id, expanding it first if it's a collapsed SectionCard — same 'alis-hub:jump-to-section' event QuickJumpNav uses below, so a stat tile's jump link never lands on a collapsed card. `to` is the section's slugified id (see slugify()). */
 function JumpLink({ to, children }) {
   return (
@@ -1758,6 +1779,9 @@ export default function AccountHealthDashboard() {
             {rollup.totalAccounts} HubSpot accounts you own
             {refreshResult && ` · last refresh: ${refreshResult.companyCount} accounts, ${refreshResult.errorCount} error(s)`}
           </p>
+          <p className="text-xs text-accent-600 font-medium mt-1">
+            Proactive health · portfolio financials · data you can trust
+          </p>
           {refreshResult?.excludedInactiveCommunities?.length > 0 && (
             <p className="text-xs text-neutral-400 mt-1 max-w-2xl">
               Excluded {refreshResult.excludedInactiveCommunities.length} Home Office(s) with no active ALIS community: {refreshResult.excludedInactiveCommunities.map((c) => c.name).join(', ')}
@@ -1805,35 +1829,20 @@ export default function AccountHealthDashboard() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {/* Four labeled acts instead of one flat 18-tile grid — see
+              StatGroup's doc comment for the story each one is carrying. */}
+          <StatGroup title="Portfolio Health — proactive, not reactive">
             <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts">Jump to table ↓</JumpLink>} />
-            <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
+            <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
             <StatCard
               label="Recurring Calls Tracked"
               value={rollup.recurringCallCount}
               sub={<JumpLink to="recurring-calls">Jump to table ↓</JumpLink>}
             />
-            <StatCard
-              label="Open Tickets"
-              value={rollup.openTickets}
-              sub={<>Client Submitted + In Progress<br /><JumpLink to="open-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink></>}
-            />
-            <StatCard label="Closed Tickets" value={rollup.closedTickets} sub={<JumpLink to="closed-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink>} />
-            <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
-            <StatCard
-              label="Enhancement Requests"
-              value={rollup.enhancementTop + rollup.enhancementLesser}
-              sub={
-                <>
-                  {`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
-                  <br /><JumpLink to="enhancement-requests">Jump to list ↓</JumpLink>
-                </>
-              }
-            />
             <TopThreeEnhancementsCard accounts={accounts} />
-            <AlisPayTicketsCard accounts={accounts} />
-            <StatCard label="Open Deals" value={rollup.openDeals} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
-            <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
+          </StatGroup>
+
+          <StatGroup title="Financial & Occupancy — the whole portfolio, already assembled">
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard
               label={`ARR Added (${new Date().getFullYear()})`}
@@ -1858,32 +1867,60 @@ export default function AccountHealthDashboard() {
               value={rollup.occupancyAccountCount > 0 ? rollup.currentCensus : '—'}
               sub={rollup.occupancyPct != null ? `${pctStr(rollup.occupancyPct)} occupied` : undefined}
             />
+            <StatCard label="Open Deals" value={rollup.openDeals} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
+            <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
+          </StatGroup>
+
+          <StatGroup title="Data You Can Trust — current, sourced, and dated">
             <StatCard
               label={`Aging Balance${rollup.agingAsOfDate ? ` (as of ${rollup.agingAsOfDate})` : ''}`}
               value={rollup.agingAsOfDate ? currencyStr(rollup.agingTotalCents) : '—'}
-            />
-            <StatCard
-              label="Past Due 61+ Days"
-              value={rollup.agingAsOfDate ? currencyStr(rollup.pastDue61PlusCents) : '—'}
             />
             <StatCard
               label="Portfolio DSO"
               value={rollup.portfolioDsoDays != null ? `${rollup.portfolioDsoDays}d` : '—'}
               sub="Rudimentary — AR balance ÷ daily revenue rate, not true invoice-to-payment DSO"
             />
+            <StatCard
+              label="Past Due 61+ Days"
+              value={rollup.agingAsOfDate ? currencyStr(rollup.pastDue61PlusCents) : '—'}
+            />
+            <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
+          </StatGroup>
+
+          <StatGroup title="Support Activity">
+            <StatCard
+              label="Open Tickets"
+              value={rollup.openTickets}
+              sub={<>Client Submitted + In Progress<br /><JumpLink to="open-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink></>}
+            />
+            <StatCard label="Closed Tickets" value={rollup.closedTickets} sub={<JumpLink to="closed-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink>} />
+            <StatCard
+              label="Enhancement Requests"
+              value={rollup.enhancementTop + rollup.enhancementLesser}
+              sub={
+                <>
+                  {`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
+                  <br /><JumpLink to="enhancement-requests">Jump to list ↓</JumpLink>
+                </>
+              }
+            />
+            <AlisPayTicketsCard accounts={accounts} />
+          </StatGroup>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
             <QuickJumpNav
-              className="col-span-2"
               sections={[
                 'Recurring Calls',
                 'Accounts',
                 'Companies by Tier',
+                'Community Revenue & Occupancy',
                 'Open Tickets by Category 2.0',
                 'Closed Tickets by Category 2.0',
                 'Ticket Volume by Client Tier',
                 'Cost to Serve by Tier',
                 'Top 3 Enhancement Requests',
                 'Enhancement Requests',
-                'Community Revenue & Occupancy',
                 'Deals by Type',
                 'ARR Added This Year — Contributing Deals',
                 'All Deals',
@@ -1968,8 +2005,22 @@ export default function AccountHealthDashboard() {
             </div>
           </SectionCard>
 
+          {/* Companies by Tier + Community Revenue & Occupancy lead the
+              section list (Sep 2026, Aaron) — they're the two things
+              already built here that directly answer Gary's tier-aware
+              health ask and Evan's Viva-style portfolio rollup ask, so
+              they open the story instead of being buried under ticket
+              detail. */}
           <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
             <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
+          </SectionCard>
+
+          <SectionCard
+            title="Community Revenue & Occupancy"
+            description="Monthly per-community Net Revenue, Occupancy, and PPD with month-over-month variance — same report shape Viva's finance team was hand-building every month"
+            defaultExpanded={false}
+          >
+            <CommunityRevenueSection accounts={accounts} />
           </SectionCard>
 
           <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload" defaultExpanded={false}>
@@ -1989,13 +2040,6 @@ export default function AccountHealthDashboard() {
           </SectionCard>
           <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests section above">
             <EnhancementRequestsSection accounts={accounts} />
-          </SectionCard>
-          <SectionCard
-            title="Community Revenue & Occupancy"
-            description="Monthly per-community Net Revenue, Occupancy, and PPD with month-over-month variance — same report shape Viva's finance team was hand-building every month"
-            defaultExpanded={false}
-          >
-            <CommunityRevenueSection accounts={accounts} />
           </SectionCard>
           <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR" defaultExpanded={false}>
             <DealTypeChart accounts={accounts} />
