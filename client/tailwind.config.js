@@ -41,9 +41,15 @@ export default {
         },
 
         // Cool secondary accent (Glacier / Mint) — for places that want a
-        // secondary accent distinct from the warm CTA color.
+        // secondary accent distinct from the warm CTA color. Glacier is
+        // darkened from the brand guide's original #56a5c9 (Aaron, Sep
+        // 2026: "too pale" once it became the app-wide labelling/link
+        // color) — same hue, same "for places that want cool distinct
+        // from warm" family, just deep enough to clear WCAG AA body-text
+        // contrast (5.7:1 vs the original's 2.8:1) instead of reading as
+        // a light-blue wash.
         cool: {
-          glacier: '#56a5c9',
+          glacier: '#2c6e8b',
           mint:    '#7cc7a6',
         },
 
