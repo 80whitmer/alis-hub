@@ -12,6 +12,7 @@ import { exportIncidentCompletion } from '../utils/incidentCompletionExport';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
 import UpcomingBirthdaysPanel, { hasUpcomingBirthdays } from '../components/UpcomingBirthdaysPanel';
+import CommunityRevenueSection from '../components/CommunityRevenueSection';
 
 const SEVERITY_BADGE = {
   risk: 'badge-error',
@@ -1792,6 +1793,9 @@ export default function KpiDashboard() {
       <SectionCard title="Revenue Yield (PPD)" description="Revenue per occupied/census day — company average, with Region/Facility drill-down and month-over-month trend">
         <PpdSection ppd={normalized.ppd} companyName={summary.companyName} jobId={jobId} />
       </SectionCard>
+
+      {/* 3d. COMMUNITY REVENUE & OCCUPANCY SNAPSHOT — renders nothing if this account has never had the job run */}
+      <CommunityRevenueSection companyName={summary.companyName} />
 
       {/* 4. STAFFING */}
       <SectionCard title="Staffing" description="Staff ratios and activity metrics">

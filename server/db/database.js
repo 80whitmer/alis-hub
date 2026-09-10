@@ -787,8 +787,18 @@ function getPriorCommunityRevenueSnapshot({ companyName, communityId, month }) {
   );
 }
 
-/** Every community's snapshot for one month, portfolio-wide — the Team AM Dashboard rollup's data source. One row per (company, community); if a job was re-run for the same month, the most recent job_id's rows win (ROW_NUMBER over job_id's own rowid, which increases with insert order). */
-function listCommunityRevenueSnapshots({ month }) {
+/** Every community's snapshot for one month — the Account Health Dashboard rollup's data source, or (with `companyName`) one account's own rows for the KPI/QBR Dashboard. One row per (company, community); if a job was re-run for the same month, the most recent job_id's rows win (MAX(id) over job_id's own rowid, which increases with insert order). */
+function listCommunityRevenueSnapshots({ month, companyName }) {
+  if (companyName) {
+    return queryAll(
+      `SELECT * FROM community_revenue_snapshots
+       WHERE month = ? AND company_name = ? AND id IN (
+         SELECT MAX(id) FROM community_revenue_snapshots WHERE month = ? AND company_name = ? GROUP BY company_name, community_id
+       )
+       ORDER BY community_name`,
+      [month, companyName, month, companyName]
+    );
+  }
   return queryAll(
     `SELECT * FROM community_revenue_snapshots
      WHERE month = ? AND id IN (
@@ -799,8 +809,11 @@ function listCommunityRevenueSnapshots({ month }) {
   );
 }
 
-/** Distinct months with at least one stored snapshot, newest first — used by the Team AM Dashboard's "overdue" banner to find the latest available month and check whether last calendar month is missing for any actively-tracked account. */
-function listCommunityRevenueMonths() {
+/** Distinct months with at least one stored snapshot, newest first — portfolio-wide by default (used by the Account Health Dashboard's "overdue" banner to find the latest available month and check whether last calendar month is missing for any actively-tracked account), or scoped to one company (used by the KPI/QBR Dashboard to find that account's own latest month, and to decide whether to show the section at all). */
+function listCommunityRevenueMonths({ companyName } = {}) {
+  if (companyName) {
+    return queryAll(`SELECT DISTINCT month FROM community_revenue_snapshots WHERE company_name = ? ORDER BY month DESC`, [companyName]).map((r) => r.month);
+  }
   return queryAll(`SELECT DISTINCT month FROM community_revenue_snapshots ORDER BY month DESC`).map((r) => r.month);
 }
 

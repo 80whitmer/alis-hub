@@ -348,10 +348,12 @@ function WellnessScorecardDetail({ job, pct }) {
 
 // ─── Community Revenue & Occupancy Snapshot detail view ──────────────────────
 // Unlike kpi-export/wellness-scorecard, this job has no job-id-scoped page of
-// its own — the Team AM Dashboard's "Community Revenue & Occupancy" section
-// (client/src/components/CommunityRevenueSection.jsx) reads the latest stored
-// month straight from community_revenue_snapshots rather than one job's
-// results, so the link here goes to that section rather than a per-job route.
+// its own — the Account Health Dashboard's "Community Revenue & Occupancy"
+// section (client/src/components/CommunityRevenueSection.jsx) reads the
+// latest stored month straight from community_revenue_snapshots rather than
+// one job's results, so the link here goes to that section rather than a
+// per-job route. (It also surfaces on the KPI/QBR Dashboard for whichever
+// single account it was run for, once cached.)
 function CommunityRevenueSnapshotDetail({ job, pct }) {
   return (
     <div>
@@ -374,11 +376,11 @@ function CommunityRevenueSnapshotDetail({ job, pct }) {
 
       {job.status === 'done' ? (
         <>
-          <Link to="/team-am" className="btn btn-accent">📈 Open Team AM Dashboard →</Link>
-          <p className="text-xs text-neutral-400 mt-2">Look for the "Community Revenue &amp; Occupancy" section (collapsed by default) — it always shows the latest month with a snapshot, month-over-month vs. the prior month's run.</p>
+          <Link to="/" className="btn btn-accent">📈 Open Account Health Dashboard →</Link>
+          <p className="text-xs text-neutral-400 mt-2">Look for the "Community Revenue &amp; Occupancy" section (collapsed by default) — it always shows the latest month with a snapshot, month-over-month vs. the prior month's run. It also appears on this account's KPI/QBR Dashboard, once one exists.</p>
         </>
       ) : (
-        <p className="text-sm text-neutral-400">Results will be available on the Team AM Dashboard once the job completes.</p>
+        <p className="text-sm text-neutral-400">Results will be available on the Account Health Dashboard once the job completes.</p>
       )}
     </div>
   );

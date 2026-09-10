@@ -9,6 +9,8 @@ const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError, createJob, setJobStatus, setItemStatus,
   listRecurringCalls, upsertRecurringCall, deleteRecurringCall,
+  listCommunityRevenueSnapshots, getPriorCommunityRevenueSnapshot, listCommunityRevenueMonths,
+  listCommunityRevenueLatestMonthByCompany,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -565,6 +567,94 @@ router.post('/refresh-occupancy', (req, res) => {
 router.get('/', (req, res) => {
   try {
     res.json({ accounts: getEnrichedAccounts() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** 'YYYY-MM' minus one calendar month, e.g. '2026-09' -> '2026-08' — used to find "last calendar month" for the overdue banner. */
+function priorCalendarMonth(monthStr) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1)); // m is 1-based; m-2 = (m-1)-1
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Whole calendar months between two 'YYYY-MM' strings (b - a), for the overdue banner's "N months behind" figure. */
+function monthsDiff(a, b) {
+  const [ay, am] = a.split('-').map(Number);
+  const [by, bm] = b.split('-').map(Number);
+  return (by - ay) * 12 + (bm - am);
+}
+
+/** { current, prior, deltaAbs, deltaPct } — null-safe, same convention as withTrend/trendArrow in wellnessNormalizer.js: never fabricates a prior value or a delta when no prior-month snapshot exists yet. */
+function withDelta(current, prior) {
+  if (current == null || prior == null) return { current: current ?? null, prior: prior ?? null, deltaAbs: null, deltaPct: null };
+  const deltaAbs = current - prior;
+  const deltaPct = prior !== 0 ? (deltaAbs / Math.abs(prior)) * 100 : null;
+  return { current, prior, deltaAbs, deltaPct };
+}
+
+// GET /api/account-health/community-revenue — the monthly Community
+// Revenue & Occupancy Snapshot rollup (server/automation/
+// communityRevenueSnapshot.js). Reads straight from
+// community_revenue_snapshots rather than any cached "current state"
+// table — that table already IS the history, so this just picks one
+// month and diffs each row against its own prior-month row at request
+// time. Defaults to the latest month with any data; `?month=YYYY-MM`
+// picks a specific one. `?companyName=` scopes everything to one account
+// (its own latest month, not the portfolio's) — used by the KPI/QBR
+// Dashboard to show this account's own history, or hide the section
+// entirely when `month` comes back null (no snapshot ever run for it).
+router.get('/community-revenue', (req, res) => {
+  try {
+    const { companyName } = req.query;
+    const availableMonths = listCommunityRevenueMonths(companyName ? { companyName } : undefined);
+    if (availableMonths.length === 0) {
+      return res.json({ month: null, availableMonths: [], rows: [], overdue: [] });
+    }
+    const month = availableMonths.includes(req.query.month) ? req.query.month : availableMonths[0];
+
+    const rows = listCommunityRevenueSnapshots({ month, companyName }).map((r) => {
+      const prior = getPriorCommunityRevenueSnapshot({ companyName: r.company_name, communityId: r.community_id, month });
+      return {
+        companyName: r.company_name,
+        companyHost: r.company_host,
+        communityId: r.community_id,
+        communityName: r.community_name,
+        month: r.month,
+        charges: r.charges,
+        credits: r.credits,
+        discounts: r.discounts,
+        moveIns: r.move_ins,
+        moveOuts: r.move_outs,
+        unitCapacity: r.unit_capacity,
+        netRevenue: withDelta(r.net_revenue, prior?.net_revenue),
+        totalOccupiedUnits: withDelta(r.total_occupied_units, prior?.total_occupied_units),
+        occupancyUnitDays: withDelta(r.occupancy_unit_days, prior?.occupancy_unit_days),
+        censusDays: withDelta(r.census_days, prior?.census_days),
+        ppdUnitDays: withDelta(r.ppd_unit_days, prior?.ppd_unit_days),
+        ppdCensus: withDelta(r.ppd_census, prior?.ppd_census),
+      };
+    });
+
+    // Overdue banner is a portfolio-wide concept only — the QBR Dashboard's
+    // single-company view has no use for "which OTHER accounts are behind."
+    let overdue = [];
+    if (!companyName) {
+      const todayMonth = new Date().toISOString().slice(0, 7);
+      const lastCalendarMonth = priorCalendarMonth(todayMonth);
+      const latestByCompany = listCommunityRevenueLatestMonthByCompany();
+      overdue = latestByCompany
+        .filter((c) => c.latestMonth < lastCalendarMonth)
+        .map((c) => ({
+          companyName: c.companyName,
+          latestMonth: c.latestMonth,
+          monthsBehind: monthsDiff(c.latestMonth, lastCalendarMonth) + 1,
+        }))
+        .sort((a, b) => b.monthsBehind - a.monthsBehind);
+    }
+
+    res.json({ month, availableMonths, rows, overdue });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

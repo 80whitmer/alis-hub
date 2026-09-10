@@ -7,7 +7,6 @@ import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
 import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
-import CommunityRevenueSection from '../components/CommunityRevenueSection';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -114,19 +113,21 @@ function QuickJumpNav({ sections, className = '' }) {
   }
   return (
     <div className={`card ${className}`}>
-      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-2">Jump to Section</p>
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
+      <p className="text-xs text-neutral-500 uppercase tracking-wide font-semibold mb-3">Jump to Section</p>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
         {sections.map((title) => (
-          <button
-            key={title}
-            type="button"
-            onClick={() => jumpTo(title)}
-            className="text-xs text-accent-600 hover:underline text-left"
-          >
-            {title}
-          </button>
+          <li key={title} className="flex items-start gap-2">
+            <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent-300 shrink-0" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={() => jumpTo(title)}
+              className="text-left text-xs leading-snug text-neutral-600 hover:text-accent-600 hover:underline"
+            >
+              {title}
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -1236,7 +1237,6 @@ export default function TeamAmDashboard() {
                 'Companies by Tier',
                 'Tickets by Tier',
                 'Enhancement Requests',
-                'Community Revenue & Occupancy',
                 'Cost to Serve by Tier',
                 'ARR by Tier',
                 'Ticket Volume by Account Manager by Tier',
@@ -1341,14 +1341,6 @@ export default function TeamAmDashboard() {
 
           <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests tile above">
             <EnhancementRequestsSection accounts={accounts} includeAccountManager />
-          </SectionCard>
-
-          <SectionCard
-            title="Community Revenue & Occupancy"
-            description="Monthly per-community Net Revenue, Occupancy, and PPD with month-over-month variance — same report shape Viva's finance team was hand-building every month"
-            defaultExpanded={false}
-          >
-            <CommunityRevenueSection />
           </SectionCard>
 
           <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>

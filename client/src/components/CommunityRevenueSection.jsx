@@ -7,13 +7,25 @@ import { exportCommunityRevenue } from '../utils/communityRevenueExport';
  * Move-Outs, with month-over-month deltas, sourced from the monthly
  * "Community Revenue & Occupancy Snapshot" job (server/automation/
  * communityRevenueSnapshot.js) rather than the live-refreshed `accounts`
- * prop every other section on this dashboard uses — this is its own
- * fetch against /api/team-am/community-revenue, since the underlying data
- * is stored history (community_revenue_snapshots), not a cached "current
- * state" snapshot recomputed on every dashboard refresh. Matches the
- * exact report shape Viva's finance team was hand-building every month
- * (Charges + Credits + Discounts = Net Revenue, confirmed against their
- * real July/August 2025 spreadsheets).
+ * prop every other section on the dashboards it lives on uses — this is
+ * its own fetch against /api/account-health/community-revenue, since the
+ * underlying data is stored history (community_revenue_snapshots), not a
+ * cached "current state" snapshot recomputed on every dashboard refresh.
+ * Matches the exact report shape Viva's finance team was hand-building
+ * every month (Charges + Credits + Discounts = Net Revenue, confirmed
+ * against their real July/August 2025 spreadsheets).
+ *
+ * Two usage modes (Sep 2026, moved off Team AM Dashboard per Aaron):
+ * - Portfolio (Account Health Dashboard): pass `accounts` — the endpoint
+ *   itself isn't owner-scoped (community_revenue_snapshots has no
+ *   hubspot_company_id), so rows are filtered client-side to whatever
+ *   company names appear in the caller's own (already owner-scoped)
+ *   `accounts` list, same convention EnhancementRequestsSection uses.
+ * - Single account (KPI/QBR Dashboard): pass `companyName` — fetches that
+ *   account's own history via `?companyName=`, hides the Company column
+ *   and overdue banner (both meaningless for one account), and renders
+ *   nothing at all if the account has no snapshot yet, so the QBR page
+ *   only ever shows this "if the data has been run/cached" per Aaron.
  *
  * Unit Capacity is a labeled ESTIMATE, not authoritative — Viva's own
  * report sources it from a manually-maintained file outside ALIS
@@ -82,7 +94,16 @@ function OverdueBanner({ overdue, onDismiss }) {
   );
 }
 
-export default function CommunityRevenueSection() {
+function apiUrl(companyName, month) {
+  const params = new URLSearchParams();
+  if (companyName) params.set('companyName', companyName);
+  if (month) params.set('month', month);
+  const qs = params.toString();
+  return `/api/account-health/community-revenue${qs ? `?${qs}` : ''}`;
+}
+
+export default function CommunityRevenueSection({ accounts, companyName }) {
+  const single = Boolean(companyName);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -93,28 +114,23 @@ export default function CommunityRevenueSection() {
 
   useEffect(() => {
     let cancelled = false;
-    async function load(month) {
-      setLoading(true);
-      setError('');
-      try {
-        const res = await fetch(`/api/team-am/community-revenue${month ? `?month=${month}` : ''}`);
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
-        const json = await res.json();
-        if (!cancelled) setData(json);
-      } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
+    setLoading(true);
+    setError('');
+    fetch(apiUrl(companyName))
+      .then((res) => {
+        if (!res.ok) return res.json().catch(() => ({})).then((j) => { throw new Error(j.error || `HTTP ${res.status}`); });
+        return res.json();
+      })
+      .then((json) => { if (!cancelled) setData(json); })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [companyName]);
 
   function handleMonthChange(month) {
     setLoading(true);
     setError('');
-    fetch(`/api/team-am/community-revenue?month=${month}`)
+    fetch(apiUrl(companyName, month))
       .then((res) => res.json())
       .then(setData)
       .catch((err) => setError(err.message))
@@ -127,7 +143,18 @@ export default function CommunityRevenueSection() {
       : { column, direction: 'asc' });
   }
 
-  const rows = data?.rows || [];
+  // Portfolio mode: community_revenue_snapshots has no hubspot_company_id
+  // to filter by server-side, so scope to the caller's own (already
+  // owner-scoped) account list client-side instead — same pattern
+  // EnhancementRequestsSection uses for the same reason.
+  const ownedNames = useMemo(
+    () => (accounts ? new Set(accounts.map((a) => a.company_name)) : null),
+    [accounts]
+  );
+  const rows = useMemo(() => {
+    const all = data?.rows || [];
+    return ownedNames ? all.filter((r) => ownedNames.has(r.companyName)) : all;
+  }, [data, ownedNames]);
 
   const sorted = useMemo(() => {
     const { column, direction } = sort;
@@ -166,6 +193,15 @@ export default function CommunityRevenueSection() {
     }
   }
 
+  // Single-account (QBR) mode is entirely self-contained (own title/card,
+  // no parent SectionCard wrapping it — see KpiDashboard.jsx) and never
+  // shows a loading flash or "no data" placeholder: while loading, or if
+  // this account has no snapshot at all, the section simply isn't there,
+  // per Aaron's "if the data has been run/cached" ask.
+  if (single && (loading || error || !data || data.month == null)) {
+    return null;
+  }
+
   if (loading && !data) {
     return <p className="text-sm text-neutral-500 italic">Loading community revenue history…</p>;
   }
@@ -182,9 +218,9 @@ export default function CommunityRevenueSection() {
 
   const totalNetRevenue = rows.reduce((s, r) => s + (r.netRevenue?.current || 0), 0);
 
-  return (
+  const content = (
     <div>
-      {!bannerDismissed && <OverdueBanner overdue={data.overdue} onDismiss={() => setBannerDismissed(true)} />}
+      {!single && !bannerDismissed && <OverdueBanner overdue={data.overdue} onDismiss={() => setBannerDismissed(true)} />}
 
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -217,7 +253,7 @@ export default function CommunityRevenueSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
-                <SortableHeader label="Company" column="companyName" sort={sort} onSort={toggleSort} className="pr-4" />
+                {!single && <SortableHeader label="Company" column="companyName" sort={sort} onSort={toggleSort} className="pr-4" />}
                 <SortableHeader label="Community" column="communityName" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader label="Net Revenue" column="netRevenue" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader
@@ -239,7 +275,7 @@ export default function CommunityRevenueSection() {
             <tbody>
               {sorted.map((r) => (
                 <tr key={`${r.companyHost}::${r.communityId}`} className="border-t border-neutral-100">
-                  <td className="py-2 pr-4">{r.companyName}</td>
+                  {!single && <td className="py-2 pr-4">{r.companyName}</td>}
                   <td className="py-2 pr-4 font-medium text-primary-900">{r.communityName}</td>
                   <td className="py-2 pr-4"><TrendCell trend={r.netRevenue} fmt={currencyStr} deltaFmt={currencyStr} /></td>
                   <td className="py-2 pr-4 text-neutral-500">
@@ -259,6 +295,22 @@ export default function CommunityRevenueSection() {
           </table>
         </div>
       )}
+    </div>
+  );
+
+  if (!single) return content;
+
+  // Self-contained card for the QBR Dashboard — that page's own SectionCard
+  // isn't used here since it can't conditionally disappear when there's no
+  // data (see the early return above); this mirrors its title/description
+  // styling directly instead.
+  return (
+    <div className="card mb-8">
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-primary-900">Community Revenue & Occupancy</h2>
+        <p className="text-xs text-neutral-500 mt-1">Monthly per-community Net Revenue, Occupancy, and PPD with month-over-month variance</p>
+      </div>
+      {content}
     </div>
   );
 }
