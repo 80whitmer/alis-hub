@@ -1206,20 +1206,25 @@ export default function TeamAmDashboard() {
     <div>
       <div className="flex items-start justify-between gap-6 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-primary-900">Team AM Dashboard</h1>
-          <p className="text-sm text-neutral-500 mt-1">
+          <h1 className="flex items-center gap-3 text-5xl font-bold text-primary-900">
+            <img src="/butterfly-icon.png" alt="" className="h-11 w-auto" />
+            Team AM Dashboard
+          </h1>
+          <p className="text-sm text-neutral-500 mt-2">
             {rollup.totalAccounts} Home Office accounts across {rollup.totalAms} Account Managers
           </p>
           <p className="text-xs text-neutral-400 mt-1">
             Census/capacity shown only where already known from the personal Account Health Dashboard's own occupancy refresh — this page never calls ALIS directly.
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <ExportPptButton />
+          </div>
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <ImportAgingReportButton onImported={load} />
           </div>
-          <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center justify-end gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
             <RefreshButton onRefreshed={load} />
           </div>
         </div>
