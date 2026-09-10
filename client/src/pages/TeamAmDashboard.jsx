@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
 } from 'recharts';
@@ -63,11 +63,32 @@ function StatCard({ label, value, sub }) {
   );
 }
 
+/** Matches a SectionCard's `title` to the DOM id the "Jump to Section" quick nav scrolls/expands — kept as a single source of truth (title -> id) so the nav never has to hardcode ids that could drift from a renamed title. */
+function slugify(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+/** Cross-component "jump to this section" signal — QuickJumpNav dispatches it, every SectionCard listens for its own id, expands itself if collapsed, and scrolls into view. A DOM event rather than lifted state: this file renders a dozen independent SectionCards (several inside their own child components, e.g. UnmappedAmSection) and threading expanded/onToggle props through all of them just for this would be far more invasive than one shared event. */
+const JUMP_EVENT = 'alis-hub:jump-to-section';
+
 function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = true }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const ref = useRef(null);
+  const sectionId = slugify(title);
+
+  useEffect(() => {
+    function handleJump(e) {
+      if (e.detail?.id !== sectionId) return;
+      setExpanded(true);
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    window.addEventListener(JUMP_EVENT, handleJump);
+    return () => window.removeEventListener(JUMP_EVENT, handleJump);
+  }, [sectionId]);
+
   const open = !collapsible || expanded;
   return (
-    <div className="card mb-8">
+    <div id={sectionId} ref={ref} className="card mb-8 scroll-mt-4">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div
           className={collapsible ? 'cursor-pointer select-none' : ''}
@@ -82,6 +103,30 @@ function SectionCard({ title, children, description, action, collapsible = true,
         {action && <div className="shrink-0">{action}</div>}
       </div>
       {open && children}
+    </div>
+  );
+}
+
+/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. */
+function QuickJumpNav({ sections, className = '' }) {
+  function jumpTo(title) {
+    window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }));
+  }
+  return (
+    <div className={`card ${className}`}>
+      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-2">Jump to Section</p>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {sections.map((title) => (
+          <button
+            key={title}
+            type="button"
+            onClick={() => jumpTo(title)}
+            className="text-xs text-accent-600 hover:underline text-left"
+          >
+            {title}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1181,6 +1226,23 @@ export default function TeamAmDashboard() {
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
             <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
             <AlisPayTicketsCard accounts={accounts} includeAccountManager />
+            <QuickJumpNav
+              className="col-span-2"
+              sections={[
+                'KPI by Account Manager',
+                'ARR by Tier per Account Manager',
+                'Accounts',
+                'Health Score Distribution',
+                'Companies by Tier',
+                'Tickets by Tier',
+                'Enhancement Requests',
+                'Community Revenue & Occupancy',
+                'Cost to Serve by Tier',
+                'ARR by Tier',
+                'Ticket Volume by Account Manager by Tier',
+                'Needs an Account Manager',
+              ]}
+            />
           </div>
 
           <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team" defaultExpanded={false}>

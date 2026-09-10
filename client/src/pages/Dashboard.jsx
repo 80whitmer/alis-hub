@@ -111,6 +111,8 @@ function JobDrawer({ jobId, onClose }) {
             <KpiExportDetail job={job} pct={pct} />
           ) : job?.type === 'wellness-scorecard' ? (
             <WellnessScorecardDetail job={job} pct={pct} />
+          ) : job?.type === 'community-revenue-snapshot' ? (
+            <CommunityRevenueSnapshotDetail job={job} pct={pct} />
           ) : job?.type === 'company-usage-audit' ? (
             <UsageAuditDetail job={job} pct={pct} />
           ) : job?.type === 'audit-history' ? (
@@ -339,6 +341,44 @@ function WellnessScorecardDetail({ job, pct }) {
         <Link to={`/wellness/${job.id}`} className="btn btn-accent">🩺 Open Wellness Scorecard →</Link>
       ) : (
         <p className="text-sm text-neutral-400">Wellness scorecard will be available once the job completes.</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Community Revenue & Occupancy Snapshot detail view ──────────────────────
+// Unlike kpi-export/wellness-scorecard, this job has no job-id-scoped page of
+// its own — the Team AM Dashboard's "Community Revenue & Occupancy" section
+// (client/src/components/CommunityRevenueSection.jsx) reads the latest stored
+// month straight from community_revenue_snapshots rather than one job's
+// results, so the link here goes to that section rather than a per-job route.
+function CommunityRevenueSnapshotDetail({ job, pct }) {
+  return (
+    <div>
+      <div className="mb-5 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-neutral-600">
+            <strong className="text-primary-900">{job.completed || 0}</strong> of{' '}
+            <strong className="text-primary-900">{job.total}</strong> communities pulled
+            {job.payload?.month && <> for <strong className="text-primary-900">{job.payload.month}</strong></>}
+          </span>
+          <span className="font-semibold text-primary-900">{pct}%</span>
+        </div>
+        <div className="progress-bar">
+          <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {(job.failed || 0) > 0 && (
+          <p className="text-xs text-red-600 mt-2">{job.failed} failed</p>
+        )}
+      </div>
+
+      {job.status === 'done' ? (
+        <>
+          <Link to="/team-am" className="btn btn-accent">📈 Open Team AM Dashboard →</Link>
+          <p className="text-xs text-neutral-400 mt-2">Look for the "Community Revenue &amp; Occupancy" section (collapsed by default) — it always shows the latest month with a snapshot, month-over-month vs. the prior month's run.</p>
+        </>
+      ) : (
+        <p className="text-sm text-neutral-400">Results will be available on the Team AM Dashboard once the job completes.</p>
       )}
     </div>
   );

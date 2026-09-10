@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
 } from 'recharts';
@@ -76,14 +76,14 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-/** Smooth-scrolls to a section by id rather than a plain hash jump, so the page doesn't snap instantly — used from the stat tiles to reach the Accounts table / ARR Added deals table further down the page. */
+/** Smooth-scrolls to a section by id, expanding it first if it's a collapsed SectionCard — same 'alis-hub:jump-to-section' event QuickJumpNav uses below, so a stat tile's jump link never lands on a collapsed card. `to` is the section's slugified id (see slugify()). */
 function JumpLink({ to, children }) {
   return (
     <a
       href={`#${to}`}
       onClick={(e) => {
         e.preventDefault();
-        document.getElementById(to)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.dispatchEvent(new CustomEvent('alis-hub:jump-to-section', { detail: { id: to } }));
       }}
       className="text-xs text-accent-600 hover:underline"
     >
@@ -108,11 +108,32 @@ function CompanyLink({ account, children, className = 'text-accent-600 hover:und
   );
 }
 
+/** Matches a SectionCard's `title` to the DOM id the "Jump to Section" quick nav (and the existing JumpLink stat-card sub-links) scroll/expand to — single source of truth (title -> id) so a renamed title can't silently break a link. */
+function slugify(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+/** Cross-component "jump to this section" signal — QuickJumpNav dispatches it, every SectionCard listens for its own id, expands itself if collapsed, and scrolls into view. A DOM event rather than lifted state: this file renders SectionCards from several independent sub-components (RecurringCallsSection, ArrAddedDealsSection, DealsSection) and threading expanded/onToggle props through all of them just for this would be far more invasive than one shared event. */
+const JUMP_EVENT = 'alis-hub:jump-to-section';
+
 function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = true }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const ref = useRef(null);
+  const sectionId = slugify(title);
+
+  useEffect(() => {
+    function handleJump(e) {
+      if (e.detail?.id !== sectionId) return;
+      setExpanded(true);
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    window.addEventListener(JUMP_EVENT, handleJump);
+    return () => window.removeEventListener(JUMP_EVENT, handleJump);
+  }, [sectionId]);
+
   const open = !collapsible || expanded;
   return (
-    <div className="card mb-8">
+    <div id={sectionId} ref={ref} className="card mb-8 scroll-mt-4">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div
           className={collapsible ? 'cursor-pointer select-none' : ''}
@@ -127,6 +148,30 @@ function SectionCard({ title, children, description, action, collapsible = true,
         {action && <div className="shrink-0">{action}</div>}
       </div>
       {open && children}
+    </div>
+  );
+}
+
+/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. */
+function QuickJumpNav({ sections, className = '' }) {
+  function jumpTo(title) {
+    window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }));
+  }
+  return (
+    <div className={`card ${className}`}>
+      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-2">Jump to Section</p>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {sections.map((title) => (
+          <button
+            key={title}
+            type="button"
+            onClick={() => jumpTo(title)}
+            className="text-xs text-accent-600 hover:underline text-left"
+          >
+            {title}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1701,7 +1746,7 @@ export default function AccountHealthDashboard() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts-table">Jump to table ↓</JumpLink>} />
+            <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts">Jump to table ↓</JumpLink>} />
             <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
             <StatCard
               label="Recurring Calls Tracked"
@@ -1728,7 +1773,7 @@ export default function AccountHealthDashboard() {
             <StatCard
               label={`ARR Added (${new Date().getFullYear()})`}
               value={currencyStr(rollup.arrAddedThisYearCents)}
-              sub={<JumpLink to="arr-added-deals">Jump to deals ↓</JumpLink>}
+              sub={<JumpLink to="arr-added-this-year-contributing-deals">Jump to deals ↓</JumpLink>}
             />
             <StatCard
               label={`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`}
@@ -1761,13 +1806,25 @@ export default function AccountHealthDashboard() {
               value={rollup.portfolioDsoDays != null ? `${rollup.portfolioDsoDays}d` : '—'}
               sub="Rudimentary — AR balance ÷ daily revenue rate, not true invoice-to-payment DSO"
             />
+            <QuickJumpNav
+              className="col-span-2"
+              sections={[
+                'Recurring Calls',
+                'Accounts',
+                'Open Tickets by Category 2.0',
+                'Closed Tickets by Category 2.0',
+                'Ticket Volume by Client Tier',
+                'Enhancement Requests',
+                'Cost to Serve by Tier',
+                'Deals by Type',
+                'ARR Added This Year — Contributing Deals',
+                'All Deals',
+              ]}
+            />
           </div>
 
-          <div id="recurring-calls">
-            <RecurringCallsSection accounts={accounts} onSelect={setSelected} />
-          </div>
+          <RecurringCallsSection accounts={accounts} onSelect={setSelected} />
 
-          <div id="accounts-table">
           <SectionCard
             title="Accounts"
             action={
@@ -1842,7 +1899,6 @@ export default function AccountHealthDashboard() {
               {filtered.length === 0 && <p className="text-sm text-neutral-500 italic py-4">No accounts match "{search}".</p>}
             </div>
           </SectionCard>
-          </div>
 
           <SectionCard title="Open Tickets by Category 2.0" description="Aggregated across every account — current workload" defaultExpanded={false}>
             <CategoryMixChart accounts={accounts} status="open" />
@@ -1863,9 +1919,7 @@ export default function AccountHealthDashboard() {
             <DealTypeChart accounts={accounts} />
           </SectionCard>
 
-          <div id="arr-added-deals">
-            <ArrAddedDealsSection accounts={accounts} />
-          </div>
+          <ArrAddedDealsSection accounts={accounts} />
 
           <DealsSection accounts={filtered} search={search} />
         </>
