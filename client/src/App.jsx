@@ -12,12 +12,17 @@ import AuditHistory from './pages/AuditHistory';
 import EvaluationDetail from './pages/EvaluationDetail';
 import { version } from '../package.json';
 
+// Evaluation Lookup deliberately has no top-nav entry — it's not a
+// standalone page destination anymore, it lives as a tile inside "+ New
+// Job" (see NewJob.jsx's synthetic 'evaluation-lookup' selection, which
+// swaps the Configuration section for this tool). The /evaluation-detail
+// route below stays registered so that tile (and any existing bookmarks)
+// still resolve, it's just not a nav link in its own right.
 const nav = [
   { to: '/',        label: 'Dashboard' },
   { to: '/team-am', label: 'Team AM' },
   { to: '/jobs',    label: 'Job Board' },
   { to: '/new-job', label: '+ New Job'  },
-  { to: '/evaluation-detail', label: 'Evaluation Lookup' },
 ];
 
 export default function App() {

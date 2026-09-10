@@ -4,6 +4,7 @@ import { generateFormFields, renderFormField } from '../utils/schema-form-genera
 import BillingItemsInput from '../components/BillingItemsInput';
 import AdvancedJsonEditor from '../components/AdvancedJsonEditor';
 import CompanyLookup from '../components/CompanyLookup';
+import EvaluationDetail from './EvaluationDetail';
 import { getLastCompletedQuarter, formatQuarterLabel, getMostRecentSunday } from '../utils/quarter';
 
 export default function NewJob() {
@@ -57,7 +58,8 @@ export default function NewJob() {
 
   // Load template schema when selection changes
   useEffect(() => {
-    if (!selectedTemplate) return;
+    // Evaluation Lookup isn't a real job template — see its tile below.
+    if (!selectedTemplate || selectedTemplate === 'evaluation-lookup') return;
 
     fetch(`/api/jobs/templates/${selectedTemplate}`)
       .then(r => r.json())
@@ -384,12 +386,18 @@ export default function NewJob() {
               own doc comment: it's a live search tool. Kept in this grid anyway
               (Aaron, Sep 2026) so every automation-adjacent tool lives in one
               place; the dashed border is the only visual hint it behaves
-              differently — clicking it navigates straight to the tool instead
-              of loading a Configuration form below. */}
+              differently — selecting it swaps the Configuration section below
+              for the live lookup tool instead of a job form (no schema fetch,
+              no Run Job button — see the two render guards below that key off
+              selectedTemplate === 'evaluation-lookup'). */}
           <div className="relative">
             <button
-              onClick={() => navigate('/evaluation-detail')}
-              className="w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 border-dashed border-neutral-200 bg-white hover:border-accent-300 text-center transition-all"
+              onClick={() => { setSelectedTemplate('evaluation-lookup'); setInfoOpenId(null); }}
+              className={`w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 border-dashed text-center transition-all ${
+                selectedTemplate === 'evaluation-lookup'
+                  ? 'border-accent-500 bg-accent-50'
+                  : 'border-neutral-200 bg-white hover:border-accent-300'
+              }`}
             >
               <span className="text-2xl leading-none">🔍</span>
               <span className="text-sm font-semibold text-primary-900 leading-tight">Evaluation Lookup</span>
@@ -408,14 +416,23 @@ export default function NewJob() {
                 ref={infoPopoverRef}
                 className="absolute z-20 top-full mt-1.5 left-0 right-0 p-3 rounded-lg border border-neutral-200 bg-white shadow-lg text-xs text-neutral-600 text-left"
               >
-                Instant resident evaluation search — CarePoints, Care Level, and the question/answer breakdown where available. Not a job: opens its own page immediately instead of a Configuration form below.
+                Instant resident evaluation search — CarePoints, Care Level, and the question/answer breakdown where available. Not a job: replaces the Configuration section below with the live lookup tool instead of a job form.
               </div>
             )}
           </div>
         </div>
       </div>
 
+      {/* Evaluation Lookup swaps in for the Configuration section entirely —
+          no schema, no form, no Run Job button, just the live tool. */}
+      {selectedTemplate === 'evaluation-lookup' && (
+        <div className="mb-8">
+          <EvaluationDetail />
+        </div>
+      )}
+
       {/* Form or advanced mode */}
+      {selectedTemplate !== 'evaluation-lookup' && (
       <div className={`mb-8 ${isGLSync || (showAdvanced && selectedTemplate === 'create-communities') ? '' : 'max-w-3xl'}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-primary-900">Configuration</h2>
@@ -622,9 +639,10 @@ export default function NewJob() {
           </div>
         )}
       </div>
+      )}
 
-      {/* Submit - only for non-GL-sync templates (GL sync button is above the table) */}
-      {!isGLSync && (
+      {/* Submit - only for non-GL-sync templates (GL sync button is above the table), and not for Evaluation Lookup (not a job) */}
+      {!isGLSync && selectedTemplate !== 'evaluation-lookup' && (
         <div className="flex gap-3">
           <button
             onClick={handleSubmit}
