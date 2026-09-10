@@ -67,7 +67,35 @@ function SortableHeader({ label, column, sort, onSort, className = '' }) {
   );
 }
 
-function StatCard({ label, value, sub }) {
+/**
+ * `jumpTo` (Aaron, Sep 2026: "any tile that has a jump to link... make the
+ * entire tile linked... give it the same [enlarging] action as Jump to
+ * Section") turns the WHOLE tile into the jump control instead of a small
+ * link buried in its `sub` line — same grow/pop-out-on-hover treatment as
+ * QuickJumpNav (group + hover:scale-105/shadow-xl/z-10), and `label`/
+ * `value`/`note` all step up a text size via group-hover so the growth
+ * actually gains legibility rather than just gaining pixels. `note` is
+ * plain descriptive text shown either way (e.g. "Client Submitted + In
+ * Progress"); `jumpLabel` is the specific "Jump to ___" phrase for this
+ * tile, rendered as a static hint (not its own separate `<a>`) since the
+ * tile itself is now the click target. Tiles without `jumpTo` keep the
+ * plain non-interactive `sub` shape unchanged.
+ */
+function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to section ↓' }) {
+  if (jumpTo) {
+    return (
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: jumpTo } }))}
+        className="group card relative w-full text-left transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl"
+      >
+        <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">{label}</p>
+        <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{value}</p>
+        {note && <p className="text-xs group-hover:text-sm text-neutral-400 mt-0.5 transition-[font-size]">{note}</p>}
+        <p className="text-xs group-hover:text-sm text-accent-600 font-medium mt-0.5 transition-[font-size]">{jumpLabel}</p>
+      </button>
+    );
+  }
   return (
     <div className="card">
       <p className="text-xs text-neutral-500 uppercase tracking-wide">{label}</p>
@@ -98,23 +126,6 @@ function StatGroup({ title, children }) {
   );
 }
 
-/** Smooth-scrolls to a section by id, expanding it first if it's a collapsed SectionCard — same 'alis-hub:jump-to-section' event QuickJumpNav uses below, so a stat tile's jump link never lands on a collapsed card. `to` is the section's slugified id (see slugify()). */
-function JumpLink({ to, children }) {
-  return (
-    <a
-      href={`#${to}`}
-      onClick={(e) => {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent('alis-hub:jump-to-section', { detail: { id: to } }));
-      }}
-      className="text-xs text-accent-600 hover:underline"
-    >
-      {children}
-    </a>
-  );
-}
-
-
 function CompanyLink({ account, children, className = 'text-accent-600 hover:underline' }) {
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
@@ -130,7 +141,7 @@ function CompanyLink({ account, children, className = 'text-accent-600 hover:und
   );
 }
 
-/** Matches a SectionCard's `title` to the DOM id the "Jump to Section" quick nav (and the existing JumpLink stat-card sub-links) scroll/expand to — single source of truth (title -> id) so a renamed title can't silently break a link. */
+/** Matches a SectionCard's `title` to the DOM id the "Jump to Section" quick nav (and any StatCard's `jumpTo`) scroll/expand to — single source of truth (title -> id) so a renamed title can't silently break a link. */
 function slugify(title) {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
@@ -1835,12 +1846,13 @@ export default function AccountHealthDashboard() {
           {/* Four labeled acts instead of one flat 18-tile grid — see
               StatGroup's doc comment for the story each one is carrying. */}
           <StatGroup title="Portfolio Health — proactive, not reactive">
-            <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts">Jump to table ↓</JumpLink>} />
+            <StatCard label="Total Accounts" value={rollup.totalAccounts} jumpTo="accounts" jumpLabel="Jump to table ↓" />
             <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} />
             <StatCard
               label="Recurring Calls Tracked"
               value={rollup.recurringCallCount}
-              sub={<JumpLink to="recurring-calls">Jump to table ↓</JumpLink>}
+              jumpTo="recurring-calls"
+              jumpLabel="Jump to table ↓"
             />
             <TopThreeEnhancementsCard accounts={accounts} />
           </StatGroup>
@@ -1850,7 +1862,8 @@ export default function AccountHealthDashboard() {
             <StatCard
               label={`ARR Added (${new Date().getFullYear()})`}
               value={currencyStr(rollup.arrAddedThisYearCents)}
-              sub={<JumpLink to="arr-added-this-year-contributing-deals">Jump to deals ↓</JumpLink>}
+              jumpTo="arr-added-this-year-contributing-deals"
+              jumpLabel="Jump to deals ↓"
             />
             <StatCard
               label={`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`}
@@ -1870,8 +1883,8 @@ export default function AccountHealthDashboard() {
               value={rollup.occupancyAccountCount > 0 ? rollup.currentCensus : '—'}
               sub={rollup.occupancyPct != null ? `${pctStr(rollup.occupancyPct)} occupied` : undefined}
             />
-            <StatCard label="Open Deals" value={rollup.openDeals} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
-            <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} sub={<JumpLink to="all-deals">Jump to deals ↓</JumpLink>} />
+            <StatCard label="Open Deals" value={rollup.openDeals} jumpTo="all-deals" jumpLabel="Jump to deals ↓" />
+            <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} jumpTo="all-deals" jumpLabel="Jump to deals ↓" />
           </StatGroup>
 
           <StatGroup title="Data You Can Trust — current, sourced, and dated">
@@ -1895,18 +1908,17 @@ export default function AccountHealthDashboard() {
             <StatCard
               label="Open Tickets"
               value={rollup.openTickets}
-              sub={<>Client Submitted + In Progress<br /><JumpLink to="open-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink></>}
+              note="Client Submitted + In Progress"
+              jumpTo="open-tickets-by-category-2-0"
+              jumpLabel="Jump to breakdown ↓"
             />
-            <StatCard label="Closed Tickets" value={rollup.closedTickets} sub={<JumpLink to="closed-tickets-by-category-2-0">Jump to breakdown ↓</JumpLink>} />
+            <StatCard label="Closed Tickets" value={rollup.closedTickets} jumpTo="closed-tickets-by-category-2-0" jumpLabel="Jump to breakdown ↓" />
             <StatCard
               label="Enhancement Requests"
               value={rollup.enhancementTop + rollup.enhancementLesser}
-              sub={
-                <>
-                  {`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
-                  <br /><JumpLink to="enhancement-requests">Jump to list ↓</JumpLink>
-                </>
-              }
+              note={`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
+              jumpTo="enhancement-requests"
+              jumpLabel="Jump to list ↓"
             />
             <AlisPayTicketsCard accounts={accounts} />
           </StatGroup>

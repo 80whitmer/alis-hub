@@ -52,12 +52,62 @@ function ScoreBadge({ score, band }) {
   );
 }
 
-function StatCard({ label, value, sub }) {
+/**
+ * `jumpTo` (Aaron, Sep 2026: "any tile that has a jump to link... make the
+ * entire tile linked... give it the same [enlarging] action as Jump to
+ * Section") turns the WHOLE tile into the jump control instead of a small
+ * link buried in its `sub` line — same grow/pop-out-on-hover treatment as
+ * QuickJumpNav (group + hover:scale-105/shadow-xl/z-10), and `label`/
+ * `value`/`note` all step up a text size via group-hover so the growth
+ * actually gains legibility rather than just gaining pixels. `note` is
+ * plain descriptive text shown either way (e.g. "Client Submitted + In
+ * Progress"); `jumpLabel` is the specific "Jump to ___" phrase for this
+ * tile, rendered as a static hint (not its own separate `<a>`) since the
+ * tile itself is now the click target. Tiles without `jumpTo` keep the
+ * plain non-interactive `sub` shape unchanged. Kept in sync with
+ * AccountHealthDashboard.jsx's identical component.
+ */
+function StatCard({ label, value, sub, note, jumpTo, jumpLabel = 'Jump to section ↓' }) {
+  if (jumpTo) {
+    return (
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: jumpTo } }))}
+        className="group card relative w-full text-left transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl"
+      >
+        <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">{label}</p>
+        <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{value}</p>
+        {note && <p className="text-xs group-hover:text-sm text-neutral-400 mt-0.5 transition-[font-size]">{note}</p>}
+        <p className="text-xs group-hover:text-sm text-accent-600 font-medium mt-0.5 transition-[font-size]">{jumpLabel}</p>
+      </button>
+    );
+  }
   return (
     <div className="card">
       <p className="text-xs text-neutral-500 uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-bold text-primary-900 mt-1">{value}</p>
       {sub && <p className="text-xs text-neutral-400 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+/**
+ * Labeled cluster of stat tiles — matches AccountHealthDashboard.jsx's
+ * identical component/story (Sep 2026, Aaron: "give the Team AM Dashboard
+ * tiles the narrative, leadership vision treatment... consistent between
+ * the two dashboards"). Team AM's tile set is thinner than Account
+ * Health's (no AR-aging import here), so it only gets three acts —
+ * Portfolio Health and Financial & Occupancy carry the same Gary/Evan
+ * framing, but there's no "Data You Can Trust" group since this page has
+ * no dated/sourced financial data of its own to hang that label on.
+ */
+function StatGroup({ title, children }) {
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-accent-600 uppercase tracking-wide mb-3">{title}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {children}
+      </div>
     </div>
   );
 }
@@ -106,22 +156,25 @@ function SectionCard({ title, children, description, action, collapsible = true,
   );
 }
 
-/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. Grows and its text sizes up on hover (Aaron, Sep 2026) so a card that's mostly small print doesn't get overlooked next to the big-number stat tiles around it — `relative` + `hover:z-10` keeps the scaled-up card drawing on top of its neighbors instead of being clipped underneath them. */
-function QuickJumpNav({ sections, className = '' }) {
+/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. Grows and its text sizes up on hover (Aaron, Sep 2026) so a card that's mostly small print doesn't get overlooked next to the big-number stat tiles around it — `relative` + `hover:z-10` keeps the scaled-up card drawing on top of its neighbors instead of being clipped underneath them. `large` (Aaron, Sep 2026: "make it the width of the section", then "make this consistent between the two dashboards") runs it full-width with a third link column and a size step up across the board — matches AccountHealthDashboard.jsx's identical component. */
+function QuickJumpNav({ sections, className = '', large = false }) {
   function jumpTo(title) {
     window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }));
   }
+  const baseText = large ? 'text-sm' : 'text-xs';
+  const hoverText = large ? 'group-hover:text-base' : 'group-hover:text-sm';
+  const gridCols = large ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2';
   return (
     <div className={`group card relative transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl ${className}`}>
-      <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide font-semibold mb-3 transition-[font-size]">Jump to Section</p>
-      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+      <p className={`${baseText} ${hoverText} text-neutral-500 uppercase tracking-wide font-semibold mb-3 transition-[font-size]`}>Jump to Section</p>
+      <ul className={`grid ${gridCols} gap-x-6 gap-y-2`}>
         {sections.map((title) => (
           <li key={title} className="flex items-start gap-2">
             <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent-300 shrink-0" aria-hidden="true" />
             <button
               type="button"
               onClick={() => jumpTo(title)}
-              className="text-left text-xs group-hover:text-sm leading-snug text-neutral-600 hover:text-accent-600 hover:underline transition-[font-size]"
+              className={`text-left ${baseText} ${hoverText} leading-snug text-neutral-600 hover:text-accent-600 hover:underline transition-[font-size]`}
             >
               {title}
             </button>
@@ -145,22 +198,6 @@ function CompanyLink({ account, children, className = 'text-accent-600 hover:und
   if (!account.hubspotUrl) return <span>{children}</span>;
   return (
     <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={className}>
-      {children}
-    </a>
-  );
-}
-
-/** Smooth-scrolls to a section by id, expanding it first if it's a collapsed SectionCard — same JUMP_EVENT SectionCard/QuickJumpNav use above, so a stat tile's jump link never lands on a collapsed card. `to` is the section's slugified id (see slugify()). */
-function JumpLink({ to, children }) {
-  return (
-    <a
-      href={`#${to}`}
-      onClick={(e) => {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: to } }));
-      }}
-      className="text-xs text-accent-600 hover:underline"
-    >
       {children}
     </a>
   );
@@ -1213,6 +1250,9 @@ export default function TeamAmDashboard() {
           <p className="text-sm text-neutral-500 mt-2">
             {rollup.totalAccounts} Home Office accounts across {rollup.totalAms} Account Managers
           </p>
+          <p className="text-xs text-accent-600 font-medium mt-1">
+            Proactive health · portfolio financials · data you can trust
+          </p>
           <p className="text-xs text-neutral-400 mt-1">
             Census/capacity shown only where already known from the personal Account Health Dashboard's own occupancy refresh — this page never calls ALIS directly.
           </p>
@@ -1241,43 +1281,57 @@ export default function TeamAmDashboard() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {/* Three labeled acts, same story/labels as Account Health
+              Dashboard's StatGroup (no "Data You Can Trust" group here —
+              see StatGroup's doc comment for why). */}
+          <StatGroup title="Portfolio Health — proactive, not reactive">
             <StatCard label="Account Managers" value={rollup.totalAms} />
-            <StatCard label="Total Accounts" value={rollup.totalAccounts} sub={<JumpLink to="accounts">Jump to table ↓</JumpLink>} />
-            <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
-            <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} sub={<JumpLink to="health-score-distribution">Jump to breakdown ↓</JumpLink>} />
-            <StatCard
-              label="Open Tickets"
-              value={rollup.openTickets}
-              sub={<>Client Submitted + In Progress<br /><JumpLink to="tickets-by-tier">Jump to breakdown ↓</JumpLink></>}
-            />
-            <StatCard label="Closed Tickets" value={rollup.closedTickets} sub={<JumpLink to="tickets-by-tier">Jump to breakdown ↓</JumpLink>} />
-            <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} sub={<JumpLink to="arr-by-tier">Jump to breakdown ↓</JumpLink>} />
+            <StatCard label="Total Accounts" value={rollup.totalAccounts} jumpTo="accounts" jumpLabel="Jump to table ↓" />
+            <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} jumpTo="health-score-distribution" jumpLabel="Jump to breakdown ↓" />
+            <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
+          </StatGroup>
+
+          <StatGroup title="Financial & Occupancy — the whole portfolio, already assembled">
+            <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} jumpTo="arr-by-tier" jumpLabel="Jump to breakdown ↓" />
             <StatCard
               label={`ARR Added (${new Date().getFullYear()})`}
               value={currencyStr(rollup.arrAddedThisYearCents)}
-              sub={<JumpLink to="arr-by-tier">Jump to breakdown ↓</JumpLink>}
+              jumpTo="arr-by-tier"
+              jumpLabel="Jump to breakdown ↓"
             />
-            <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
+            <StatCard label="Total Communities" value={rollup.totalCommunities} sub="Active child companies" />
+          </StatGroup>
+
+          <StatGroup title="Support Activity">
+            <StatCard
+              label="Open Tickets"
+              value={rollup.openTickets}
+              note="Client Submitted + In Progress"
+              jumpTo="tickets-by-tier"
+              jumpLabel="Jump to breakdown ↓"
+            />
+            <StatCard label="Closed Tickets" value={rollup.closedTickets} jumpTo="tickets-by-tier" jumpLabel="Jump to breakdown ↓" />
             <AlisPayTicketsCard accounts={accounts} includeAccountManager />
-            <QuickJumpNav
-              className="col-span-2"
-              sections={[
-                'KPI by Account Manager',
-                'ARR by Tier per Account Manager',
-                'Accounts',
-                'Health Score Distribution',
-                'Companies by Tier',
-                'Tickets by Tier',
-                'Cost to Serve by Tier',
-                'Top 3 Enhancement Requests',
-                'Enhancement Requests',
-                'ARR by Tier',
-                'Ticket Volume by Account Manager by Tier',
-                'Needs an Account Manager',
-              ]}
-            />
-          </div>
+          </StatGroup>
+
+          <QuickJumpNav
+            large
+            className="mb-8"
+            sections={[
+              'KPI by Account Manager',
+              'ARR by Tier per Account Manager',
+              'Accounts',
+              'Health Score Distribution',
+              'Companies by Tier',
+              'Tickets by Tier',
+              'Cost to Serve by Tier',
+              'Top 3 Enhancement Requests',
+              'Enhancement Requests',
+              'ARR by Tier',
+              'Ticket Volume by Account Manager by Tier',
+              'Needs an Account Manager',
+            ]}
+          />
 
           <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team" defaultExpanded={false}>
             <KpiByAmChart
