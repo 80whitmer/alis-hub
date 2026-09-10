@@ -148,6 +148,14 @@ function normalizeOccupancy(rawRows = [], { billedResidentIds } = {}) {
     byCommunity: Object.entries(byCommunity).map(([communityId, c]) => ({
       communityId,
       pct: c.total ? c.occupied / c.total : null,
+      // Raw occupied/total counts, added alongside the existing `pct`
+      // (Sep 2026, for the Community Revenue Snapshot job's Unit
+      // Capacity/Total Occupied Units columns) — same shape byProductType/
+      // byClassification below already expose; byCommunity just hadn't
+      // needed them until now. Purely additive, existing callers reading
+      // only `.pct` are unaffected.
+      occupied: c.occupied,
+      total: c.total,
     })),
     // pct here is each group's share of total CENSUS (occupied / total
     // occupied across every group) — a composition/mix percentage, not
@@ -1502,6 +1510,103 @@ function normalizePpd(invoiceChargeRows = [], occupancyRows = [], { periodStart,
   };
 }
 
+// ── Community Revenue Snapshot (monthly, per-community) ─────────────────
+
+/**
+ * Per-community Charges/Credits/Discounts/Net Revenue for one month — new
+ * for the monthly Community Revenue Snapshot job (Sep 2026, Aaron),
+ * modeled on normalizePpd's resolveScopes/communityMeta pattern just above
+ * rather than extending normalizeInvoiceCharges (portfolio-only, used
+ * as-is by the QBR pipeline; changing its shape would ripple into
+ * KpiDashboard.jsx). `type` is invoiceCharges' own field — confirmed live
+ * against real data: values are `Charge`/`Credit`/`Discount`/`Subsidy`,
+ * signs already correct (Credits/Discounts/Subsidy negative), and
+ * Charges + Credits + Discounts + Subsidy really does equal the account's
+ * own Net Revenue figure. `Subsidy` is folded into `discounts` to match
+ * Viva's real report's exact 3-column spec (Charges/Credits/Discounts) —
+ * easy to break out as its own column later if that granularity matters.
+ */
+function normalizeCommunityRevenue(invoiceChargeRows = [], communities = []) {
+  const communityMeta = new Map(communities.map((c) => [`${c.host}::${c.communityId}`, c]));
+  const communityScopes = new Map();
+
+  function scopeFor(row) {
+    const key = `${row._host}::${row.communityId}`;
+    if (!communityScopes.has(key)) {
+      const meta = communityMeta.get(key);
+      communityScopes.set(key, {
+        communityId: row.communityId,
+        host: row._host,
+        name: meta?.name || firstDefined(row, ['communityName']) || `Community ${row.communityId}`,
+        charges: 0, credits: 0, discounts: 0,
+      });
+    }
+    return communityScopes.get(key);
+  }
+
+  for (const row of invoiceChargeRows) {
+    const amount = Number(row.amount) || 0;
+    if (!amount) continue;
+    const scope = scopeFor(row);
+    if (row.type === 'Charge') scope.charges += amount;
+    else if (row.type === 'Credit') scope.credits += amount;
+    else scope.discounts += amount; // Discount or Subsidy — both revenue-reducing adjustments
+  }
+
+  return Array.from(communityScopes.values()).map((s) => ({
+    communityId: s.communityId,
+    host: s.host,
+    name: s.name,
+    charges: s.charges,
+    credits: s.credits,
+    discounts: s.discounts,
+    netRevenue: s.charges + s.credits + s.discounts,
+  }));
+}
+
+/**
+ * Per-community Move Ins/Move Outs for one month — same resolveScopes
+ * pattern as normalizeCommunityRevenue above, and the exact same
+ * physicalMoveInDate/physicalMoveOutDate field-reading convention already
+ * used by the portfolio-only normalizeAdmissionsDischarges, just grouped
+ * by community instead of summed to a portfolio total.
+ */
+function normalizeCommunityMoveInOut(moveInOutRows = [], communities = [], periodStart, periodEnd) {
+  const communityMeta = new Map(communities.map((c) => [`${c.host}::${c.communityId}`, c]));
+  const communityScopes = new Map();
+  const startMs = new Date(periodStart).getTime();
+  const endMs = new Date(periodEnd).getTime();
+
+  function scopeFor(row) {
+    const key = `${row._host}::${row.communityId}`;
+    if (!communityScopes.has(key)) {
+      const meta = communityMeta.get(key);
+      communityScopes.set(key, {
+        communityId: row.communityId,
+        host: row._host,
+        name: meta?.name || firstDefined(row, ['communityName']) || `Community ${row.communityId}`,
+        moveIns: 0, moveOuts: 0,
+      });
+    }
+    return communityScopes.get(key);
+  }
+
+  const inWindow = (raw) => {
+    if (!raw) return false;
+    const t = new Date(raw).getTime();
+    return !Number.isNaN(t) && t >= startMs && t <= endMs;
+  };
+
+  for (const row of moveInOutRows) {
+    const moveIn = firstDefined(row, ['physicalMoveInDate', 'financialMoveInDate', 'moveInDate', 'admissionDate']);
+    if (inWindow(moveIn)) scopeFor(row).moveIns++;
+    const moveOut = firstDefined(row, ['physicalMoveOutDate', 'financialMoveOutDate', 'moveOutDate', 'dischargeDate']);
+    if (inWindow(moveOut)) scopeFor(row).moveOuts++;
+  }
+
+  return Array.from(communityScopes.values());
+}
+
 /**
  * Estimate resident-days for a period from a census/demographics snapshot.
  * Falls back to (avg census * days in period) — a reasonable approximation
@@ -1560,6 +1665,8 @@ module.exports = {
   normalizeDso,
   dsoBand,
   normalizePpd,
+  normalizeCommunityRevenue,
+  normalizeCommunityMoveInOut,
   normalizeFalls,
   normalizeIncidentCompletion,
   normalizeSentinelIncidents,

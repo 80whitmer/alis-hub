@@ -51,6 +51,23 @@ function groupByCommunityAndProductType(rows, allCommunityIds = []) {
   return { portfolio, byCommunity };
 }
 
+/**
+ * Attaches the actual flagged rows (mapped through `toItem` to a small
+ * display-friendly shape) onto each bucket a groupByCommunityAndProductType
+ * result already has, for a drawer/export UI to list — same "enrich the
+ * bucket, don't change its shape" idea as withOpenDocs' `reporters` summary
+ * below, just the full row list instead of an aggregated count. Existing
+ * code reading `.AL`/`.MC`/`.total` is unaffected by the extra `.items` key.
+ */
+function attachItems(result, rows, toItem) {
+  const items = rows.map(toItem);
+  result.portfolio.items = items;
+  for (const cid of Object.keys(result.byCommunity)) {
+    result.byCommunity[cid].items = items.filter((it) => String(it.communityId) === cid);
+  }
+  return result;
+}
+
 /** Same idea, but for staff-scoped rows — no AL/MC split, just a per-community total. Same zero-seeding rationale as groupByCommunityAndProductType. */
 function groupStaffByCommunity(rows, allCommunityIds = []) {
   const byCommunity = {};
@@ -240,7 +257,11 @@ function normalizeChangeInConditionThisWeek(observations, weekEndingDate, weekSt
     const type = (r.observationType || '').toLowerCase();
     return withinTrailingWeek(r.occurredOn, weekEndingDate, weekStartDate) && (type.includes('change of condition') || type.includes('change in condition'));
   });
-  return groupByCommunityAndProductType(scoped, allCommunityIds);
+  const result = groupByCommunityAndProductType(scoped, allCommunityIds);
+  return attachItems(result, scoped, (r) => ({
+    residentId: r.residentId, residentName: r.residentName, communityId: r.communityId, communityName: r.communityName,
+    date: r.occurredOn, detail: [r.severity, r.observationText].filter(Boolean).join(' — ') || null,
+  }));
 }
 
 // ── Residents currently hospitalized / in ER (leaves) ───────────────────
@@ -257,7 +278,11 @@ function normalizeCurrentlyHospitalized(leaves, allCommunityIds) {
     const destination = (r.leaveDestination || r.leaveType || r.type || '').toString().toLowerCase();
     return destination.includes('hospital') || destination.includes('snf') || destination.includes('skilled') || destination.includes('rehab');
   });
-  return groupByCommunityAndProductType(open, allCommunityIds);
+  const result = groupByCommunityAndProductType(open, allCommunityIds);
+  return attachItems(result, open, (r) => ({
+    residentId: r.residentId, residentName: r.residentName, communityId: r.communityId, communityName: r.communityName,
+    date: r.startDateTime, detail: [r.leaveDestination, r.leaveStatus].filter(Boolean).join(' — ') || null,
+  }));
 }
 
 // ── Quarterly evaluations overdue ───────────────────────────────────────
@@ -570,6 +595,58 @@ function withTrend(currentRow, priorRow) {
   };
 }
 
+// ── Resident age ──────────────────────────────────────────────────────────
+
+// Senior-living-appropriate decade bands rather than raw 10s-since-birth
+// buckets (Aaron, Sep 2026) — "<60" catches the rare younger resident
+// without a mostly-empty "50s"/"40s" bucket, and "100+" (not "100s") since
+// nobody expects a 110-120 bucket to ever populate separately.
+const AGE_BANDS = ['<60', '60s', '70s', '80s', '90s', '100+'];
+function residentAgeBand(age) {
+  if (age == null) return null;
+  if (age < 60) return '<60';
+  if (age < 70) return '60s';
+  if (age < 80) return '70s';
+  if (age < 90) return '80s';
+  if (age < 100) return '90s';
+  return '100+';
+}
+
+/** One scope's (portfolio or one community's) average age + decade-band counts, from residents with a numeric `age` on file. */
+function summarizeResidentAges(residents) {
+  const withAge = residents.filter((r) => typeof r.age === 'number');
+  const bandCounts = Object.fromEntries(AGE_BANDS.map((b) => [b, 0]));
+  for (const r of withAge) {
+    const band = residentAgeBand(r.age);
+    if (band) bandCounts[band]++;
+  }
+  return {
+    totalResidents: residents.length,
+    countedForAge: withAge.length,
+    avgAge: withAge.length ? withAge.reduce((sum, r) => sum + r.age, 0) / withAge.length : null,
+    bandCounts,
+  };
+}
+
+/**
+ * Average resident age and decade-band counts, portfolio-wide and per
+ * community (Aaron, Sep 2026) — rendered as its own small summary at the
+ * top of each WellnessTable scope (client/src/pages/WellnessScorecard.jsx),
+ * not forced into the AL/MC/Total row shape every WELLNESS_ROWS entry uses,
+ * same rationale as the Occupancy section already being its own thing.
+ * Excludes Moved Out residents, same convention as censusByCommunity in
+ * wellnessExport.js.
+ */
+function normalizeResidentAge(residents, allCommunityIds) {
+  const active = residents.filter((r) => r.residentStatus !== 'Moved Out');
+  const byCommunity = {};
+  for (const cid of allCommunityIds) {
+    byCommunity[String(cid)] = summarizeResidentAges(active.filter((r) => String(r.communityId) === String(cid)));
+  }
+  const portfolio = summarizeResidentAges(active);
+  return { portfolio, byCommunity };
+}
+
 module.exports = {
   groupByCommunityAndProductType,
   groupStaffByCommunity,
@@ -591,6 +668,7 @@ module.exports = {
   normalizeCarePointsAverage,
   withCarePointsTrend,
   normalizeOccupancySnapshot,
+  normalizeResidentAge,
   withTrend,
   trendArrow,
 };

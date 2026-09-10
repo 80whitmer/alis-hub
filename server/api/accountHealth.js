@@ -90,6 +90,16 @@ function mapLiveServiceHealth(ticketSummary) {
     // For the Cost to Serve by Tier chart's "open + closed this calendar
     // year" ticket count — see hubspotTickets.js's closedThisYear.
     closedTicketCountThisYear: ticketSummary.closedThisYear,
+    // Live ALIS Pay ticket volume (Sep 2026, Aaron) — the active
+    // category_2_0='ALIS Pay' set, not the frozen old ALIS Pay pipeline
+    // (see hubspotTickets.js's isAlisPayTicket for why). Feeds both the
+    // dashboard rollup card and accountHealthScoring.js's service-health
+    // deduction.
+    alisPayOpenCount: ticketSummary.alisPayTickets.length,
+    alisPayOpenItems: ticketSummary.alisPayTickets.map((t) => ({
+      ticketId: t.id, subject: t.subject, url: t.url,
+      createdAt: t.createdAt, daysOpen: t.daysOpen, stage: t.pipelineStageLabel,
+    })),
   };
 }
 

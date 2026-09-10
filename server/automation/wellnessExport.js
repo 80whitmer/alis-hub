@@ -10,7 +10,7 @@ const {
   normalizeEvaluationsNeedingAttention,
   normalizeMedicationExceptions, normalizeStaffTrainingGaps, normalizeCarePointsAverage,
   scopeIncidentsThisWeek, formDataIndicatesHospitalTransfer, normalizeFallsWithHospitalTransfer,
-  normalizeSentinelIncidentsThisWeek, normalizeOccupancySnapshot,
+  normalizeSentinelIncidentsThisWeek, normalizeOccupancySnapshot, normalizeResidentAge,
   withTrend, withCarePointsTrend,
 } = require('../services/wellnessNormalizer');
 const { shouldTrackSentinelIncidents } = require('../services/companyFeatures');
@@ -514,6 +514,11 @@ async function runWellnessScorecardJob(jobId, payload) {
     windowEnd: addDays(weekEnding, 14),
   });
 
+  // Average age + decade-band counts, portfolio-wide and per community —
+  // same "doesn't fit the AL/MC/count row shape" rationale as
+  // upcomingBirthdays above, kept top-level rather than forced into `rows`.
+  const residentAge = normalizeResidentAge(residents, communities.map((c) => c.communityId));
+
   const summary = {
     companyName,
     companyHost: payload.companyHost,
@@ -522,6 +527,7 @@ async function runWellnessScorecardJob(jobId, payload) {
     rows: rowsWithTrend,
     manualRows,
     upcomingBirthdays,
+    residentAge,
     benchmarkDiffs,
     benchmarkQuarter: benchmark.quarter,
     dataWarnings,

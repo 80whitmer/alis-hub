@@ -5,7 +5,9 @@ import {
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
+import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
 import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
+import CommunityRevenueSection from '../components/CommunityRevenueSection';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -1178,6 +1180,7 @@ export default function TeamAmDashboard() {
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />
             <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(rollup.arrAddedThisYearCents)} />
             <TopThreeEnhancementsCard accounts={accounts} includeAccountManager />
+            <AlisPayTicketsCard accounts={accounts} includeAccountManager />
           </div>
 
           <SectionCard title="KPI by Account Manager" description="Pick a metric to break down across the team" defaultExpanded={false}>
@@ -1276,6 +1279,14 @@ export default function TeamAmDashboard() {
 
           <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests tile above">
             <EnhancementRequestsSection accounts={accounts} includeAccountManager />
+          </SectionCard>
+
+          <SectionCard
+            title="Community Revenue & Occupancy"
+            description="Monthly per-community Net Revenue, Occupancy, and PPD with month-over-month variance — same report shape Viva's finance team was hand-building every month"
+            defaultExpanded={false}
+          >
+            <CommunityRevenueSection />
           </SectionCard>
 
           <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>

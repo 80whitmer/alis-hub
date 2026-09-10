@@ -64,6 +64,15 @@ function scoreServiceHealth(serviceHealth) {
   const repeatIssues = serviceHealth.repeatIssues?.length || 0;
   score -= Math.min(15, repeatIssues * 5);
 
+  // Open ALIS Pay tickets (Sep 2026, Aaron) — payment-processing issues
+  // (declined transactions, deposit/ACH failures, merchant account
+  // problems) directly affect a client's own cash flow, not just an ALIS
+  // feature request, so this gets its own deduction rather than folding
+  // into the generic aged/escalation counts above. Same capped-per-item
+  // shape as escalations just above it.
+  const alisPayOpen = serviceHealth.alisPayOpenCount || 0;
+  score -= Math.min(20, alisPayOpen * 5);
+
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
@@ -251,6 +260,11 @@ function explainRisk({ serviceHealth, financialHealth, aging, dsoDays } = {}) {
   const agedCount = serviceHealth?.agedTickets?.length || 0;
   if (agedCount > 0) {
     reasons.push(`${agedCount} ticket${agedCount === 1 ? '' : 's'} open 45+ days`);
+  }
+
+  const alisPayOpen = serviceHealth?.alisPayOpenCount || 0;
+  if (alisPayOpen > 0) {
+    reasons.push(`${alisPayOpen} open ALIS Pay ticket${alisPayOpen === 1 ? '' : 's'}`);
   }
 
   if (aging?.totalCents > 0) {

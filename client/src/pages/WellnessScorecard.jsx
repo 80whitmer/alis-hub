@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { resolveWellnessRow, getVisibleWellnessRows } from '../utils/wellnessRows';
 import { exportWellnessScorecard } from '../utils/wellnessScorecardExport';
+import { exportWellnessResidentList } from '../utils/wellnessResidentListExport';
 import BackToTopButton from '../components/BackToTopButton';
+import Drawer from '../components/Drawer';
 import UpcomingBirthdaysPanel, { hasUpcomingBirthdays } from '../components/UpcomingBirthdaysPanel';
 
 function BenchmarkBadge({ diff }) {
@@ -57,16 +59,119 @@ function TrendArrow({ trend }) {
   return <span className={`text-lg font-bold ${TREND_COLOR[trend] || 'text-neutral-500'}`}>{trend}</span>;
 }
 
+/**
+ * Resident-level detail behind a row flagged `hasResidentDrawer` (currently
+ * "Residents currently hospitalized / in ER" and "New significant change
+ * in condition") — same drawer+Excel-export shape as every other KPI
+ * drill-down in this app (see Drawer.jsx's own doc comment), just newly
+ * wired up here since this page had no drawer at all before now. `items`
+ * already carries a unified `detail` string per row type (see
+ * wellnessNormalizer.js's attachItems callers), so this stays generic
+ * rather than needing to know which row it's showing.
+ */
+function ResidentDrawer({ label, items, onClose }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportWellnessResidentList(label, items);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <Drawer
+      title={label}
+      subtitle={`${items.length} resident${items.length === 1 ? '' : 's'}`}
+      onClose={onClose}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <button onClick={handleExport} disabled={exporting} className="btn btn-secondary btn-sm">
+            {exporting ? 'Exporting…' : '⬇ Export to Excel'}
+          </button>
+          {exportError && <p className="text-xs text-error">{exportError}</p>}
+        </div>
+      }
+    >
+      {items.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No residents to show.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                <th className="pb-2 pr-4">Resident</th>
+                <th className="pb-2 pr-4">Community</th>
+                <th className="pb-2 pr-4">Date</th>
+                <th className="pb-2">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, i) => (
+                <tr key={`${it.residentId}-${i}`} className="border-t border-neutral-100">
+                  <td className="py-2 pr-4">{it.residentName || '—'}</td>
+                  <td className="py-2 pr-4 text-neutral-500">{it.communityName || '—'}</td>
+                  <td className="py-2 pr-4 text-neutral-500 whitespace-nowrap">{it.date ? it.date.slice(0, 10) : '—'}</td>
+                  <td className="py-2 text-neutral-500">{it.detail || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+const AGE_BANDS = ['<60', '60s', '70s', '80s', '90s', '100+'];
+
+/**
+ * Average resident age + decade-band counts for one scope (Aaron, Sep
+ * 2026) — rendered inside each WellnessTable (portfolio and every
+ * community), same "own small summary, not forced into the AL/MC/Total
+ * row shape" treatment as OccupancySection gets, just per-scope instead
+ * of portfolio-only since Aaron asked for this to roll up AND break out
+ * by community.
+ */
+function ResidentAgeSummary({ ageData }) {
+  if (!ageData || ageData.countedForAge === 0) return null;
+  return (
+    <div className="mb-4 pb-4 border-b border-neutral-100 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+      <span className="text-neutral-800">
+        <span className="font-semibold">{ageData.avgAge.toFixed(1)}</span>
+        <span className="text-neutral-500"> avg resident age</span>
+        {ageData.countedForAge < ageData.totalResidents && (
+          <span className="text-neutral-400"> ({ageData.countedForAge} of {ageData.totalResidents} with age on file)</span>
+        )}
+      </span>
+      {AGE_BANDS.map((band) => (
+        <span key={band} className="text-neutral-500 text-xs uppercase tracking-wide">
+          {band}: <span className="font-semibold text-neutral-700 normal-case">{ageData.bandCounts[band]}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function WellnessTable({ title, snapshot, communityId, description, hideUntracked }) {
   let currentCategory = null;
   const visibleRows = getVisibleWellnessRows(snapshot);
   const rows = hideUntracked ? visibleRows.filter((r) => r.source !== 'manual') : visibleRows;
+  const [drawerRow, setDrawerRow] = useState(null);
+  const ageData = communityId ? snapshot.residentAge?.byCommunity?.[communityId] : snapshot.residentAge?.portfolio;
   return (
     <div className="card mb-8">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-primary-900">{title}</h2>
         {description && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
       </div>
+      <ResidentAgeSummary ageData={ageData} />
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -97,7 +202,13 @@ function WellnessTable({ title, snapshot, communityId, description, hideUntracke
                   </td>
                   <td className="py-2 pr-3 text-right">{v.al}</td>
                   <td className="py-2 pr-3 text-right">{v.mc}</td>
-                  <td className="py-2 pr-3 text-right font-semibold">{v.total}</td>
+                  <td className="py-2 pr-3 text-right font-semibold">
+                    {row.hasResidentDrawer && v.items?.length > 0 ? (
+                      <button onClick={() => setDrawerRow({ label: `${row.label} — ${title}`, items: v.items })} className="underline decoration-dotted hover:text-accent-600">
+                        {v.total}
+                      </button>
+                    ) : v.total}
+                  </td>
                   <td className="py-2 pr-3 text-right text-neutral-500">{v.prior}</td>
                   <td className="py-2 pr-4 text-center"><TrendArrow trend={v.trend} /></td>
                 </tr>
@@ -106,6 +217,7 @@ function WellnessTable({ title, snapshot, communityId, description, hideUntracke
           </tbody>
         </table>
       </div>
+      {drawerRow && <ResidentDrawer label={drawerRow.label} items={drawerRow.items} onClose={() => setDrawerRow(null)} />}
     </div>
   );
 }

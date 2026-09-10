@@ -195,6 +195,42 @@ async function initDb() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_ppd_snapshots_lookup ON ppd_snapshots(company_name, scope, scope_key, period_start);`);
 
+  // Monthly per-community revenue/occupancy rollup (Aaron, Sep 2026) — a
+  // new report cadence (kpi-export is quarterly, wellness-scorecard is
+  // weekly; nothing in this app runs monthly). Modeled directly on
+  // dso_snapshots/ppd_snapshots above (same one-row-per-(job,scope) shape,
+  // same delete-then-reinsert-by-job_id convention, same never-pruned
+  // accumulate-history intent) rather than a new pattern — this table is
+  // always community-scoped (no portfolio/region rollup rows), since the
+  // Team AM Dashboard rollup this feeds sums across whichever communities
+  // have data itself, and per-community is the one shape nothing else in
+  // this app already stores as history.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS community_revenue_snapshots (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id               TEXT NOT NULL,
+      company_name         TEXT NOT NULL,
+      company_host         TEXT NOT NULL,
+      community_id         INTEGER NOT NULL,
+      community_name       TEXT,
+      month                TEXT NOT NULL,
+      charges              REAL,
+      credits              REAL,
+      discounts            REAL,
+      net_revenue          REAL,
+      unit_capacity        INTEGER,
+      move_ins             INTEGER,
+      move_outs            INTEGER,
+      total_occupied_units INTEGER,
+      occupancy_unit_days  INTEGER,
+      census_days          INTEGER,
+      ppd_unit_days        REAL,
+      ppd_census           REAL,
+      created_at           TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_community_revenue_snapshots_lookup ON community_revenue_snapshots(company_name, community_id, month);`);
+
   // Cache of RET (Resident Evaluation Tool) config XML, keyed by
   // (host, config_id) — never overwritten once captured (see
   // upsertEvaluationConfigVersion's INSERT OR IGNORE). Confirmed live (Sep
@@ -725,6 +761,59 @@ function getPpdHistory({ companyName, scope, scopeKey, limit = 12 }) {
   );
 }
 
+/** Bulk-writes one job's per-community rows for one month — see addDsoSnapshots above for the delete-then-insert rationale (job_id is never reused for a different run). */
+function addCommunityRevenueSnapshots(jobId, rows) {
+  run(`DELETE FROM community_revenue_snapshots WHERE job_id = ?`, [jobId]);
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    run(
+      `INSERT INTO community_revenue_snapshots (job_id, company_name, company_host, community_id, community_name, month, charges, credits, discounts, net_revenue, unit_capacity, move_ins, move_outs, total_occupied_units, occupancy_unit_days, census_days, ppd_unit_days, ppd_census, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        jobId, r.companyName, r.companyHost, r.communityId, r.communityName ?? null, r.month,
+        r.charges ?? null, r.credits ?? null, r.discounts ?? null, r.netRevenue ?? null,
+        r.unitCapacity ?? null, r.moveIns ?? null, r.moveOuts ?? null, r.totalOccupiedUnits ?? null,
+        r.occupancyUnitDays ?? null, r.censusDays ?? null, r.ppdUnitDays ?? null, r.ppdCensus ?? null, now,
+      ]
+    );
+  }
+}
+
+/** Most recent snapshot strictly before `month` for one community — same "prior period, or null on a first-ever run" shape as getPriorWellnessSnapshot. */
+function getPriorCommunityRevenueSnapshot({ companyName, communityId, month }) {
+  return queryOne(
+    `SELECT * FROM community_revenue_snapshots WHERE company_name = ? AND community_id = ? AND month < ? ORDER BY month DESC LIMIT 1`,
+    [companyName, communityId, month]
+  );
+}
+
+/** Every community's snapshot for one month, portfolio-wide — the Team AM Dashboard rollup's data source. One row per (company, community); if a job was re-run for the same month, the most recent job_id's rows win (ROW_NUMBER over job_id's own rowid, which increases with insert order). */
+function listCommunityRevenueSnapshots({ month }) {
+  return queryAll(
+    `SELECT * FROM community_revenue_snapshots
+     WHERE month = ? AND id IN (
+       SELECT MAX(id) FROM community_revenue_snapshots WHERE month = ? GROUP BY company_name, community_id
+     )
+     ORDER BY company_name, community_name`,
+    [month, month]
+  );
+}
+
+/** Distinct months with at least one stored snapshot, newest first — used by the Team AM Dashboard's "overdue" banner to find the latest available month and check whether last calendar month is missing for any actively-tracked account. */
+function listCommunityRevenueMonths() {
+  return queryAll(`SELECT DISTINCT month FROM community_revenue_snapshots ORDER BY month DESC`).map((r) => r.month);
+}
+
+/** Distinct company names that have EVER been snapshotted (at least one month, any month) — the "actively tracked" set the overdue banner should nag about; an account that's never opted into this report shouldn't be flagged just because it has no data. */
+function listCommunityRevenueTrackedCompanies() {
+  return queryAll(`SELECT DISTINCT company_name FROM community_revenue_snapshots ORDER BY company_name`).map((r) => r.company_name);
+}
+
+/** Latest month with a snapshot, per company — what the "overdue" banner compares against "last calendar month" to decide which actively-tracked accounts are behind. */
+function listCommunityRevenueLatestMonthByCompany() {
+  return queryAll(`SELECT company_name AS companyName, MAX(month) AS latestMonth FROM community_revenue_snapshots GROUP BY company_name`);
+}
+
 function normalizeNameKey(name) {
   return (name || '').trim().toLowerCase();
 }
@@ -1189,6 +1278,9 @@ module.exports = {
   addWellnessSnapshot, getWellnessSnapshot, getPriorWellnessSnapshot,
   addDsoSnapshots, getDsoHistory,
   addPpdSnapshots, getPpdHistory,
+  addCommunityRevenueSnapshots, getPriorCommunityRevenueSnapshot,
+  listCommunityRevenueSnapshots, listCommunityRevenueMonths, listCommunityRevenueTrackedCompanies,
+  listCommunityRevenueLatestMonthByCompany,
   addUsageAuditSnapshot, getUsageAuditSnapshot,
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,

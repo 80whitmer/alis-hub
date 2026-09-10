@@ -112,11 +112,41 @@ function addOccupancySheet(workbook, snapshot) {
   sheet.columns.forEach((col) => { col.width = 18; });
 }
 
+const AGE_BANDS = ['<60', '60s', '70s', '80s', '90s', '100+'];
+
+/**
+ * Average resident age + decade-band counts, portfolio-wide and per
+ * community (Aaron, Sep 2026) — same "own sheet, not forced into the fixed
+ * scorecard columns" treatment as addOccupancySheet above, but per-scope
+ * rather than portfolio-only since normalizeResidentAge computes both.
+ */
+function addResidentAgeSheet(workbook, snapshot) {
+  const ageData = snapshot.residentAge;
+  if (!ageData || ageData.portfolio.countedForAge === 0) return;
+
+  const sheet = workbook.addWorksheet('Resident Age');
+  const headerRow = sheet.addRow(['Scope', 'Avg Age', 'Residents w/ Age on File', 'Total Residents', ...AGE_BANDS]);
+  headerRow.font = { bold: true };
+
+  const addScopeRow = (label, data) => {
+    sheet.addRow([label, data.avgAge != null ? Number(data.avgAge.toFixed(1)) : '—', data.countedForAge, data.totalResidents, ...AGE_BANDS.map((b) => data.bandCounts[b])]);
+  };
+  addScopeRow('Portfolio', ageData.portfolio);
+  for (const c of snapshot.communities) {
+    const data = ageData.byCommunity?.[String(c.communityId)];
+    if (data) addScopeRow(c.name, data);
+  }
+
+  sheet.columns.forEach((col) => { col.width = 16; });
+  sheet.getColumn(1).width = 26;
+}
+
 export async function exportWellnessScorecard(snapshot) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'alis-hub';
   workbook.created = new Date();
 
+  addResidentAgeSheet(workbook, snapshot);
   addOccupancySheet(workbook, snapshot);
   addScorecardSheet(workbook, 'Portfolio', snapshot, null);
   for (const c of snapshot.communities) {

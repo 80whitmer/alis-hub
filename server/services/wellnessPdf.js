@@ -33,6 +33,17 @@ function docCompletionNote(row, v) {
   return ` <span class="doc-completion">⚠ ${v.openDocsTotal} undocumented${reporterNote}</span>`;
 }
 
+const AGE_BANDS = ['<60', '60s', '70s', '80s', '90s', '100+'];
+
+/** Same per-scope "average age + decade bands" line as the on-screen ResidentAgeSummary (WellnessScorecard.jsx) — mirrors that placement (inside each scope's table, not a separate portfolio-only section) since normalizeResidentAge computes both portfolio and per-community. */
+function residentAgeLine(snapshot, communityId) {
+  const ageData = communityId ? snapshot.residentAge?.byCommunity?.[communityId] : snapshot.residentAge?.portfolio;
+  if (!ageData || ageData.countedForAge === 0) return '';
+  const coverage = ageData.countedForAge < ageData.totalResidents ? ` (${ageData.countedForAge} of ${ageData.totalResidents} with age on file)` : '';
+  const bands = AGE_BANDS.map((b) => `${b}: ${ageData.bandCounts[b]}`).join('  ·  ');
+  return `<p style="font-size:10px; color:#4a4a4c; margin:0 0 8px;"><strong>${ageData.avgAge.toFixed(1)}</strong> avg resident age${coverage}  —  ${escapeHtml(bands)}</p>`;
+}
+
 function buildTable(title, snapshot, communityId) {
   let currentCategory = null;
   const rows = WELLNESS_ROWS.map((row) => {
@@ -53,6 +64,7 @@ function buildTable(title, snapshot, communityId) {
   return `
     <section class="scorecard">
       <h2>${escapeHtml(title)}</h2>
+      ${residentAgeLine(snapshot, communityId)}
       <table>
         <thead>
           <tr>

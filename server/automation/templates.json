@@ -367,6 +367,53 @@
       }
     },
     {
+      "id": "community-revenue-snapshot",
+      "name": "Community Revenue & Occupancy Snapshot",
+      "description": "Monthly per-community Charges/Credits/Discounts/Net Revenue, Unit Capacity (estimated from ALIS floor plan — Viva's own report sources this from a manually-maintained file ALIS has no API access to, so treat it as directional, not exact), Move-Ins/Move-Outs, Occupancy Unit Days, Census, and PPD (both bases) — stored as history so the Team AM Dashboard can show month-over-month variance, same report shape Viva's finance team was hand-building every month",
+      "category": "reporting",
+      "icon": "📈",
+      "timeout": 900000,
+      "scriptPath": "./communityRevenueSnapshot.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Community Revenue & Occupancy Snapshot",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Viva Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL. Comma-separate multiple hosts for a multi-host account.",
+            "examples": ["vivaseniorliving"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities (optional)",
+            "description": "Leave empty to automatically pull every community from every configured host, excluding any with \"Training\" in the name",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Community Name", "examples": ["Park Terrace at Radisson"] },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["952"] },
+                "host": { "type": "string", "title": "ALIS Host (optional)", "description": "Only needed for a multi-host account — defaults to the first host if omitted." }
+              },
+              "required": ["name", "communityId"]
+            }
+          },
+          "month": {
+            "type": "string",
+            "title": "Month (YYYY-MM)",
+            "description": "The calendar month this snapshot covers — should normally be the most recently closed month",
+            "examples": ["2026-08"]
+          }
+        },
+        "required": ["companyName", "companyHost", "month"]
+      }
+    },
+    {
       "id": "company-usage-audit",
       "name": "Company/Community ALIS Usage Audit",
       "description": "For a company (and optionally its communities), compare what was Contracted (HubSpot deal line items), what's Enabled (ALIS Entitlements page), and what's actually Used (ALIS export API activity) feature-by-feature — a visual RAG grid replacing the old manually-maintained roadmap spreadsheet",

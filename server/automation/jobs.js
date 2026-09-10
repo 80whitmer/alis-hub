@@ -8,6 +8,7 @@ const { broadcast }                        = require('../api/broadcaster');
 const { getTemplate }                      = require('./templates-loader');
 const { runKpiExportJob }                  = require('./kpiExport');
 const { runWellnessScorecardJob }          = require('./wellnessExport');
+const { runCommunityRevenueSnapshotJob }   = require('./communityRevenueSnapshot');
 const { runCompanyUsageAuditJob }          = require('./usageAudit');
 const { runAuditHistoryJob }               = require('./auditHistoryJob');
 
@@ -91,6 +92,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'wellness-scorecard':
         return await runWellnessScorecardJob(jobId, payload);
+
+      case 'community-revenue-snapshot':
+        return await runCommunityRevenueSnapshotJob(jobId, payload);
 
       case 'company-usage-audit':
         return await runCompanyUsageAuditJob(jobId, payload);

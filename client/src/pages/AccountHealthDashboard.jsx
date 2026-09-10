@@ -5,6 +5,7 @@ import {
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
+import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
 import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
@@ -1720,6 +1721,7 @@ export default function AccountHealthDashboard() {
               sub={`${rollup.enhancementTop} Top 3 · ${rollup.enhancementLesser} Long-Term${rollup.otherOpen > 0 ? ` · ${rollup.otherOpen} other open` : ''}`}
             />
             <TopThreeEnhancementsCard accounts={accounts} />
+            <AlisPayTicketsCard accounts={accounts} />
             <StatCard label="Open Deals" value={rollup.openDeals} />
             <StatCard label="Open Deal Value" value={currencyStr(rollup.openDealValueCents)} />
             <StatCard label="Total ARR" value={currencyStr(rollup.arrCents)} />

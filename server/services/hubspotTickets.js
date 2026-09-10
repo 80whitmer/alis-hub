@@ -328,6 +328,19 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
     .filter(isEnhancementRequest)
     .map((t) => ({ ...t, isTopThree: isTopEnhancement(t) }));
 
+  // Open ALIS Pay tickets (Sep 2026, Aaron) — category_2_0 === 'ALIS Pay',
+  // confirmed live as the CURRENT, actively-growing way this portal tracks
+  // ALIS Pay support work (newest ticket at time of writing was created
+  // same-day). Deliberately NOT the old dedicated "ALIS Pay" HubSpot
+  // pipeline (id 221355, ~6,410 tickets) — confirmed live that pipeline
+  // has had zero new tickets across every one of its stages since
+  // 2025-12-01, i.e. it's a frozen historical backlog from a
+  // since-abandoned email-inbox-to-ticket integration, not a live signal.
+  // A health-score/dashboard "volume" built on a frozen number would never
+  // move, defeating the point of an ongoing indicator.
+  const isAlisPayTicket = (t) => t.category === 'ALIS Pay';
+  const alisPayTickets = openTickets.filter(isAlisPayTicket);
+
   // Closed-this-calendar-year count, for the Cost to Serve by Tier chart
   // (Sep 2026, Aaron): that metric is meant to read as "current support
   // load," so a ticket closed in a prior calendar year shouldn't still be
@@ -346,6 +359,7 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
     focusedOpenTickets,
     enhancementTickets: { top: topEnhancementOpenTickets, lesser: lesserEnhancementOpenTickets },
     enhancementRequests,
+    alisPayTickets,
     otherOpenTickets,
     byCategory,
     agingOpenTickets,

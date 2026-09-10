@@ -20,8 +20,8 @@ export const WELLNESS_ROWS = [
   { category: 'Assessment & Care Planning', label: 'Care plan / service plan changes needed', key: 'carePlanChanges', source: 'manual' },
   { category: 'Assessment & Care Planning', label: 'RN delegation expired, due, or needed', key: 'rnDelegation', source: 'manual' },
 
-  { category: 'Acute Change / Hospital', label: 'Residents currently hospitalized / in ER', key: 'hospitalCurrent', source: 'rows', hasBenchmark: true },
-  { category: 'Acute Change / Hospital', label: 'New significant change in condition', key: 'changeInCondition', source: 'rows' },
+  { category: 'Acute Change / Hospital', label: 'Residents currently hospitalized / in ER', key: 'hospitalCurrent', source: 'rows', hasBenchmark: true, hasResidentDrawer: true },
+  { category: 'Acute Change / Hospital', label: 'New significant change in condition', key: 'changeInCondition', source: 'rows', hasResidentDrawer: true },
 
   { category: 'Incidents & Safety', label: 'Falls this week', key: 'falls', source: 'rows', hasBenchmark: true, hasDocCompletion: true },
   { category: 'Incidents & Safety', label: 'Falls with injury (head) / hospital transfer', key: 'fallsWithInjury', source: 'rows', note: 'Hospital-transfer half only — read from the completed Incident Report Form; no separate "head injury" field exists to compute the other half.' },
@@ -125,6 +125,7 @@ export function resolveWellnessRow(row, snapshot, communityId) {
     trend: trendBucket?.trend ?? '—',
     openDocsTotal: openDocsBucket?.total ?? 0,
     openDocsReporters: openDocsBucket?.reporters ?? [],
+    items: row.hasResidentDrawer ? (bucket?.items ?? []) : undefined,
   };
 }
 
