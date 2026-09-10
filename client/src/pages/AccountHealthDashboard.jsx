@@ -1870,10 +1870,10 @@ export default function AccountHealthDashboard() {
                 'Open Tickets by Category 2.0',
                 'Closed Tickets by Category 2.0',
                 'Ticket Volume by Client Tier',
+                'Cost to Serve by Tier',
                 'Top 3 Enhancement Requests',
                 'Enhancement Requests',
                 'Community Revenue & Occupancy',
-                'Cost to Serve by Tier',
                 'Deals by Type',
                 'ARR Added This Year — Contributing Deals',
                 'All Deals',
@@ -1971,6 +1971,9 @@ export default function AccountHealthDashboard() {
           <SectionCard title="Ticket Volume by Client Tier" description="Open + closed tickets aggregated by Account Management Tier" defaultExpanded={false}>
             <TicketsByTierChart accounts={accounts} />
           </SectionCard>
+          <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>
+            <CostToServeByTierChart accounts={accounts} />
+          </SectionCard>
           <SectionCard title="Top 3 Enhancement Requests" description="Every account's staged Top 3 Enhancement Request, portfolio-wide">
             <EnhancementRequestsSection accounts={accounts} topThreeOnly />
           </SectionCard>
@@ -1983,9 +1986,6 @@ export default function AccountHealthDashboard() {
             defaultExpanded={false}
           >
             <CommunityRevenueSection accounts={accounts} />
-          </SectionCard>
-          <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>
-            <CostToServeByTierChart accounts={accounts} />
           </SectionCard>
           <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR" defaultExpanded={false}>
             <DealTypeChart accounts={accounts} />

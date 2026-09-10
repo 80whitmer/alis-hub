@@ -1260,9 +1260,9 @@ export default function TeamAmDashboard() {
                 'Health Score Distribution',
                 'Companies by Tier',
                 'Tickets by Tier',
+                'Cost to Serve by Tier',
                 'Top 3 Enhancement Requests',
                 'Enhancement Requests',
-                'Cost to Serve by Tier',
                 'ARR by Tier',
                 'Ticket Volume by Account Manager by Tier',
                 'Needs an Account Manager',
@@ -1364,16 +1364,16 @@ export default function TeamAmDashboard() {
             <TicketsByTierChart accounts={accounts} />
           </SectionCard>
 
+          <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>
+            <CostToServeByTierChart accounts={accounts} />
+          </SectionCard>
+
           <SectionCard title="Top 3 Enhancement Requests" description="Every account's staged Top 3 Enhancement Request, portfolio-wide">
             <EnhancementRequestsSection accounts={accounts} includeAccountManager topThreeOnly />
           </SectionCard>
 
           <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement, portfolio-wide — broader than the Top 3 Enhancement Requests section above">
             <EnhancementRequestsSection accounts={accounts} includeAccountManager />
-          </SectionCard>
-
-          <SectionCard title="Cost to Serve by Tier" description="Ticket volume (open + closed) per $1,000 of ARR — how much more support each ARR dollar costs at lower tiers" defaultExpanded={false}>
-            <CostToServeByTierChart accounts={accounts} />
           </SectionCard>
 
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
