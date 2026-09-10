@@ -174,14 +174,14 @@ function SectionCard({ title, children, description, action, collapsible = true,
   );
 }
 
-/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. */
+/** Compact "jump to section" card for the stat grid's leftover cells — clicking a link expands (if collapsed) and scrolls to the matching SectionCard via JUMP_EVENT, without either component needing to know about the other beyond the shared title string. Grows and its text sizes up on hover (Aaron, Sep 2026) so a card that's mostly small print doesn't get overlooked next to the big-number stat tiles around it — `relative` + `hover:z-10` keeps the scaled-up card drawing on top of its neighbors instead of being clipped underneath them. */
 function QuickJumpNav({ sections, className = '' }) {
   function jumpTo(title) {
     window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }));
   }
   return (
-    <div className={`card ${className}`}>
-      <p className="text-xs text-neutral-500 uppercase tracking-wide font-semibold mb-3">Jump to Section</p>
+    <div className={`group card relative transition-transform duration-200 hover:scale-105 hover:z-10 hover:shadow-xl ${className}`}>
+      <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide font-semibold mb-3 transition-[font-size]">Jump to Section</p>
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
         {sections.map((title) => (
           <li key={title} className="flex items-start gap-2">
@@ -189,7 +189,7 @@ function QuickJumpNav({ sections, className = '' }) {
             <button
               type="button"
               onClick={() => jumpTo(title)}
-              className="text-left text-xs leading-snug text-neutral-600 hover:text-accent-600 hover:underline"
+              className="text-left text-xs group-hover:text-sm leading-snug text-neutral-600 hover:text-accent-600 hover:underline transition-[font-size]"
             >
               {title}
             </button>
