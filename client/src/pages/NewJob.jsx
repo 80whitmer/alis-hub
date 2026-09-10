@@ -345,7 +345,7 @@ export default function NewJob() {
           glance and one click instead of reading five paragraphs first. */}
       <div className="mb-8">
         <label className="input-label">Job Type</label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {templates.map(template => (
             <div key={template.id} className="relative">
               <button
@@ -378,6 +378,40 @@ export default function NewJob() {
               )}
             </div>
           ))}
+
+          {/* Evaluation Lookup isn't a job template (no backend registration,
+              no batch/async run, no Job Board entry) — see EvaluationDetail.jsx's
+              own doc comment: it's a live search tool. Kept in this grid anyway
+              (Aaron, Sep 2026) so every automation-adjacent tool lives in one
+              place; the dashed border is the only visual hint it behaves
+              differently — clicking it navigates straight to the tool instead
+              of loading a Configuration form below. */}
+          <div className="relative">
+            <button
+              onClick={() => navigate('/evaluation-detail')}
+              className="w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 border-dashed border-neutral-200 bg-white hover:border-accent-300 text-center transition-all"
+            >
+              <span className="text-2xl leading-none">🔍</span>
+              <span className="text-sm font-semibold text-primary-900 leading-tight">Evaluation Lookup</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setInfoOpenId(infoOpenId === 'evaluation-lookup' ? null : 'evaluation-lookup'); }}
+              className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white border border-neutral-200 text-neutral-400 hover:text-accent-600 hover:border-accent-300 flex items-center justify-center text-[10px] font-bold leading-none"
+              aria-label="About Evaluation Lookup"
+              title="What does this do?"
+            >
+              i
+            </button>
+            {infoOpenId === 'evaluation-lookup' && (
+              <div
+                ref={infoPopoverRef}
+                className="absolute z-20 top-full mt-1.5 left-0 right-0 p-3 rounded-lg border border-neutral-200 bg-white shadow-lg text-xs text-neutral-600 text-left"
+              >
+                Instant resident evaluation search — CarePoints, Care Level, and the question/answer breakdown where available. Not a job: opens its own page immediately instead of a Configuration form below.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
