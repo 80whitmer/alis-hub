@@ -11,6 +11,7 @@ import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
 import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
 import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
+import TierKpiSection, { AmKpiSection, TIER_KPI_TITLE, AM_KPI_TITLE } from '../components/TierKpiSection';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -169,7 +170,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // bucket's items are alphabetized here at build time (not hand-ordered) so
 // a newly added section can't silently drift out of order.
 const OVERVIEW_SECTIONS = [
-  { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding', 'Tier KPIs', 'Tier KPIs by AM'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR by Tier per AM', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by AM by Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets by Tier', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
@@ -4275,6 +4276,12 @@ export default function TeamAmDashboard() {
             <CommunitiesByTierChart accounts={accounts} chartType={communitiesByTierChartType} setChartType={setCommunitiesByTierChartType} />
           </SectionCard>
 
+          <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier — each with a daily trend" defaultExpanded={false}>
+            <TierKpiSection endpoint="/api/team-am/tier-kpis" scopeNote="Team-wide: every Home Office account (lifecycle-flagged accounts excluded). A trend point is captured on each Refresh." />
+          </SectionCard>
+          <SectionCard title={AM_KPI_TITLE} description="Average ARR per company and capacity per community, by Account Manager — each with a daily trend" defaultExpanded={false}>
+            <AmKpiSection endpoint="/api/team-am/tier-kpis" />
+          </SectionCard>
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
             <TierByArrChart
               accounts={accounts}

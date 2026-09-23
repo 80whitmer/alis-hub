@@ -25,6 +25,7 @@ const { parseAgingReportPdf } = require('../services/agingReportParser');
 const { matchAgingRows } = require('../services/agingReportMatcher');
 const { renderAccountHealthPortfolioPdf, renderAccountHealthAccountPdf } = require('../services/accountHealthPdf');
 const { getOccupancySnapshotForAccount } = require('../services/accountHealthOccupancy');
+const { recordTierKpis, getTierKpiPayload } = require('../services/tierKpiRollup');
 
 /**
  * Maps getTicketSummaryForCompany's output onto the serviceHealth shape
@@ -510,6 +511,7 @@ router.post('/refresh', async (req, res) => {
       }
     }
     recordKpiMetricSnapshots('account_health', tierRows);
+    recordTierKpis('account_health', freshAccounts);
 
     res.json({
       refreshedAt: new Date().toISOString(),
@@ -919,6 +921,16 @@ router.get('/kpi-metric-history', (req, res) => {
 // Tier" trend subsections (Sep 2026, Aaron: "tracking and trending" on
 // those three sections too) — see the tier-grouped recordKpiMetricSnapshots
 // call in the /refresh handler above for what populates each tier's rows.
+// GET /api/account-health/tier-kpis — the "Tier KPIs" section, scoped to
+// this page's own (owned) accounts: current rollup plus daily history.
+router.get('/tier-kpis', (req, res) => {
+  try {
+    res.json(getTierKpiPayload('account_health', getEnrichedAccounts()));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/kpi-metric-history-by-tier', (req, res) => {
   try {
     res.json({

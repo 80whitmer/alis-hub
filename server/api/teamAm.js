@@ -20,6 +20,7 @@ const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
 const { matchAgingRows } = require('../services/agingReportMatcher');
 const { renderTeamAmPpt } = require('../services/teamAmPpt');
+const { recordTierKpis, getTierKpiPayload } = require('../services/tierKpiRollup');
 
 /**
  * Deliberately duplicated from accountHealth.js's function of the same
@@ -370,6 +371,7 @@ async function runTeamAmRefreshJob(jobId, companies) {
     );
   }
   recordKpiMetricSnapshots('team_am', tierRows);
+  recordTierKpis('team_am', freshAccounts, { includeAm: true });
 
   setJobStatus(jobId, 'done');
   emit('job_done', {
@@ -818,6 +820,16 @@ router.get('/kpi-metric-history', (req, res) => {
 // recordKpiMetricSnapshots call in the refresh handler above for what
 // populates each tier's rows. Last key is 'Unassigned', not 'Unset' —
 // this page's own tierLabel() convention, different from accountHealth.js's.
+// GET /api/team-am/tier-kpis — "Tier KPIs" + "Tier KPIs by AM" sections:
+// current rollup plus daily history (recorded on each /refresh).
+router.get('/tier-kpis', (req, res) => {
+  try {
+    res.json(getTierKpiPayload('team_am', getEnrichedTeamAmAccounts(), { includeAm: true }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/kpi-metric-history-by-tier', (req, res) => {
   try {
     res.json({

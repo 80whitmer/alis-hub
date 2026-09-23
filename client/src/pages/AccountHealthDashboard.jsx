@@ -12,6 +12,7 @@ import EnhancementRequestsSection from '../components/EnhancementRequestsSection
 import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import CommunityRevenueSection from '../components/CommunityRevenueSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
+import TierKpiSection, { TIER_KPI_TITLE } from '../components/TierKpiSection';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -273,7 +274,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // hand-ordered) so a newly added section can't silently drift out of
 // order.
 const OVERVIEW_SECTIONS = [
-  { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Recurring Calls'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Recurring Calls', 'Tier KPIs'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'Community Revenue & Occupancy', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by Client Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
@@ -5275,6 +5276,9 @@ export default function AccountHealthDashboard() {
             </div>
           </SectionCard>
           {unassignedTierOpen && <UnassignedTierDrawer accounts={unassignedTierAccounts} onClose={() => setUnassignedTierOpen(false)} />}
+          <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier for your accounts — each with a daily trend" defaultExpanded={false}>
+            <TierKpiSection endpoint="/api/account-health/tier-kpis" scopeNote="Your accounts only (lifecycle-flagged accounts excluded) — the Team AM board has the same KPIs team-wide. A trend point is captured on each Refresh." />
+          </SectionCard>
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
             <TierByArrChart
               accounts={accounts}

@@ -1374,13 +1374,25 @@ function getHealthScoreHistory(scope, scopeKey, limit = 366) {
  */
 function recordKpiMetricSnapshots(scope, rows) {
   const today = new Date().toISOString().slice(0, 10);
+  // db.run + one saveToDisk at the end, not run() per statement — run()
+  // rewrites the whole DB file each call, and the tier KPI rollup records
+  // ~150 rows per refresh.
   for (const r of rows) {
-    run(`DELETE FROM kpi_metric_history WHERE scope = ? AND scope_key = ? AND metric_key = ? AND recorded_date = ?`, [scope, r.scopeKey, r.metricKey, today]);
-    run(
+    db.run(`DELETE FROM kpi_metric_history WHERE scope = ? AND scope_key = ? AND metric_key = ? AND recorded_date = ?`, [scope, r.scopeKey, r.metricKey, today]);
+    db.run(
       `INSERT INTO kpi_metric_history (scope, scope_key, metric_key, recorded_date, value) VALUES (?, ?, ?, ?, ?)`,
       [scope, r.scopeKey, r.metricKey, today, r.value]
     );
   }
+  if (rows.length > 0) saveToDisk();
+}
+
+/** Every point for a scope as flat rows [{scope_key, metric_key, recorded_date, value}], oldest first — the shape the tier KPI charts pivot client-side. */
+function getKpiMetricHistoryRows(scope) {
+  return queryAll(
+    `SELECT scope_key, metric_key, recorded_date, value FROM kpi_metric_history WHERE scope = ? ORDER BY recorded_date ASC`,
+    [scope]
+  );
 }
 
 /** All KPI metrics' history for one scope/scope_key, oldest first, grouped by metric_key — the data source for the AM KPI section's trend chart. */
@@ -1812,7 +1824,7 @@ module.exports = {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError,
   recordHealthScoreSnapshots, getHealthScoreHistory,
-  recordKpiMetricSnapshots, getKpiMetricHistory,
+  recordKpiMetricSnapshots, getKpiMetricHistory, getKpiMetricHistoryRows,
   listRecurringCalls, createRecurringCall, updateRecurringCall, deleteRecurringCall, bulkImportRecurringCalls,
   listKeyContacts, replaceKeyContactsForCompany, pruneKeyContacts,
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging, getTeamAmSnapshot,
