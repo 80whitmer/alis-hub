@@ -51,7 +51,7 @@ function mapLiveServiceHealth(ticketSummary) {
     avgTicketAgeDays,
     agedTickets: openTickets
       .filter((t) => (t.daysOpen || 0) > 45)
-      .map((t) => ({ ticketId: t.id, subject: t.subject, ageDays: t.daysOpen, stage: t.pipelineStageLabel, url: t.url })),
+      .map((t) => ({ ticketId: t.id, subject: t.subject, ageDays: t.daysOpen, stage: t.pipelineStageLabel, url: t.url, pinnedNoteId: t.pinnedNoteId })),
     escalationCount: null,
     ticketCategoryMix: ticketSummary.byCategory,
     repeatIssues: null,
@@ -65,7 +65,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // (shared between both dashboards) needs dates/status per ticket that
     // the raw ticket already carries but this map didn't forward before.
     enhancementTopItems: ticketSummary.enhancementTickets.top.map((t) => ({
-      ticketId: t.id, subject: t.subject, rank: t.topThreeRank, stage: t.pipelineStageLabel, url: t.url,
+      ticketId: t.id, subject: t.subject, rank: t.topThreeRank, stage: t.pipelineStageLabel, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt || null, closedAt: t.closedAt || null, isOpen: t.isOpen ?? null,
     })),
     enhancementLesserCount: ticketSummary.enhancementTickets.lesser.length,
@@ -75,7 +75,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // — broader than enhancementTopItems above (see hubspotTickets.js's
     // isEnhancementRequest), open tickets only.
     enhancementRequests: ticketSummary.enhancementRequests.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, daysOpen: t.daysOpen,
       nextStep: t.nextStep, isTopThree: t.isTopThree,
     })),
@@ -85,7 +85,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // rides along so the Top-3-only view can filter closed items the same
     // way it filters open ones.
     enhancementClosedItems: ticketSummary.closedEnhancementRequests.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, closedAt: t.closedAt, isTopThree: t.isTopThree,
     })),
     // For the Cost to Serve by Tier chart's "open + closed this calendar
@@ -98,7 +98,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // deduction.
     alisPayOpenCount: ticketSummary.alisPayTickets.length,
     alisPayOpenItems: ticketSummary.alisPayTickets.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, daysOpen: t.daysOpen, stage: t.pipelineStageLabel,
     })),
     // Open "Escalation" tickets (Sep 2026) — category_2_0 === "ALIS
@@ -110,7 +110,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // unrelated, currently-unpopulated Jira-ESC bridge-schema concept.
     alisEscalationOpenCount: ticketSummary.escalationTickets.length,
     alisEscalationOpenItems: ticketSummary.escalationTickets.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, daysOpen: t.daysOpen, nextStep: t.nextStep,
     })),
     // Closed escalations (Sep 2026) — mirrors accountHealth.js's own copy;
@@ -118,7 +118,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // heatmap on this dashboard too (same shared component).
     alisEscalationClosedCount: ticketSummary.closedEscalationTickets.length,
     alisEscalationClosedItems: ticketSummary.closedEscalationTickets.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, closedAt: t.closedAt,
     })),
     // Slim per-ticket date list (Sep 2026) for this dashboard's own Ticket
@@ -159,7 +159,7 @@ async function mapLiveFinancialHealth(dealSummary) {
         name: d.name, stage: d.stage, pipeline: d.pipeline, dealType: d.dealType,
         valueCents: Math.round((d.amount || 0) * 100), expectedCloseDate: d.closeDate,
         isOpen: d.isOpen, nextStep: d.nextStep, nextActivityDate: d.nextActivityDate,
-        tasks: d.tasks, url: d.url,
+        tasks: d.tasks, url: d.url, pinnedNoteId: d.pinnedNoteId,
       })),
     },
     totalDeals: dealSummary.total,
@@ -173,7 +173,7 @@ async function mapLiveFinancialHealth(dealSummary) {
     arrAddedThisYearCents: arrAddedThisYearDeals.reduce((sum, d) => sum + d.arrValueCents, 0),
     arrAddedThisYearDeals: arrAddedThisYearDeals.map((d) => ({
       name: d.name, arrValueCents: d.arrValueCents, closeDate: d.closeDate,
-      pipeline: d.pipeline, stage: d.stage, url: d.url, dealOwnerName: d.dealOwnerName,
+      pipeline: d.pipeline, stage: d.stage, url: d.url, pinnedNoteId: d.pinnedNoteId, dealOwnerName: d.dealOwnerName,
     })),
     // "2026 deals" KPI (Aaron) — every deal (won or lost) with a
     // closedate in the current calendar year, tagged with its own Deal
@@ -199,7 +199,7 @@ async function mapLiveFinancialHealth(dealSummary) {
       .map((d) => ({
         dealId: d.id, name: d.name, projectStatus: d.projectStatus, projectHealthRag: d.projectHealthRag,
         projectProgress: d.projectProgress, projectOwner: d.projectOwner, projectedGoLiveDate: d.projectedGoLiveDate,
-        createdAt: d.createdAt, url: d.url,
+        createdAt: d.createdAt, url: d.url, pinnedNoteId: d.pinnedNoteId,
       })),
   };
 }
@@ -267,6 +267,7 @@ async function runTeamAmRefreshJob(jobId, companies) {
         tier: company.tier,
         lastActivityDate: company.lastActivityDate,
         hubspotCapacity: company.hubspotCapacity,
+        pinnedNoteId: company.pinnedNoteId,
       });
       setItemStatus(jobId, company.name, 'success');
       emit('item_done', { name: company.name });

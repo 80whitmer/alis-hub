@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PinnedNoteBody } from './PinnedNote';
 
 /**
  * "Tickets: ALIS Internal" — shared by Account Health and Team AM. Aaron,
@@ -268,7 +269,7 @@ function TicketCard({ t, onTracked, defaultOpen }) {
           {t.pinnedNote && (
             <div>
               <p className="font-semibold text-neutral-500 uppercase tracking-wide text-[11px]">Pinned note{t.pinnedNoteModifiedAt ? ` · updated ${fmtDate(t.pinnedNoteModifiedAt)}` : ''}</p>
-              <p className="whitespace-pre-wrap max-h-72 overflow-y-auto border border-neutral-100 rounded-lg p-2 bg-neutral-50">{t.pinnedNote}</p>
+              <PinnedNoteBody segments={t.pinnedNoteSegments} className="max-h-72 overflow-y-auto border border-neutral-100 rounded-lg p-2 bg-neutral-50" />
             </div>
           )}
           {t.links.length > 0 && (

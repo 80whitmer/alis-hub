@@ -4,6 +4,7 @@ import {
   LineChart, Line, Legend,
 } from 'recharts';
 import { exportEnhancementRequests } from '../utils/enhancementRequestsExport';
+import PinnedNoteButton from './PinnedNote';
 
 /**
  * Portfolio-wide "Enhancement Requests" section — every OPEN ticket whose
@@ -635,6 +636,7 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
                     {t.url ? (
                       <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a>
                     ) : t.subject}
+                    <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
                   </td>
                   <td className="py-2 pr-4 text-neutral-500 whitespace-nowrap">{t.createdAt ? t.createdAt.slice(0, 10) : '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500">{t.daysOpen ?? '—'}</td>

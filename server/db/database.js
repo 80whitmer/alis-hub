@@ -706,6 +706,16 @@ async function initDb() {
     }
   }
 
+  // The Home Office's own pinned note (hs_pinned_engagement_id) — id only;
+  // the note is fetched live on open. Same retrofit pattern as above.
+  for (const table of ['account_health_snapshots', 'team_am_snapshots']) {
+    try {
+      db.run(`ALTER TABLE ${table} ADD COLUMN pinned_note_id TEXT;`);
+    } catch {
+      // Column already exists — fine.
+    }
+  }
+
   // Clicks from the ALIS Internal section (ticket link or a resource link
   // inside it). HubSpot's API doesn't expose record view counts, so "hot
   // topics" can only measure clicks made from this dashboard.
@@ -1282,7 +1292,7 @@ function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents, arrPersonallyClosedThisYearCents,
   enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
-  tier, lastActivityDate,
+  tier, lastActivityDate, pinnedNoteId,
 }) {
   const now = new Date().toISOString();
   run(
@@ -1290,8 +1300,8 @@ function upsertAccountHealthSnapshot({
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents, arr_personally_closed_this_year_cents,
        enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
-       health_score, health_band, tier, last_activity_date, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       health_score, health_band, tier, last_activity_date, pinned_note_id, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        lifecycle_stage = excluded.lifecycle_stage,
@@ -1313,13 +1323,14 @@ function upsertAccountHealthSnapshot({
        health_band = excluded.health_band,
        tier = excluded.tier,
        last_activity_date = excluded.last_activity_date,
+       pinned_note_id = excluded.pinned_note_id,
        refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null, arrPersonallyClosedThisYearCents ?? null,
       enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
-      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, now,
+      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, pinnedNoteId ?? null, now,
     ]
   );
 }
@@ -1672,7 +1683,7 @@ function upsertTeamAmSnapshot({
   hubspotCompanyId, companyName, accountManagerId, accountManagerName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents,
   enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
-  tier, lastActivityDate, hubspotCapacity,
+  tier, lastActivityDate, hubspotCapacity, pinnedNoteId,
 }) {
   const now = new Date().toISOString();
   run(
@@ -1681,8 +1692,8 @@ function upsertTeamAmSnapshot({
        service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
        enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
-       health_score, health_band, tier, last_activity_date, hubspot_capacity, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       health_score, health_band, tier, last_activity_date, hubspot_capacity, pinned_note_id, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        account_manager_id = excluded.account_manager_id,
@@ -1706,13 +1717,14 @@ function upsertTeamAmSnapshot({
        tier = excluded.tier,
        last_activity_date = excluded.last_activity_date,
        hubspot_capacity = excluded.hubspot_capacity,
+       pinned_note_id = excluded.pinned_note_id,
        refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, accountManagerId ?? null, accountManagerName ?? null, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null,
       enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
-      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, hubspotCapacity ?? null, now,
+      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, hubspotCapacity ?? null, pinnedNoteId ?? null, now,
     ]
   );
 }

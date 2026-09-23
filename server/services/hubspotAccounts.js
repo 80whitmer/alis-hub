@@ -98,7 +98,7 @@ async function hubspotRequest(method, path, body, attempt = 1) {
 // "at signing" deal-time snapshots, not live occupancy (confirmed live via
 // HubSpot's own property search, Sep 2026). Free to pull here: same bulk
 // company-properties fetch, no extra API calls, no ALIS involved at all.
-const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'client_teir_2_0', 'notes_last_updated', 'company_total_capacity'];
+const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'client_teir_2_0', 'notes_last_updated', 'company_total_capacity', 'hs_pinned_engagement_id'];
 
 function resolveTier(properties) {
   const newTier = properties.client_teir_2_0;
@@ -326,6 +326,7 @@ async function getOwnedCompanies(ownerId) {
       arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
       tier: resolveTier(c.properties),
       lastActivityDate: c.properties.notes_last_updated || null,
+      pinnedNoteId: c.properties.hs_pinned_engagement_id || null,
     })));
     after = body.paging?.next?.after;
   } while (after);
@@ -483,6 +484,7 @@ async function getAllHomeOfficeCompanies() {
       lastActivityDate: c.properties.notes_last_updated || null,
       hubspotCapacity: c.properties.company_total_capacity != null && c.properties.company_total_capacity !== ''
         ? Number(c.properties.company_total_capacity) : null,
+      pinnedNoteId: c.properties.hs_pinned_engagement_id || null,
     })));
     after = body.paging?.next?.after;
   } while (after);

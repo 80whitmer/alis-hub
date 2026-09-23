@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import Drawer from './Drawer';
+import PinnedNoteButton from './PinnedNote';
 import { exportTopThreeEnhancements } from '../utils/topThreeEnhancementsExport';
 
 /**
@@ -115,6 +116,7 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
                     {t.url ? (
                       <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a>
                     ) : t.subject}
+                    <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
                   </td>
                   <td className="py-2 pr-4 text-neutral-500">{t.rank || '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500">{t.stage || '—'}</td>

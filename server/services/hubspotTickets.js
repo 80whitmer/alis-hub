@@ -42,6 +42,9 @@ const TICKET_PROPERTIES = [
   // `hs_next_step` (a different property on a different object type) —
   // just never pulled here before now.
   'next_step',
+  // Only the id is stored in snapshots; the note itself is fetched live
+  // when someone opens it (GET /api/hubspot/pinned-notes).
+  'hs_pinned_engagement_id',
 ];
 
 // The literal HubSpot pipeline-stage label a ticket must resolve to for it
@@ -253,6 +256,7 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
       // now attached to every live-pulled ticket so the Support Review /
       // dashboard listings can link straight to the record.
       url: ticketUrl(t.id),
+      pinnedNoteId: t.properties.hs_pinned_engagement_id || null,
     };
   })
     // category_2_0 === "ALIS Internal" (Sep 2026, confirmed live — 11
@@ -458,6 +462,7 @@ const DEAL_PROPERTIES = [
   // meaning), so no separate due-date property is needed for that.
   'hs_next_step',
   'notes_next_activity_date',
+  'hs_pinned_engagement_id',
   // The deal's own Deal Owner — deliberately separate from the
   // account_manager property read on the company. A deal can be (and
   // often is) closed by a different person than whoever currently owns
@@ -598,6 +603,7 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
       projectOwner: p.project_owner || null,
       projectedGoLiveDate: p.projected_golive_date || null,
       url: hubspotRecordUrl('deal', d.id),
+      pinnedNoteId: p.hs_pinned_engagement_id || null,
     };
   });
 

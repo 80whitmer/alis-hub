@@ -3,6 +3,7 @@ import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, LineChart, Line, Legend,
 } from 'recharts';
 import { exportEscalationTickets } from '../utils/escalationTicketsExport';
+import PinnedNoteButton from './PinnedNote';
 
 /**
  * Portfolio-wide "Escalation Tickets" section (Sep 2026) — every OPEN
@@ -465,6 +466,7 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
                     {t.url ? (
                       <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a>
                     ) : t.subject}
+                    <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
                   </td>
                   <td className="py-2 pr-4 text-neutral-500 whitespace-nowrap">{t.createdAt ? t.createdAt.slice(0, 10) : '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500">{t.daysOpen ?? '—'}</td>

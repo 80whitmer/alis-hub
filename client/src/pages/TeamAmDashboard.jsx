@@ -12,6 +12,7 @@ import EnhancementRequestsSection from '../components/EnhancementRequestsSection
 import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import TierKpiSection, { AmKpiSection, TIER_KPI_TITLE, AM_KPI_TITLE } from '../components/TierKpiSection';
+import PinnedNoteButton from '../components/PinnedNote';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -304,12 +305,16 @@ function SortableHeader({ label, column, sort, onSort, className = '' }) {
   );
 }
 
-function CompanyLink({ account, children, className = 'font-medium text-cool-glacier hover:underline' }) {
-  if (!account.hubspotUrl) return <span>{children}</span>;
+function CompanyLink({ account, children, className = 'font-medium text-cool-glacier hover:underline', withNote = true }) {
+  const note = withNote ? <PinnedNoteButton noteId={account.pinned_note_id} title={account.company_name} /> : null;
+  if (!account.hubspotUrl) return <span>{children}{note}</span>;
   return (
-    <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={className}>
-      {children}
-    </a>
+    <>
+      <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className={className}>
+        {children}
+      </a>
+      {note}
+    </>
   );
 }
 
@@ -2883,6 +2888,7 @@ function ImplementationProjectsSection({ accounts }) {
                     {p.url ? (
                       <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-neutral-700 hover:text-accent-600 hover:underline">{p.name}</a>
                     ) : p.name}
+                    <PinnedNoteButton noteId={p.pinnedNoteId} title={p.name} />
                   </td>
                   <td className="py-2 pr-4"><RagBadge rag={p.projectHealthRag} /></td>
                   <td className="py-2 pr-4 text-neutral-500">{p.projectProgress != null ? `${p.projectProgress}%` : '—'}</td>
@@ -3074,10 +3080,10 @@ function flattenUnmappedTickets(accounts) {
   for (const a of accounts) {
     if (!isUnmappedAm(a)) continue;
     for (const t of a.serviceHealth?.enhancementTopItems || []) {
-      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, subject: t.subject, type: `Top 3 Enhancement${t.rank ? ` (rank ${t.rank})` : ''}`, stage: t.stage, url: t.url });
+      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, subject: t.subject, type: `Top 3 Enhancement${t.rank ? ` (rank ${t.rank})` : ''}`, stage: t.stage, url: t.url, pinnedNoteId: t.pinnedNoteId });
     }
     for (const t of a.serviceHealth?.agedTickets || []) {
-      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, subject: t.subject, type: `Aged (${t.ageDays}d)`, stage: t.stage, url: t.url });
+      rows.push({ companyName: a.company_name, accountManagerLabel: a.account_manager_name, subject: t.subject, type: `Aged (${t.ageDays}d)`, stage: t.stage, url: t.url, pinnedNoteId: t.pinnedNoteId });
     }
   }
   return rows;
@@ -3166,6 +3172,7 @@ function UnmappedAmSection({ accounts }) {
                   <td className="py-1.5 pr-3 text-neutral-500">{d.accountManagerLabel}</td>
                   <td className="py-1.5 pr-3">
                     {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
+                    <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
                   </td>
                   <td className="py-1.5 pr-3 text-neutral-500">{d.stage}</td>
                   <td className="py-1.5 pr-3 text-right text-neutral-500">{currencyStr(d.valueCents)}</td>
@@ -3196,6 +3203,7 @@ function UnmappedAmSection({ accounts }) {
                   <td className="py-1.5 pr-3 text-neutral-500">{t.accountManagerLabel}</td>
                   <td className="py-1.5 pr-3">
                     {t.url ? <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{t.subject}</a> : t.subject}
+                    <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
                   </td>
                   <td className="py-1.5 pr-3 text-neutral-500">{t.type}</td>
                   <td className="py-1.5 text-neutral-500">{t.stage}</td>
@@ -3505,6 +3513,7 @@ function ArrAddedDealsSection({ accounts }) {
                       <td className="py-2 pr-4 text-neutral-500">{tierStr(d.tier)}</td>
                       <td className="py-2 pr-4">
                         {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
+                    <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
                       </td>
                       <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
                       <td className="py-2 pr-4 text-neutral-500">{d.stage}</td>
@@ -3664,6 +3673,7 @@ function DealsSection({ accounts }) {
                           {d.url ? (
                             <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a>
                           ) : d.name}
+                          <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
                         </td>
                         <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
                         <td className="py-2 pr-4 text-neutral-500">{d.stage}{!d.isOpen && <span className="text-neutral-400"> (closed)</span>}</td>
@@ -4152,7 +4162,7 @@ export default function TeamAmDashboard() {
                       <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.current_census ?? '—'}</td>
                       <td className="py-2 text-neutral-500">
-                        <CompanyLink account={a} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
+                        <CompanyLink account={a} withNote={false} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
                       </td>
                     </tr>
                   ))}

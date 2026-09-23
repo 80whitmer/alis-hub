@@ -17,6 +17,7 @@ const accountHealthRouter = require('./api/accountHealth');
 const teamAmRouter = require('./api/teamAm');
 const googleCalendarRouter = require('./api/googleCalendar');
 const internalTicketsRouter = require('./api/internalTickets');
+const pinnedNotesRouter = require('./api/pinnedNotes');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +48,7 @@ app.use('/api/account-health', accountHealthRouter);
 app.use('/api/team-am', teamAmRouter);
 app.use('/api/google', googleCalendarRouter);
 app.use('/api/internal-tickets', internalTicketsRouter);
+app.use('/api/pinned-notes', pinnedNotesRouter);
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Error handler middleware — must be last
