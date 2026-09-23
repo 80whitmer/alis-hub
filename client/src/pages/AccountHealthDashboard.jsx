@@ -11,6 +11,7 @@ import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
 import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
 import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import CommunityRevenueSection from '../components/CommunityRevenueSection';
+import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -274,7 +275,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 const OVERVIEW_SECTIONS = [
   { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Recurring Calls'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'Community Revenue & Occupancy', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
-  { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by Client Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by Client Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
 
 function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = true }) {
@@ -4702,6 +4703,7 @@ export default function AccountHealthDashboard() {
   const [amKpiMetricKey, setAmKpiMetricKey] = useState('capacityCensus');
   const [amKpiChartType, setAmKpiChartType] = useState('bar');
   const [dealTypeChartType, setDealTypeChartType] = useState('bar');
+  useInternalDeepLink(!loading && accounts.length > 0, JUMP_EVENT);
 
   async function load() {
     setLoading(true);
@@ -5239,6 +5241,13 @@ export default function AccountHealthDashboard() {
           </SectionCard>
           <SectionCard title="Tickets by Category Closed" description="Aggregated across every account — historical mix" defaultExpanded={false}>
             <CategoryMixChart accounts={accounts} status="closed" />
+          </SectionCard>
+          <SectionCard
+            title={INTERNAL_SECTION_TITLE}
+            description="Internal capture tickets (Category 2.0 = ALIS Internal) — searchable across description, next step, pinned note, and the links collected in them"
+            defaultExpanded={false}
+          >
+            <AlisInternalSection pagePath="/" />
           </SectionCard>
           <SectionCard title="Ticket Volume by Client Tier" description="Open + closed tickets aggregated by Account Management Tier" defaultExpanded={false}>
             <TicketsByTierChart accounts={accounts} />

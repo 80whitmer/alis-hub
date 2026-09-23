@@ -10,6 +10,7 @@ import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
 import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
 import EscalationRequestsSection from '../components/EscalationRequestsSection';
+import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -170,7 +171,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 const OVERVIEW_SECTIONS = [
   { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR by Tier per AM', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
-  { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by AM by Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets by Tier', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by AM by Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets by Tier', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
 
 function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = true }) {
@@ -3718,6 +3719,7 @@ export default function TeamAmDashboard() {
   const [companyHosts, setCompanyHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  useInternalDeepLink(!loading && accounts.length > 0, JUMP_EVENT);
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState(null);
   const [sort, setSort] = useState({ column: 'health_score', direction: 'asc' });
@@ -4197,6 +4199,13 @@ export default function TeamAmDashboard() {
           </SectionCard>
           <SectionCard title="Tickets by Category Closed" description="Aggregated across every account, team-wide — historical mix" defaultExpanded={false}>
             <CategoryMixChart accounts={accounts} status="closed" />
+          </SectionCard>
+          <SectionCard
+            title={INTERNAL_SECTION_TITLE}
+            description="Internal capture tickets (Category 2.0 = ALIS Internal) — searchable across description, next step, pinned note, and the links collected in them"
+            defaultExpanded={false}
+          >
+            <AlisInternalSection pagePath="/team-am" />
           </SectionCard>
 
           <SectionCard

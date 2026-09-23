@@ -902,4 +902,5 @@ function enrichOpenTickets(serviceHealth) {
 module.exports = {
   getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, getOpenTasksForDeal,
   enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets, hubspotRecordUrl,
+  hubspotRequest, chunk, getPipelineStageLabels,
 };

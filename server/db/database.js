@@ -706,6 +706,19 @@ async function initDb() {
     }
   }
 
+  // Clicks from the ALIS Internal section (ticket link or a resource link
+  // inside it). HubSpot's API doesn't expose record view counts, so "hot
+  // topics" can only measure clicks made from this dashboard.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS internal_ticket_clicks (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id  TEXT NOT NULL,
+      target     TEXT,
+      clicked_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_internal_ticket_clicks_ticket ON internal_ticket_clicks (ticket_id);`);
+
   saveToDisk();
 }
 
@@ -1753,6 +1766,21 @@ function setTeamAmOccupancyError(hubspotCompanyId, errorMessage) {
   );
 }
 
+function recordInternalTicketClick(ticketId, target) {
+  run(`INSERT INTO internal_ticket_clicks (ticket_id, target, clicked_at) VALUES (?, ?, ?)`, [String(ticketId), target || null, new Date().toISOString()]);
+}
+
+/** Map<ticketId, {clicks, clicks30d, lastClickedAt}>. */
+function getInternalTicketClickStats() {
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const rows = queryAll(
+    `SELECT ticket_id, COUNT(*) AS clicks, SUM(CASE WHEN clicked_at >= ? THEN 1 ELSE 0 END) AS clicks_30d, MAX(clicked_at) AS last_clicked_at
+     FROM internal_ticket_clicks GROUP BY ticket_id`,
+    [since]
+  );
+  return new Map(rows.map((r) => [r.ticket_id, { clicks: r.clicks, clicks30d: r.clicks_30d || 0, lastClickedAt: r.last_clicked_at }]));
+}
+
 function getTeamAmSnapshot(hubspotCompanyId) {
   const row = queryOne('SELECT * FROM team_am_snapshots WHERE hubspot_company_id = ?', [hubspotCompanyId]);
   if (!row) return null;
@@ -1790,4 +1818,5 @@ module.exports = {
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging, getTeamAmSnapshot,
   updateTeamAmOccupancy, setTeamAmOccupancyError,
   findRecentKpiSnapshotsByHubspotCompanyId,
+  recordInternalTicketClick, getInternalTicketClickStats,
 };
