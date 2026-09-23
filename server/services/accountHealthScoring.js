@@ -132,12 +132,34 @@ function scoreDso(dsoDays) {
   return 0;
 }
 
+/**
+ * "If a client has an aging balance larger than their ARR" (Aaron, Sep
+ * 2026) — a distinct, harder check than scoreDso above: computeDsoDays
+ * divides the balance by a DAILY revenue rate (arrCents / 365) and
+ * returns `null` outright whenever arrCents is 0/null, so scoreDso can
+ * NEVER deduct anything for an account with $0 ARR — exactly the
+ * ~40-account gap Aaron found: real aging balances (some $1,000+) sitting
+ * on accounts scoring a perfect 0 penalty on financial health because
+ * HubSpot's ARR field reads $0. This checks the raw dollar comparison
+ * directly instead of a rate, so it fires regardless of whether ARR is
+ * present at all. A $0/unknown-ARR account with money owed is treated as
+ * the worse case (can't even compute "how many years of revenue" it
+ * represents) than an account whose balance merely exceeds a known ARR.
+ */
+function scoreAgingExceedsArr(aging, arrCents) {
+  if (!aging?.totalCents || aging.totalCents <= 0) return 0;
+  if (arrCents == null || arrCents <= 0) return 20;
+  if (aging.totalCents > arrCents) return 15;
+  return 0;
+}
+
 function scoreFinancialHealth(financialHealth, aging, arrCents) {
   if (!financialHealth && !aging) return null;
   let score = 100;
 
   score -= scoreAging(aging);
   score -= scoreDso(computeDsoDays(aging, arrCents));
+  score -= scoreAgingExceedsArr(aging, arrCents);
 
   if (!financialHealth) return Math.max(0, Math.min(100, Math.round(score)));
 
@@ -250,7 +272,7 @@ function computeHealthScore({ serviceHealth, financialHealth, relationshipHealth
  * populated by a live refresh, so they're deliberately left out here
  * rather than silently always-empty conditions.
  */
-function explainRisk({ serviceHealth, financialHealth, aging, dsoDays } = {}) {
+function explainRisk({ serviceHealth, financialHealth, aging, dsoDays, arrCents } = {}) {
   const reasons = [];
 
   const avgAge = serviceHealth?.avgTicketAgeDays;
@@ -274,6 +296,16 @@ function explainRisk({ serviceHealth, financialHealth, aging, dsoDays } = {}) {
     }
     if ((aging.d121PlusCents || 0) > 0) {
       reasons.push('Has a 121+ day past-due balance');
+    }
+    // See scoreAgingExceedsArr's doc comment — a real balance owed on an
+    // account HubSpot shows as $0/no ARR is the clearest sign of the two
+    // (can't even say "how many years of revenue" it represents), so it
+    // gets its own, more pointed wording rather than folding into the
+    // "exceeds ARR" phrasing below.
+    if (arrCents == null || arrCents <= 0) {
+      reasons.push('Aging balance owed but ARR is $0/blank in HubSpot — check for a data entry gap');
+    } else if (aging.totalCents > arrCents) {
+      reasons.push('Aging balance exceeds a full year of ARR');
     }
   }
 

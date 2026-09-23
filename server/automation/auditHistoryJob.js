@@ -1,8 +1,13 @@
 const { newPage, ensureLoggedIn } = require('./playwright/browser');
 const { captureAuditHistory } = require('./playwright/auditHistoryPage');
 const { getDestination } = require('../services/auditHistoryDestinations');
-const { setJobStatus, setItemStatus, syncJobItems, addAuditHistorySnapshot } = require('../db/database');
+const { setJobStatus, setItemStatus, syncJobItems, addAuditHistorySnapshot, getJob } = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
+
+/** Same reasoning/contract as kpiExport.js's identical helper — see that file's doc comment. Folded into this job runner too (Sep 2026) since it shares the same "Cancel Job is cosmetic" gap. */
+function isCancelled(jobId) {
+  return getJob(jobId)?.status === 'failed';
+}
 
 /**
  * "MM/DD/YYYY h:mm:ss AM/PM TZ" (e.g. "09/03/2026 9:37:33 PM CST") — ALIS's
@@ -88,6 +93,7 @@ async function runAuditHistoryJob(jobId, payload) {
     if (!loggedIn) throw new Error(`Could not log in to ${companyHost}.alisonline.com (tried twice): ${loginErr.message}`);
 
     for (let i = 0; i < targets.length; i++) {
+      if (isCancelled(jobId)) break;
       const target = targets[i];
       const name = itemNames[i];
       setItemStatus(jobId, name, 'running');
@@ -123,6 +129,11 @@ async function runAuditHistoryJob(jobId, payload) {
     return;
   } finally {
     if (page) await page.context().close().catch(() => {});
+  }
+
+  if (isCancelled(jobId)) {
+    emit('job_error', { error: 'Job was cancelled.' });
+    return;
   }
 
   // Combined, timestamp-sorted feed across every target — tagged with

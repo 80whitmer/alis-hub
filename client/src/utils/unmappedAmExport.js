@@ -18,7 +18,7 @@ export async function exportUnmappedAmRecords({ deals, tickets }) {
   const dealSheet = workbook.addWorksheet('Deals');
   dealSheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    { header: 'Account Manager', key: 'accountManagerLabel', width: 22 },
+    { header: 'AM', key: 'accountManagerLabel', width: 22 },
     { header: 'Deal', key: 'name', width: 40 },
     { header: 'Pipeline', key: 'pipeline', width: 20 },
     { header: 'Stage', key: 'stage', width: 22 },
@@ -43,7 +43,7 @@ export async function exportUnmappedAmRecords({ deals, tickets }) {
   const ticketSheet = workbook.addWorksheet('Tickets');
   ticketSheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    { header: 'Account Manager', key: 'accountManagerLabel', width: 22 },
+    { header: 'AM', key: 'accountManagerLabel', width: 22 },
     { header: 'Ticket', key: 'subject', width: 40 },
     { header: 'Type', key: 'type', width: 20 },
     { header: 'Stage', key: 'stage', width: 22 },

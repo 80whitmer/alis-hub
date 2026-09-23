@@ -226,6 +226,27 @@ function generateFlags(normalized, diffs, ticketSummary, dealSummary, hubspotHea
     });
   }
 
+  // ── Care-level evaluation compliance — worst individual communities ──────
+  // Separate from the portfolio-wide flag above: a community can be hiding
+  // behind a healthy portfolio average. `totalResidents >= 5` guards against
+  // a tiny community flagging red off a single missed evaluation (1 of 2 =
+  // 50%), the same false-precision concern this codebase already avoids
+  // elsewhere (see companyFeatures.js / the "high-risk resident" note).
+  if (normalized.careLevelEvaluations?.hasEvaluationData && normalized.careLevelEvaluations.byCommunity?.length) {
+    const worst = normalized.careLevelEvaluations.byCommunity.filter(
+      (c) => c.pctNeedsAttention != null && c.pctNeedsAttention >= 0.25 && c.totalResidents >= 5
+    );
+    if (worst.length > 0) {
+      flags.push({
+        severity: SEVERITY.RISK,
+        category: 'Clinical',
+        title: `${worst.length} ${worst.length === 1 ? 'community is' : 'communities are'} well behind on resident evaluations`,
+        detail: worst.slice(0, 5).map((c) => `${c.name}: ${pct(c.pctNeedsAttention)} (${c.needsAttention} of ${c.totalResidents})`).join('; '),
+        talkingPoint: 'Evaluations drive level of care, which drives staffing and pricing — a community falling behind here is worth a direct follow-up, not just a portfolio-average footnote.',
+      });
+    }
+  }
+
   // ── Revenue leakage (fee billed below the evaluation's own recommendation) ─
   if (normalized.careLevelEvaluations?.revenueLeakage?.affectedResidents > 0) {
     const { affectedResidents, totalMonthlyGap } = normalized.careLevelEvaluations.revenueLeakage;

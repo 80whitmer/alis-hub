@@ -12,7 +12,7 @@ export async function exportAlisPayTickets(items, includeAccountManager = false)
   const sheet = workbook.addWorksheet('ALIS Pay Tickets');
   sheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    ...(includeAccountManager ? [{ header: 'Account Manager', key: 'accountManagerName', width: 20 }] : []),
+    ...(includeAccountManager ? [{ header: 'AM', key: 'accountManagerName', width: 20 }] : []),
     { header: 'Ticket Subject', key: 'subject', width: 45 },
     { header: 'Stage', key: 'stage', width: 20 },
     { header: 'Days Open', key: 'daysOpen', width: 10 },

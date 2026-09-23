@@ -77,7 +77,7 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
 
   return (
     <Drawer
-      title="Top 3 Enhancement Requests"
+      title="Enhancement Requests: Top 3"
       subtitle={`${items.length} ticket${items.length === 1 ? '' : 's'} across every account`}
       onClose={onClose}
       footer={
@@ -98,7 +98,7 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
               <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
                 <SortableHeader label="Company" column="companyName" sort={sort} onSort={toggleSort} className="pr-4" />
                 {includeAccountManager && (
-                  <SortableHeader label="Account Manager" column="accountManagerName" sort={sort} onSort={toggleSort} className="pr-4" />
+                  <SortableHeader label="AM" column="accountManagerName" sort={sort} onSort={toggleSort} className="pr-4" />
                 )}
                 <SortableHeader label="Ticket" column="subject" sort={sort} onSort={toggleSort} className="pr-4" />
                 <SortableHeader label="Rank" column="rank" sort={sort} onSort={toggleSort} className="pr-4" />
@@ -138,9 +138,10 @@ export default function TopThreeEnhancementsCard({ accounts, includeAccountManag
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group card relative text-left w-full transition-all duration-200 hover:scale-105 hover:z-10 hover:shadow-xl"
+        className="group card relative text-left w-full transition-all duration-200 hover:scale-105 hover:z-10 hover:shadow-xl flex flex-col items-start"
       >
-        <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size]">Top 3 Enhancement Requests</p>
+        {/* min-h-8 + flex flex-col items-start both match StatCard's own fix (AccountHealthDashboard.jsx) — min-h-8 reserves room for a 2-line title, and the top-anchored flex column overrides a real <button> quirk where a grid-stretched button vertically centers its children instead of leaving the extra height below them. */}
+        <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size] min-h-8">Enhancement Requests: Top 3</p>
         <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{items.length}</p>
         <p className="text-xs group-hover:text-sm font-medium text-cool-glacier mt-0.5 transition-[font-size]">View all →</p>
       </button>

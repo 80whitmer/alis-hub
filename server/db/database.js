@@ -130,6 +130,31 @@ async function initDb() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_wellness_snapshots_host_week ON wellness_snapshots(company_host, week_ending);`);
 
+  // One row per resident per community per week — the rolling history the
+  // "activity-pattern risk" Wellness Scorecard row needs to tell a real
+  // baseline from a normal week (nothing else in this app persists
+  // multi-week history; every other trend is a single prior-snapshot
+  // comparison). Plain append table like community_revenue_snapshots, but
+  // deduped by (company_host, week_ending) at write time via
+  // replaceResidentActivityWeekly rather than by job_id, since this table is
+  // read back by resident+week history, not by job_id.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS resident_activity_weekly (
+      id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id                 TEXT NOT NULL,
+      company_host           TEXT NOT NULL,
+      community_id           INTEGER NOT NULL,
+      resident_id            INTEGER NOT NULL,
+      resident_name          TEXT,
+      resident_product_type  TEXT,
+      week_ending            TEXT NOT NULL,
+      activity_count         INTEGER NOT NULL,
+      activity_skipped_count INTEGER NOT NULL,
+      created_at             TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_resident_activity_weekly_lookup ON resident_activity_weekly(company_host, resident_id, week_ending);`);
+
   // One row per company-usage-audit job — a point-in-time snapshot of the
   // feature x community RAG grid (contracted/enabled/used), same
   // one-blob-per-job shape as wellness_snapshots. company_host holds only
@@ -231,6 +256,27 @@ async function initDb() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_community_revenue_snapshots_lookup ON community_revenue_snapshots(company_name, community_id, month);`);
 
+  // Occupancy by product type (AL/MC/etc.) and by classification, per
+  // community, for this same monthly snapshot (Aaron, Sep 2026 — Crissy's
+  // team's monthly census-by-product-type/classification pull). Small JSON
+  // arrays ([{ productType, occupied, pct }, ...]), not a new table — same
+  // reasoning as evaluation_config_versions vs. a fully-normalized schema:
+  // this is a point-in-time breakdown read back whole, never queried by
+  // productType/classification value, so a join-able table would add
+  // complexity with no real benefit. Added via ALTER TABLE (not in the
+  // CREATE TABLE above) since this table already has real snapshot history
+  // in it — same migration convention as account_health_snapshots below.
+  try {
+    db.run(`ALTER TABLE community_revenue_snapshots ADD COLUMN occupancy_by_product_type_json TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE community_revenue_snapshots ADD COLUMN occupancy_by_classification_json TEXT;`);
+  } catch {
+    // Column already exists — fine.
+  }
+
   // Cache of RET (Resident Evaluation Tool) config XML, keyed by
   // (host, config_id) — never overwritten once captured (see
   // upsertEvaluationConfigVersion's INSERT OR IGNORE). Confirmed live (Sep
@@ -296,6 +342,7 @@ async function initDb() {
       open_deal_value_cents INTEGER DEFAULT 0,
       arr_cents             INTEGER,
       arr_added_this_year_cents INTEGER,
+      arr_personally_closed_this_year_cents INTEGER,
       aging_json             TEXT,
       aging_total_cents       INTEGER,
       aging_past_due_61_plus_cents INTEGER,
@@ -303,6 +350,7 @@ async function initDb() {
       enhancement_top_count    INTEGER,
       enhancement_lesser_count INTEGER,
       other_open_ticket_count  INTEGER,
+      alis_escalation_open_count INTEGER,
       active_community_count  INTEGER,
       total_capacity          INTEGER,
       current_census          INTEGER,
@@ -354,6 +402,14 @@ async function initDb() {
   } catch {
     // Column already exists — fine.
   }
+  // "Added to Book" (arr_added_this_year_cents, above) vs. "Personally
+  // Closed" (Sep 2026, Aaron) — see accountHealth.js's /refresh handler
+  // for how this is computed (dealOwnerName === my own resolved name).
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN arr_personally_closed_this_year_cents INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
   try {
     db.run(`ALTER TABLE account_health_snapshots ADD COLUMN enhancement_top_count INTEGER;`);
   } catch {
@@ -366,6 +422,11 @@ async function initDb() {
   }
   try {
     db.run(`ALTER TABLE account_health_snapshots ADD COLUMN other_open_ticket_count INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN alis_escalation_open_count INTEGER;`);
   } catch {
     // Column already exists — fine.
   }
@@ -426,6 +487,57 @@ async function initDb() {
   }
 
   // Manually-maintained recurring-call cadence per account (Aaron, Sep
+  // Avg Health Score over time (Sep 2026, Aaron: "capture the progress of
+  // this kpi over time... I plan on improving my average 85 and want to
+  // capture the effort and result") — a brand-new metric with no
+  // historical backfill possible, so the trail legitimately starts thin
+  // and grows one point per day from here. One row per (scope, scope_key,
+  // day): scope_key='portfolio' is the roll-up average that feeds Account
+  // Health's/Team AM's own "Avg Health Score" KPI tile trend, while a
+  // per-company row (scope_key=hubspot_company_id) lets the single-account
+  // QBR/KPI dashboard show ITS OWN score's trend without recomputing a
+  // score there at all — it just looks up whichever portfolio dashboard
+  // (Team AM's scope covers all accounts; Account Health's is the owned
+  // subset) already scored that company. A captured point is written once
+  // per calendar day per (scope, scope_key) — same delete-then-insert
+  // convention as dso_snapshots/ppd_snapshots' job-scoped rows, just keyed
+  // by day instead of job_id, so re-refreshing twice in one day overwrites
+  // that day's point instead of piling up noise.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS health_score_history (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope            TEXT NOT NULL,
+      scope_key        TEXT NOT NULL,
+      scope_label      TEXT,
+      recorded_date    TEXT NOT NULL,
+      avg_health_score REAL NOT NULL,
+      account_count    INTEGER,
+      created_at       TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_health_score_history_daily ON health_score_history(scope, scope_key, recorded_date);`);
+
+  // General-purpose companion to health_score_history above — one row per
+  // (scope, scope_key, metric_key, day) instead of a single fixed
+  // avg_health_score column, so the AM KPI section's whole metric dropdown
+  // (Total Communities, Capacity, Census, Tickets, ARR, ...) can each get
+  // a trend line without a new table per metric (Aaron, Sep 2026: "add a
+  // tracking/trending over time feature so the data is... put in
+  // perspective with recent volumes"). Same "one point per calendar day,
+  // delete-then-insert on re-refresh" convention as health_score_history.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS kpi_metric_history (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      scope          TEXT NOT NULL,
+      scope_key      TEXT NOT NULL,
+      metric_key     TEXT NOT NULL,
+      recorded_date  TEXT NOT NULL,
+      value          REAL NOT NULL,
+      created_at     TEXT DEFAULT (datetime('now'))
+    );
+  `);
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_kpi_metric_history_daily ON kpi_metric_history(scope, scope_key, metric_key, recorded_date);`);
+
   // 2026) — this app has no calendar API integration (no OAuth flow for
   // any provider exists anywhere in the codebase; HubSpot's own
   // private-app token is a static-token pattern, not something a
@@ -437,14 +549,75 @@ async function initDb() {
   // decoupled from HubSpot refreshes, and must never be touched by
   // pruneAccountHealthSnapshots. Account Health Dashboard only, per
   // Aaron's own scoping — not mirrored into team_am_snapshots.
+  // One-time structural migration, not a plain ADD COLUMN (Sep 2026,
+  // Aaron: a few real accounts genuinely have more than one recurring
+  // call) — the OLD shape below had hubspot_company_id as the PRIMARY KEY
+  // itself, capping this table at one row per company. SQLite can't ALTER
+  // a primary key in place, so an existing old-shape table (detected by
+  // the absence of an `id` column) is renamed, its rows copied into a
+  // fresh multi-call-capable table, then dropped. Guarded so this only
+  // ever runs once; a fresh install just creates the new shape directly.
+  const recurringCallsCols = (() => {
+    try {
+      return queryAll("PRAGMA table_info(recurring_calls)");
+    } catch {
+      return [];
+    }
+  })();
+  const recurringCallsExists = recurringCallsCols.length > 0;
+  const recurringCallsHasId = recurringCallsCols.some((c) => c.name === 'id');
+
+  if (recurringCallsExists && !recurringCallsHasId) {
+    db.run(`ALTER TABLE recurring_calls RENAME TO recurring_calls_old_single_pk;`);
+  }
+
   db.run(`
     CREATE TABLE IF NOT EXISTS recurring_calls (
-      hubspot_company_id TEXT PRIMARY KEY,
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      hubspot_company_id  TEXT NOT NULL,
+      label               TEXT,
       cadence             TEXT,
       next_call_date      TEXT,
       calendar_link       TEXT,
       notes               TEXT,
+      day_of_week         TEXT,
+      time                TEXT,
       updated_at          TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  if (recurringCallsExists && !recurringCallsHasId) {
+    db.run(`
+      INSERT INTO recurring_calls (hubspot_company_id, cadence, next_call_date, calendar_link, notes, day_of_week, time, updated_at)
+      SELECT hubspot_company_id, cadence, next_call_date, calendar_link, notes, day_of_week, time, updated_at FROM recurring_calls_old_single_pk;
+    `);
+    db.run(`DROP TABLE recurring_calls_old_single_pk;`);
+  }
+
+  // One row per (company, contact) HubSpot association that carries at
+  // least one Key Contact label (Sep 2026 — see hubspotContacts.js's doc
+  // comment for the "labeled association," not contact-property, mechanism
+  // this mirrors). Replaced wholesale per company on every HubSpot refresh
+  // (replaceKeyContactsForCompany), same "current state, not history"
+  // reasoning as account_health_snapshots — labels_json holds the array
+  // since one contact can carry more than one label at once. A composite
+  // key (not a single contactId PK) because the same person can in theory
+  // be a labeled contact at more than one owned company.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS key_contacts (
+      hubspot_company_id TEXT NOT NULL,
+      hubspot_contact_id  TEXT NOT NULL,
+      name                TEXT,
+      title               TEXT,
+      email               TEXT,
+      phone               TEXT,
+      labels_json         TEXT,
+      fun_facts           TEXT,
+      notes               TEXT,
+      last_activity_date  TEXT,
+      hubspot_url         TEXT,
+      refreshed_at        TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (hubspot_company_id, hubspot_contact_id)
     );
   `);
 
@@ -481,6 +654,7 @@ async function initDb() {
       enhancement_top_count    INTEGER,
       enhancement_lesser_count INTEGER,
       other_open_ticket_count  INTEGER,
+      alis_escalation_open_count INTEGER,
       active_community_count  INTEGER,
       health_score         INTEGER,
       health_band          TEXT,
@@ -489,6 +663,11 @@ async function initDb() {
       refreshed_at          TEXT DEFAULT (datetime('now'))
     );
   `);
+  try {
+    db.run(`ALTER TABLE team_am_snapshots ADD COLUMN alis_escalation_open_count INTEGER;`);
+  } catch {
+    // Column already exists — fine.
+  }
   // tier/last_activity_date were added after this table's first release —
   // same retrofit reasoning as account_health_snapshots above.
   try {
@@ -500,6 +679,31 @@ async function initDb() {
     db.run(`ALTER TABLE team_am_snapshots ADD COLUMN last_activity_date TEXT;`);
   } catch {
     // Column already exists — fine.
+  }
+  // occupancy_* were added once this dashboard got its OWN "Refresh
+  // Occupancy Data" button (Sep 2026) instead of only cross-referencing
+  // account_health_snapshots read-only — same shape as that table's
+  // occupancy columns above, same retrofit pattern. hubspot_capacity is a
+  // genuinely different, always-free number (HubSpot's own
+  // company_total_capacity property, pulled on every regular /refresh,
+  // no ALIS call involved) — kept in its own column, never summed
+  // together with the ALIS-derived total_capacity.
+  for (const col of [
+    'total_capacity INTEGER',
+    'current_census INTEGER',
+    'occupancy_pct REAL',
+    'occupancy_by_product_type_json TEXT',
+    'occupancy_by_classification_json TEXT',
+    'occupancy_as_of_date TEXT',
+    'occupancy_error TEXT',
+    'occupancy_error_at TEXT',
+    'hubspot_capacity INTEGER',
+  ]) {
+    try {
+      db.run(`ALTER TABLE team_am_snapshots ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists — fine.
+    }
   }
 
   saveToDisk();
@@ -532,9 +736,23 @@ function queryOne(sql, params = []) {
   return queryAll(sql, params)[0] || null;
 }
 
+/**
+ * Returns db.getRowsModified() (rows actually touched by this statement)
+ * — no existing caller used run()'s return value before this, so adding
+ * it is safe; bulkImportRecurringCalls is the first to actually need it
+ * (detecting an UPDATE that silently matched zero rows). Real bug caught
+ * live while verifying that exact feature: db.getRowsModified() MUST be
+ * read before saveToDisk() — saveToDisk() calls db.export() internally,
+ * and export() resets the modified-rows counter to 0 as a side effect
+ * (confirmed directly against sql.js). Reading it after saveToDisk(), as
+ * a first draft of this function did, made every UPDATE look like it
+ * matched zero rows even when it had genuinely succeeded.
+ */
 function run(sql, params = []) {
   db.run(sql, params);
+  const rowsModified = db.getRowsModified();
   saveToDisk();
+  return rowsModified;
 }
 
 function createJob({ id, type, label, payload, total, items = [] }) {
@@ -562,8 +780,12 @@ function createJob({ id, type, label, payload, total, items = [] }) {
 function syncJobItems(jobId, itemNames) {
   const now = new Date().toISOString();
   run(`UPDATE jobs SET total = ?, updated_at = ? WHERE id = ?`, [itemNames.length, now, jobId]);
+  // Skip names /api/jobs/create already inserted from payload.communities —
+  // a duplicate row gets matched by setItemStatus's UPDATE-by-name too,
+  // double-counting completed/failed.
+  const existing = new Set(queryAll('SELECT name FROM job_items WHERE job_id = ?', [jobId]).map((r) => r.name));
   for (const name of itemNames) {
-    run(`INSERT INTO job_items (job_id, name) VALUES (?, ?)`, [jobId, name]);
+    if (!existing.has(name)) run(`INSERT INTO job_items (job_id, name) VALUES (?, ?)`, [jobId, name]);
   }
 }
 
@@ -714,6 +936,36 @@ function getPriorWellnessSnapshot(companyHost, weekEnding) {
 }
 
 /**
+ * Replaces this host's resident_activity_weekly rows for one week_ending —
+ * deletes any existing rows for (companyHost, weekEnding) first so re-running
+ * the Wellness Scorecard job for a week that's already been captured doesn't
+ * double-count that week in the rolling baseline (see
+ * computeActivityPatternRisk in wellnessNormalizer.js, which pools counts
+ * across several weeks of history).
+ */
+function replaceResidentActivityWeekly(companyHost, weekEnding, rows) {
+  run(`DELETE FROM resident_activity_weekly WHERE company_host = ? AND week_ending = ?`, [companyHost, weekEnding]);
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    run(
+      `INSERT INTO resident_activity_weekly (job_id, company_host, community_id, resident_id, resident_name, resident_product_type, week_ending, activity_count, activity_skipped_count, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [r.jobId, companyHost, r.communityId, r.residentId, r.residentName ?? null, r.residentProductType ?? null, weekEnding, r.activityCount, r.activitySkippedCount, now]
+    );
+  }
+}
+
+/** This resident's weekly Activities aggregates through (and including) throughWeekEnding, most recent first — the raw material computeActivityPatternRisk splits into a "current" and "baseline" window. */
+function getResidentActivityHistory(companyHost, residentId, throughWeekEnding, limit = 8) {
+  return queryAll(
+    `SELECT week_ending, activity_count, activity_skipped_count FROM resident_activity_weekly
+     WHERE company_host = ? AND resident_id = ? AND week_ending <= ?
+     ORDER BY week_ending DESC LIMIT ?`,
+    [companyHost, residentId, throughWeekEnding, limit]
+  );
+}
+
+/**
  * Bulk-writes a job's DSO rollup rows (see kpiExport.js — one row each for
  * 'company', every 'region', and every 'community' scope). Deletes any
  * existing rows for this job_id first rather than INSERT OR REPLACE (no
@@ -767,13 +1019,16 @@ function addCommunityRevenueSnapshots(jobId, rows) {
   const now = new Date().toISOString();
   for (const r of rows) {
     run(
-      `INSERT INTO community_revenue_snapshots (job_id, company_name, company_host, community_id, community_name, month, charges, credits, discounts, net_revenue, unit_capacity, move_ins, move_outs, total_occupied_units, occupancy_unit_days, census_days, ppd_unit_days, ppd_census, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO community_revenue_snapshots (job_id, company_name, company_host, community_id, community_name, month, charges, credits, discounts, net_revenue, unit_capacity, move_ins, move_outs, total_occupied_units, occupancy_unit_days, census_days, ppd_unit_days, ppd_census, occupancy_by_product_type_json, occupancy_by_classification_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         jobId, r.companyName, r.companyHost, r.communityId, r.communityName ?? null, r.month,
         r.charges ?? null, r.credits ?? null, r.discounts ?? null, r.netRevenue ?? null,
         r.unitCapacity ?? null, r.moveIns ?? null, r.moveOuts ?? null, r.totalOccupiedUnits ?? null,
-        r.occupancyUnitDays ?? null, r.censusDays ?? null, r.ppdUnitDays ?? null, r.ppdCensus ?? null, now,
+        r.occupancyUnitDays ?? null, r.censusDays ?? null, r.ppdUnitDays ?? null, r.ppdCensus ?? null,
+        r.occupancyByProductType ? JSON.stringify(r.occupancyByProductType) : null,
+        r.occupancyByClassification ? JSON.stringify(r.occupancyByClassification) : null,
+        now,
       ]
     );
   }
@@ -851,10 +1106,10 @@ function upsertCompanyHost({ companyName, hubspotCompanyId, companyHost }) {
 
   let existing = null;
   if (hubspotCompanyId) {
-    existing = queryOne('SELECT id FROM company_hosts WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+    existing = queryOne('SELECT id, hubspot_company_id FROM company_hosts WHERE hubspot_company_id = ?', [hubspotCompanyId]);
   }
   if (!existing) {
-    existing = queryOne('SELECT id FROM company_hosts WHERE name_key = ?', [nameKey]);
+    existing = queryOne('SELECT id, hubspot_company_id FROM company_hosts WHERE name_key = ?', [nameKey]);
   }
 
   // A row matched by hubspot_company_id can belong to a different name_key
@@ -874,9 +1129,13 @@ function upsertCompanyHost({ companyName, hubspotCompanyId, companyHost }) {
   }
 
   if (existing) {
+    // A caller that doesn't know the HubSpot ID (e.g. the admin.alisonline.com
+    // directory scrape, which only has a company name) must not blank out
+    // an ID a previous, better-informed caller already recorded on this row.
+    const resolvedHubspotCompanyId = hubspotCompanyId || existing.hubspot_company_id || null;
     run(
       `UPDATE company_hosts SET name_key = ?, company_name = ?, hubspot_company_id = ?, company_host = ?, updated_at = ? WHERE id = ?`,
-      [nameKey, companyName, hubspotCompanyId || null, companyHost, now, existing.id]
+      [nameKey, companyName, resolvedHubspotCompanyId, companyHost, now, existing.id]
     );
   } else {
     run(
@@ -912,6 +1171,11 @@ function bulkImportCompanyHosts(rows) {
 
 function listCompanyHosts() {
   return queryAll('SELECT * FROM company_hosts ORDER BY company_name');
+}
+
+/** Removes one company_hosts row by id — e.g. to clear out a bad mapping (wrong subdomain, duplicate/garbled name) without touching the rest of the table. */
+function deleteCompanyHost(id) {
+  return run('DELETE FROM company_hosts WHERE id = ?', [id]);
 }
 
 function addUsageAuditSnapshot(jobId, { companyHost, companyName, summary }) {
@@ -1003,18 +1267,18 @@ function pruneAccountHealthSnapshots(currentIds) {
  */
 function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
-  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents,
-  enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, activeCommunityCount, healthScore, healthBand,
+  openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents, arrPersonallyClosedThisYearCents,
+  enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
   tier, lastActivityDate,
 }) {
   const now = new Date().toISOString();
   run(
     `INSERT INTO account_health_snapshots (
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
-       open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
-       enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, active_community_count,
+       open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents, arr_personally_closed_this_year_cents,
+       enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
        health_score, health_band, tier, last_activity_date, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        lifecycle_stage = excluded.lifecycle_stage,
@@ -1026,9 +1290,11 @@ function upsertAccountHealthSnapshot({
        open_deal_value_cents = excluded.open_deal_value_cents,
        arr_cents = excluded.arr_cents,
        arr_added_this_year_cents = excluded.arr_added_this_year_cents,
+       arr_personally_closed_this_year_cents = excluded.arr_personally_closed_this_year_cents,
        enhancement_top_count = excluded.enhancement_top_count,
        enhancement_lesser_count = excluded.enhancement_lesser_count,
        other_open_ticket_count = excluded.other_open_ticket_count,
+       alis_escalation_open_count = excluded.alis_escalation_open_count,
        active_community_count = excluded.active_community_count,
        health_score = excluded.health_score,
        health_band = excluded.health_band,
@@ -1038,8 +1304,8 @@ function upsertAccountHealthSnapshot({
     [
       hubspotCompanyId, companyName, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
-      openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null,
-      enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, activeCommunityCount ?? null,
+      openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null, arrPersonallyClosedThisYearCents ?? null,
+      enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
       healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, now,
     ]
   );
@@ -1054,6 +1320,67 @@ function listAccountHealthSnapshots() {
     occupancyByProductType: row.occupancy_by_product_type_json ? JSON.parse(row.occupancy_by_product_type_json) : null,
     occupancyByClassification: row.occupancy_by_classification_json ? JSON.parse(row.occupancy_by_classification_json) : null,
   }));
+}
+
+/**
+ * Records one calendar day's worth of Avg Health Score points for a scope
+ * ('account_health' or 'team_am') — see the health_score_history table's
+ * own doc comment for the (scope, scope_key, day) shape and why a
+ * per-company row exists alongside the portfolio-wide 'portfolio' row.
+ * Delete-then-insert per row (same convention as dso_snapshots/
+ * ppd_snapshots, just keyed by today's date instead of a job_id) so
+ * re-running a refresh twice in one day overwrites that day's point
+ * rather than accumulating multiple points per day.
+ */
+function recordHealthScoreSnapshots(scope, rows) {
+  const today = new Date().toISOString().slice(0, 10);
+  for (const r of rows) {
+    run(`DELETE FROM health_score_history WHERE scope = ? AND scope_key = ? AND recorded_date = ?`, [scope, r.scopeKey, today]);
+    run(
+      `INSERT INTO health_score_history (scope, scope_key, scope_label, recorded_date, avg_health_score, account_count)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [scope, r.scopeKey, r.scopeLabel ?? null, today, r.avgHealthScore, r.accountCount ?? null]
+    );
+  }
+}
+
+/** Avg Health Score history for one scope/scope_key, oldest first — the data source for the Health Score Trend chart on all three dashboards. */
+function getHealthScoreHistory(scope, scopeKey, limit = 366) {
+  return queryAll(
+    `SELECT recorded_date, avg_health_score, account_count FROM health_score_history WHERE scope = ? AND scope_key = ? ORDER BY recorded_date ASC LIMIT ?`,
+    [scope, scopeKey, limit]
+  );
+}
+
+/**
+ * Records one calendar day's worth of KPI metric points for a scope —
+ * `rows` is [{ scopeKey, metricKey, value }, ...]. Same delete-then-insert-
+ * per-day convention as recordHealthScoreSnapshots above, just keyed by
+ * metric_key too since one scope/day now carries several metrics' worth of
+ * points instead of a single fixed column.
+ */
+function recordKpiMetricSnapshots(scope, rows) {
+  const today = new Date().toISOString().slice(0, 10);
+  for (const r of rows) {
+    run(`DELETE FROM kpi_metric_history WHERE scope = ? AND scope_key = ? AND metric_key = ? AND recorded_date = ?`, [scope, r.scopeKey, r.metricKey, today]);
+    run(
+      `INSERT INTO kpi_metric_history (scope, scope_key, metric_key, recorded_date, value) VALUES (?, ?, ?, ?, ?)`,
+      [scope, r.scopeKey, r.metricKey, today, r.value]
+    );
+  }
+}
+
+/** All KPI metrics' history for one scope/scope_key, oldest first, grouped by metric_key — the data source for the AM KPI section's trend chart. */
+function getKpiMetricHistory(scope, scopeKey, limit = 366) {
+  const rows = queryAll(
+    `SELECT metric_key, recorded_date, value FROM kpi_metric_history WHERE scope = ? AND scope_key = ? ORDER BY recorded_date ASC LIMIT ?`,
+    [scope, scopeKey, limit * 20]
+  );
+  const byMetric = {};
+  for (const r of rows) {
+    (byMetric[r.metric_key] ||= []).push({ recorded_date: r.recorded_date, value: r.value });
+  }
+  return byMetric;
 }
 
 /**
@@ -1085,25 +1412,141 @@ function listRecurringCalls() {
   return queryAll('SELECT * FROM recurring_calls');
 }
 
-/** Upserts one account's recurring-call cadence/next-date/calendar-link/notes — all four fields optional, null clears a field rather than leaving the old value. */
-function upsertRecurringCall({ hubspotCompanyId, cadence, nextCallDate, calendarLink, notes }) {
-  const now = new Date().toISOString();
-  run(
-    `INSERT INTO recurring_calls (hubspot_company_id, cadence, next_call_date, calendar_link, notes, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(hubspot_company_id) DO UPDATE SET
-       cadence = excluded.cadence,
-       next_call_date = excluded.next_call_date,
-       calendar_link = excluded.calendar_link,
-       notes = excluded.notes,
-       updated_at = excluded.updated_at`,
-    [hubspotCompanyId, cadence || null, nextCallDate || null, calendarLink || null, notes || null, now]
-  );
+/** Every cached Key Contact row, portfolio-wide — labels_json parsed back into an array for callers. */
+function listKeyContacts() {
+  return queryAll('SELECT * FROM key_contacts').map((row) => ({
+    ...row,
+    labels: row.labels_json ? JSON.parse(row.labels_json) : [],
+  }));
 }
 
-/** Clears a recurring-call row entirely (vs. upserting with all-null fields) — used by the "Clear" action so the account drops out of the Recurring Calls table instead of lingering as an all-empty row. */
-function deleteRecurringCall(hubspotCompanyId) {
-  run('DELETE FROM recurring_calls WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+/**
+ * Replaces one company's ENTIRE set of Key Contact rows with `contacts` —
+ * delete-then-reinsert scoped to just this company, not a table-wide wipe,
+ * so a slow/failing refresh for one company can never affect another's
+ * already-cached contacts. Matches the "current state, not history"
+ * reasoning behind account_health_snapshots, applied per-company since
+ * that's the natural unit hubspotContacts.getKeyContactsForCompany already
+ * fetches in.
+ */
+function replaceKeyContactsForCompany(hubspotCompanyId, contacts) {
+  const now = new Date().toISOString();
+  run('DELETE FROM key_contacts WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  for (const c of contacts) {
+    run(
+      `INSERT INTO key_contacts (hubspot_company_id, hubspot_contact_id, name, title, email, phone, labels_json, fun_facts, notes, last_activity_date, hubspot_url, refreshed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        hubspotCompanyId, c.contactId, c.name || null, c.title || null, c.email || null, c.phone || null,
+        JSON.stringify(c.labels || []), c.funFacts || null, c.notes || null, c.lastActivityDate || null, c.hubspotUrl || null, now,
+      ]
+    );
+  }
+}
+
+/** Drops every cached Key Contact row for a company NOT in `currentCompanyIds` — same after-the-refresh-loop cleanup as pruneAccountHealthSnapshots, so a company that fell out of the owned portfolio doesn't leave its contacts behind forever. */
+function pruneKeyContacts(currentCompanyIds) {
+  if (currentCompanyIds.length === 0) {
+    run('DELETE FROM key_contacts');
+    return;
+  }
+  const placeholders = currentCompanyIds.map(() => '?').join(',');
+  run(`DELETE FROM key_contacts WHERE hubspot_company_id NOT IN (${placeholders})`, currentCompanyIds);
+}
+
+/**
+ * Creates ONE new recurring call for an account (Sep 2026 — accounts can
+ * now have more than one, e.g. a weekly ops sync AND a separate monthly
+ * QBR-prep call). `label` is the one new field: optional, exists purely to
+ * distinguish multiple calls on the same account in the UI/rollup/export
+ * — meaningless and left blank for an account with only one. Returns the
+ * new row's id (SELECT last_insert_rowid() right after the insert is safe
+ * here — sql.js runs single-threaded/synchronous in this process, no
+ * concurrent writer could interleave between the two statements).
+ */
+function createRecurringCall({ hubspotCompanyId, label, cadence, nextCallDate, calendarLink, notes, dayOfWeek, time }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO recurring_calls (hubspot_company_id, label, cadence, next_call_date, calendar_link, notes, day_of_week, time, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [hubspotCompanyId, label || null, cadence || null, nextCallDate || null, calendarLink || null, notes || null, dayOfWeek || null, time || null, now]
+  );
+  // MAX(id), not last_insert_rowid() — confirmed live (Sep 2026) that
+  // sql.js's `db.run()` wrapper doesn't leave last_insert_rowid() queryable
+  // via a separate db.prepare() call the way raw sqlite3 does (it came
+  // back 0). MAX(id) is just as safe here — single-threaded/synchronous
+  // process, no concurrent insert could land between the statement above
+  // and this one.
+  return queryOne('SELECT MAX(id) AS id FROM recurring_calls').id;
+}
+
+/** Updates ONE existing recurring call by its own id — same "null clears a field" convention the old per-company upsert used, just targeted at a specific call now instead of a whole account. */
+/** Returns true if a row with this id actually existed and was updated — false means the id didn't match anything (a real case, not just theoretical: a bulk-template row can arrive with a stale/fabricated/typo'd Call ID, and silently doing nothing there is how "I filled in 13 rows and only 2 changed" bugs happen — see bulkImportRecurringCalls's fallback-to-create). */
+function updateRecurringCall(id, { label, cadence, nextCallDate, calendarLink, notes, dayOfWeek, time }) {
+  const now = new Date().toISOString();
+  const rowsModified = run(
+    `UPDATE recurring_calls
+     SET label = ?, cadence = ?, next_call_date = ?, calendar_link = ?, notes = ?, day_of_week = ?, time = ?, updated_at = ?
+     WHERE id = ?`,
+    [label || null, cadence || null, nextCallDate || null, calendarLink || null, notes || null, dayOfWeek || null, time || null, now, id]
+  );
+  return rowsModified > 0;
+}
+
+/** Deletes ONE recurring call by its own id (vs. the old per-company delete) — used by a call card's "Delete" action so removing one call never touches any other call on the same account. */
+function deleteRecurringCall(id) {
+  run('DELETE FROM recurring_calls WHERE id = ?', [id]);
+}
+
+/**
+ * Mirrors bulkImportCompanyHosts — same "skip rows with nothing usable,
+ * import the rest" bulk-seed pattern, for the Recurring Calls bulk
+ * download-template/upload-completed-template flow. A row carrying an
+ * `id` (Call ID) updates that specific existing call; a row with no id
+ * creates a brand new one — this is how the same account can pick up a
+ * 2nd/3rd call from the template, by hand-adding extra rows with the same
+ * HubSpot Company ID and a blank Call ID. Rows with no hubspotCompanyId,
+ * or with every other field blank, are skipped either way.
+ *
+ * **Real bug found and fixed (Sep 2026):** a re-uploaded template had 13
+ * filled-in rows, but only 2 actually took effect — the other 11 carried
+ * fabricated/stale Call IDs (sequential numbers that were never real,
+ * apparently assigned by whatever filled the template in rather than
+ * left blank as the header instructs) that didn't match any existing
+ * row. `updateRecurringCall` against a nonexistent id is a real, valid
+ * SQL UPDATE that just matches zero rows — no error, no exception, just
+ * silently nothing — so this failed completely invisibly. Now checks
+ * `updateRecurringCall`'s own true/false result (whether a row actually
+ * existed) and falls back to creating a brand-new call for that
+ * company when the id didn't resolve to anything, rather than treating
+ * "has an id" as a guarantee that id is real. Reports how many rows hit
+ * this fallback so it's visible on the dashboard, not just something a
+ * future person has to discover by noticing data went missing.
+ */
+function bulkImportRecurringCalls(rows) {
+  let imported = 0;
+  let staleIdFallbackCount = 0;
+  for (const row of rows) {
+    const { id, hubspotCompanyId, label, cadence, nextCallDate, calendarLink, notes, dayOfWeek, time } = row;
+    if (!cadence && !nextCallDate && !calendarLink && !notes && !dayOfWeek && !time && !label) continue;
+    const fields = { label, cadence, nextCallDate, calendarLink, notes, dayOfWeek, time };
+    if (id) {
+      const updated = updateRecurringCall(id, fields);
+      if (updated) {
+        imported++;
+      } else if (hubspotCompanyId) {
+        createRecurringCall({ hubspotCompanyId, ...fields });
+        imported++;
+        staleIdFallbackCount++;
+      }
+      // id given, update matched nothing, AND no hubspotCompanyId to fall
+      // back on — genuinely unrecoverable, correctly not counted as imported.
+    } else if (hubspotCompanyId) {
+      createRecurringCall({ hubspotCompanyId, ...fields });
+      imported++;
+    }
+  }
+  return { imported, staleIdFallbackCount };
 }
 
 /**
@@ -1203,8 +1646,8 @@ function pruneTeamAmSnapshots(currentIds) {
 function upsertTeamAmSnapshot({
   hubspotCompanyId, companyName, accountManagerId, accountManagerName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents,
-  enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, activeCommunityCount, healthScore, healthBand,
-  tier, lastActivityDate,
+  enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
+  tier, lastActivityDate, hubspotCapacity,
 }) {
   const now = new Date().toISOString();
   run(
@@ -1212,9 +1655,9 @@ function upsertTeamAmSnapshot({
        hubspot_company_id, company_name, account_manager_id, account_manager_name, lifecycle_stage,
        service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
-       enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, active_community_count,
-       health_score, health_band, tier, last_activity_date, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
+       health_score, health_band, tier, last_activity_date, hubspot_capacity, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        account_manager_id = excluded.account_manager_id,
@@ -1231,18 +1674,20 @@ function upsertTeamAmSnapshot({
        enhancement_top_count = excluded.enhancement_top_count,
        enhancement_lesser_count = excluded.enhancement_lesser_count,
        other_open_ticket_count = excluded.other_open_ticket_count,
+       alis_escalation_open_count = excluded.alis_escalation_open_count,
        active_community_count = excluded.active_community_count,
        health_score = excluded.health_score,
        health_band = excluded.health_band,
        tier = excluded.tier,
        last_activity_date = excluded.last_activity_date,
+       hubspot_capacity = excluded.hubspot_capacity,
        refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, accountManagerId ?? null, accountManagerName ?? null, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null,
-      enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, activeCommunityCount ?? null,
-      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, now,
+      enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
+      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, hubspotCapacity ?? null, now,
     ]
   );
 }
@@ -1253,6 +1698,8 @@ function listTeamAmSnapshots() {
     serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
     financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
     aging: row.aging_json ? JSON.parse(row.aging_json) : null,
+    occupancyByProductType: row.occupancy_by_product_type_json ? JSON.parse(row.occupancy_by_product_type_json) : null,
+    occupancyByClassification: row.occupancy_by_classification_json ? JSON.parse(row.occupancy_by_classification_json) : null,
   }));
 }
 
@@ -1272,6 +1719,40 @@ function updateTeamAmAging(hubspotCompanyId, aging) {
   );
 }
 
+/**
+ * Mirrors updateAccountHealthOccupancy verbatim, targeting team_am_snapshots
+ * instead — this dashboard's own ALIS occupancy pull (Sep 2026), added
+ * alongside the existing read-only cross-reference into
+ * account_health_snapshots (see getEnrichedTeamAmAccounts in teamAm.js),
+ * not as a replacement for it.
+ */
+function updateTeamAmOccupancy(hubspotCompanyId, occupancy) {
+  run(
+    `UPDATE team_am_snapshots
+     SET total_capacity = ?, current_census = ?, occupancy_pct = ?,
+         occupancy_by_product_type_json = ?, occupancy_by_classification_json = ?, occupancy_as_of_date = ?,
+         occupancy_error = NULL, occupancy_error_at = NULL
+     WHERE hubspot_company_id = ?`,
+    [
+      occupancy?.totalRoomDays ?? null,
+      occupancy?.occupiedRoomDays ?? null,
+      occupancy?.pct ?? null,
+      occupancy?.byProductType ? JSON.stringify(occupancy.byProductType) : null,
+      occupancy?.byClassification ? JSON.stringify(occupancy.byClassification) : null,
+      occupancy?.asOfDate ?? null,
+      hubspotCompanyId,
+    ]
+  );
+}
+
+/** Mirrors setAccountHealthOccupancyError verbatim, targeting team_am_snapshots. */
+function setTeamAmOccupancyError(hubspotCompanyId, errorMessage) {
+  run(
+    `UPDATE team_am_snapshots SET occupancy_error = ?, occupancy_error_at = ? WHERE hubspot_company_id = ?`,
+    [errorMessage, new Date().toISOString(), hubspotCompanyId]
+  );
+}
+
 function getTeamAmSnapshot(hubspotCompanyId) {
   const row = queryOne('SELECT * FROM team_am_snapshots WHERE hubspot_company_id = ?', [hubspotCompanyId]);
   if (!row) return null;
@@ -1280,6 +1761,8 @@ function getTeamAmSnapshot(hubspotCompanyId) {
     serviceHealth: row.service_health_json ? JSON.parse(row.service_health_json) : null,
     financialHealth: row.financial_health_json ? JSON.parse(row.financial_health_json) : null,
     aging: row.aging_json ? JSON.parse(row.aging_json) : null,
+    occupancyByProductType: row.occupancy_by_product_type_json ? JSON.parse(row.occupancy_by_product_type_json) : null,
+    occupancyByClassification: row.occupancy_by_classification_json ? JSON.parse(row.occupancy_by_classification_json) : null,
   };
 }
 
@@ -1287,8 +1770,9 @@ module.exports = {
   initDb, getDb, createJob, getJob, listJobs, setJobStatus, setItemStatus,
   deleteJob, cancelJob, pauseJob, resumeJob, addGLSyncDetail, getGLSyncDetails,
   addKpiSnapshot, getKpiSnapshot, updateKpiSnapshotSummary, syncJobItems,
-  upsertCompanyHost, getCompanyHost, bulkImportCompanyHosts, listCompanyHosts,
+  upsertCompanyHost, getCompanyHost, bulkImportCompanyHosts, listCompanyHosts, deleteCompanyHost,
   addWellnessSnapshot, getWellnessSnapshot, getPriorWellnessSnapshot,
+  replaceResidentActivityWeekly, getResidentActivityHistory,
   addDsoSnapshots, getDsoHistory,
   addPpdSnapshots, getPpdHistory,
   addCommunityRevenueSnapshots, getPriorCommunityRevenueSnapshot,
@@ -1299,7 +1783,11 @@ module.exports = {
   addAuditHistorySnapshot, getAuditHistorySnapshot,
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError,
-  listRecurringCalls, upsertRecurringCall, deleteRecurringCall,
+  recordHealthScoreSnapshots, getHealthScoreHistory,
+  recordKpiMetricSnapshots, getKpiMetricHistory,
+  listRecurringCalls, createRecurringCall, updateRecurringCall, deleteRecurringCall, bulkImportRecurringCalls,
+  listKeyContacts, replaceKeyContactsForCompany, pruneKeyContacts,
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging, getTeamAmSnapshot,
+  updateTeamAmOccupancy, setTeamAmOccupancyError,
   findRecentKpiSnapshotsByHubspotCompanyId,
 };

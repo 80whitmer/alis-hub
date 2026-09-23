@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList,
 } from 'recharts';
 import { exportResidentsNeedingAttention } from '../utils/residentsAttentionExport';
 import { exportInactiveStaff } from '../utils/inactiveStaffExport';
@@ -9,10 +9,81 @@ import { exportDso } from '../utils/dsoExport';
 import { exportPpd } from '../utils/ppdExport';
 import { exportLos } from '../utils/losExport';
 import { exportIncidentCompletion } from '../utils/incidentCompletionExport';
+import { exportKpiOverviewExcel } from '../utils/kpiExcelExport';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
+import FloatingSectionNav from '../components/FloatingSectionNav';
 import UpcomingBirthdaysPanel, { hasUpcomingBirthdays } from '../components/UpcomingBirthdaysPanel';
 import CommunityRevenueSection from '../components/CommunityRevenueSection';
+
+/** Matches a SectionCard's `title` to the DOM id the jump nav scrolls/expands to — same convention as AccountHealthDashboard.jsx/TeamAmDashboard.jsx's identical helper. */
+function slugify(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+/** Cross-component "jump to this section" signal — same DOM-CustomEvent mechanism as the other two dashboards' identical constant (kept in sync manually, not shared, matching this codebase's per-page duplication convention). */
+const JUMP_EVENT = 'alis-hub:jump-to-section';
+
+/** Grid of links that jump to (and auto-expand) a SectionCard elsewhere on the page — same shape as AccountHealthDashboard.jsx/TeamAmDashboard.jsx's identical component. */
+function QuickJumpNav({ sections }) {
+  function jumpTo(title) {
+    window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }));
+  }
+  return (
+    <div className="space-y-3">
+      {sections.map((group) => (
+        <div key={group.category}>
+          <p className="text-xs font-bold text-neutral-500 uppercase tracking-wide mb-1.5">{group.category}</p>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5">
+            {group.items.map((title) => (
+              <li key={title} className="flex items-start gap-2">
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-accent-300 shrink-0" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={() => jumpTo(title)}
+                  className="text-left text-base leading-snug text-neutral-700 hover:text-accent-600 hover:underline"
+                >
+                  {title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// "Toggle the Utilities panel" signal — same window-CustomEvent name/
+// mechanism as AccountHealthDashboard.jsx/TeamAmDashboard.jsx's identical
+// constant. Dispatched by the "Utilities" button in the header below;
+// UtilityPanel is this page's only listener.
+const UTILITIES_TOGGLE_EVENT = 'alis-hub:toggle-utilities';
+
+/**
+ * The export/filter controls, tucked away in a slide-over side Drawer (Sep
+ * 2026, Aaron: "put the filtering and export action behind a Utilities
+ * button ala the other dashboards") rather than sitting always-visible in
+ * the header — same pattern as the other two dashboards' identical
+ * component. Renders nothing until the "Utilities" button in the header
+ * toggles it open.
+ */
+function UtilityPanel({ children }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    function handleToggle() { setOpen((v) => !v); }
+    window.addEventListener(UTILITIES_TOGGLE_EVENT, handleToggle);
+    return () => window.removeEventListener(UTILITIES_TOGGLE_EVENT, handleToggle);
+  }, []);
+
+  if (!open) return null;
+  return (
+    <Drawer title="Utilities" subtitle="Filtering and export actions for this report" onClose={() => setOpen(false)}>
+      <div className="flex flex-col gap-3">{children}</div>
+    </Drawer>
+  );
+}
 
 const SEVERITY_BADGE = {
   risk: 'badge-error',
@@ -33,16 +104,54 @@ function daysStr(n) {
   return n == null ? '—' : `${Math.round(n)}d`;
 }
 
-function StatCard({ label, value, diff, formatBenchmark = (v) => v }) {
+/**
+ * `jumpTo` (a pre-slugified section id) turns the whole tile into a jump
+ * link to that SectionCard below — same "grow + pop out on hover" treatment
+ * as AccountHealthDashboard.jsx/TeamAmDashboard.jsx's identical StatCard,
+ * ported here (Sep 2026, Aaron) to back the new top-of-report KPI preview.
+ * Tiles without `jumpTo` render exactly as before (every existing StatCard
+ * call in this file, throughout each full section) — this is purely
+ * additive, not a behavior change for the ~30 existing plain usages.
+ */
+function StatCard({ label, value, diff, formatBenchmark = (v) => v, jumpTo, jumpLabel = 'Jump to section ↓' }) {
+  const diffNode = diff && diff.benchmark != null && (
+    <p className={`text-xs mt-2 font-medium ${diff.better ? 'text-success' : 'text-error'}`}>
+      {diff.better ? '▲' : '▼'} ALIS 500: {formatBenchmark(diff.benchmark)}
+    </p>
+  );
+
+  if (jumpTo) {
+    return (
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: jumpTo } }))}
+        className="group card relative w-full text-left transition-all duration-200 hover:scale-105 hover:z-10 hover:shadow-xl flex flex-col items-start"
+      >
+        <p className="text-xs group-hover:text-sm text-neutral-500 uppercase tracking-wide transition-[font-size] min-h-8">{label}</p>
+        <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">{value}</p>
+        {diffNode}
+        <p className="text-xs group-hover:text-sm font-medium text-cool-glacier mt-0.5 transition-[font-size]">{jumpLabel}</p>
+      </button>
+    );
+  }
+
   return (
     <div className="card">
       <p className="text-xs text-neutral-500 uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-bold text-primary-900 mt-1">{value}</p>
-      {diff && diff.benchmark != null && (
-        <p className={`text-xs mt-2 font-medium ${diff.better ? 'text-success' : 'text-error'}`}>
-          {diff.better ? '▲' : '▼'} ALIS 500: {formatBenchmark(diff.benchmark)}
-        </p>
-      )}
+      {diffNode}
+    </div>
+  );
+}
+
+/** Labeled cluster of KPI preview tiles — same component/story shape as AccountHealthDashboard.jsx/TeamAmDashboard.jsx's identical StatGroup, backing the top-of-report KPI preview (Sep 2026, Aaron: "consolidate all KPI tiles in a preview at the top... broken out into logic groupings with jump links to the full section below"). */
+function StatGroup({ title, children }) {
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-cool-glacier uppercase tracking-wide mb-3">{title}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {children}
+      </div>
     </div>
   );
 }
@@ -176,17 +285,49 @@ function OccupancyBenchmarkChart({ normalized, diffs }) {
   );
 }
 
-function SectionCard({ title, children, description, action }) {
+/**
+ * Collapsible + jump-to-expand, same shape as AccountHealthDashboard.jsx/
+ * TeamAmDashboard.jsx's identical component — ported here (Sep 2026,
+ * Aaron: "mark the sections collapsible and have them be collapsed by
+ * default") since this QBR/KPI report is the longest of the three
+ * dashboards and had none of this UI before. `defaultExpanded` defaults to
+ * `false` (the other two dashboards' own default is `true` — deliberately
+ * different here per Aaron's explicit ask), so the Report Overview box
+ * below overrides it back to `true` for itself specifically, since a
+ * closed table of contents defeats its own purpose.
+ */
+function SectionCard({ title, children, description, action, collapsible = true, defaultExpanded = false }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const ref = useRef(null);
+  const sectionId = slugify(title);
+
+  useEffect(() => {
+    function handleJump(e) {
+      if (e.detail?.id !== sectionId) return;
+      setExpanded(true);
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    window.addEventListener(JUMP_EVENT, handleJump);
+    return () => window.removeEventListener(JUMP_EVENT, handleJump);
+  }, [sectionId]);
+
+  const open = !collapsible || expanded;
   return (
-    <div className="card mb-8">
+    <div id={sectionId} ref={ref} className="card mb-8 scroll-mt-4">
       <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-primary-900">{title}</h2>
+        <div
+          className={collapsible ? 'cursor-pointer select-none' : ''}
+          onClick={collapsible ? () => setExpanded((v) => !v) : undefined}
+        >
+          <h2 className="text-lg font-semibold text-primary-900 flex items-center gap-2">
+            {collapsible && <span className="text-xs text-neutral-400">{open ? '▼' : '▶'}</span>}
+            {title}
+          </h2>
           {description && <p className="text-xs text-neutral-500 mt-1">{description}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
-      {children}
+      {open && children}
     </div>
   );
 }
@@ -904,6 +1045,40 @@ function CareLevelEvaluations({ data, communities, companyName }) {
         <StatCard label="Never Evaluated" value={data.neverEvaluated} />
       </div>
 
+      {data.byCommunity?.length > 0 && (
+        <div className="mb-6">
+          <h3 className="font-semibold text-primary-900 text-sm mb-2">By community — worst first</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                  <th className="pb-2 pr-4">Community</th>
+                  <th className="pb-2 pr-4">Needs Attention</th>
+                  <th className="pb-2 pr-4">Never Evaluated</th>
+                  <th className="pb-2 pr-4">Expired</th>
+                  <th className="pb-2 pr-4">Incomplete</th>
+                  <th className="pb-2">12+ mo Overdue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.byCommunity.map((c) => (
+                  <tr key={`${c.host}::${c.communityId}`} className="border-t border-neutral-100">
+                    <td className="py-2 pr-4 font-medium text-primary-900">{c.name}</td>
+                    <td className={`py-2 pr-4 font-medium ${c.pctNeedsAttention >= 0.25 ? 'text-danger' : ''}`}>
+                      {c.needsAttention} of {c.totalResidents} ({pctStr(c.pctNeedsAttention)})
+                    </td>
+                    <td className="py-2 pr-4 text-neutral-500">{c.neverEvaluated}</td>
+                    <td className="py-2 pr-4 text-neutral-500">{c.expired}</td>
+                    <td className="py-2 pr-4 text-neutral-500">{c.incomplete}</td>
+                    <td className="py-2 text-neutral-500">{c.overdue}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {data.flagged.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -1068,6 +1243,192 @@ function isClosedTicketStatus(status) {
   return CLOSED_TICKET_STATUSES.has((status || '').toLowerCase());
 }
 
+const TICKET_OPENED_COLOR_SCALE = ['#ebedf0', '#c6dcf5', '#8bbcec', '#4f92dd', '#2563eb'];
+// Ends in the app's existing `success` token (#10b981) — matches the green
+// used by AccountHealthDashboard.jsx's own Closed heatmap and
+// EscalationRequestsSection.jsx's Closed heatmap, so "closed" reads the
+// same color everywhere in this app.
+const TICKET_CLOSED_COLOR_SCALE = ['#ebedf0', '#c3ead9', '#87d6b3', '#4abf8c', '#10b981'];
+const TICKET_HEATMAP_WEEKS = 53;
+
+/** count -> one of 5 shade levels, same idea as GitHub's contribution graph. Same logic as EscalationRequestsSection.jsx's own heatLevel — duplicated, not shared, per this codebase's per-component convention. */
+function ticketHeatLevel(count, max) {
+  if (!count) return 0;
+  if (max <= 1) return count > 0 ? 4 : 0;
+  const ratio = count / max;
+  if (ratio > 0.75) return 4;
+  if (ratio > 0.5) return 3;
+  if (ratio > 0.25) return 2;
+  return 1;
+}
+
+/**
+ * Trailing-12-months, GitHub-style contribution heatmap of this account's
+ * own ticket created/closed dates — same plain-CSS-grid pattern as
+ * AccountHealthDashboard.jsx's portfolio-wide CalendarHeatmap and
+ * EscalationRequestsSection.jsx's own copy (duplicated, not shared, per
+ * this codebase's per-component convention).
+ */
+function TicketCalendarHeatmap({ tickets, dateField, colorScale, emptyLabel }) {
+  const { cells, monthLabels } = useMemo(() => {
+    const countByDate = {};
+    for (const t of tickets) {
+      const value = t[dateField];
+      if (!value) continue;
+      const day = value.slice(0, 10);
+      countByDate[day] = (countByDate[day] || 0) + 1;
+    }
+    const max = Math.max(0, ...Object.values(countByDate));
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const end = new Date(today);
+    end.setUTCDate(end.getUTCDate() + (6 - end.getUTCDay()));
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - (TICKET_HEATMAP_WEEKS * 7 - 1));
+
+    const days = [];
+    const monthLabels = [];
+    let lastMonth = null;
+    for (let i = 0, d = new Date(start); d <= end; i++, d.setUTCDate(d.getUTCDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      const count = countByDate[iso] || 0;
+      const inFuture = d > today;
+      days.push({ iso, count: inFuture ? null : count, level: inFuture ? null : ticketHeatLevel(count, max) });
+      const week = Math.floor(i / 7);
+      const month = d.getUTCMonth();
+      if (d.getUTCDay() === 0 && month !== lastMonth) {
+        monthLabels.push({ week, label: d.toLocaleDateString('en-US', { month: 'short' }) });
+        lastMonth = month;
+      }
+    }
+    return { cells: days, monthLabels };
+  }, [tickets, dateField]);
+
+  const hasAny = tickets.some((t) => t[dateField]);
+  if (!hasAny) {
+    return <p className="text-sm text-neutral-500 italic">{emptyLabel}</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="mx-auto" style={{ width: TICKET_HEATMAP_WEEKS * 13 }}>
+        <div style={{ position: 'relative', height: 14, marginBottom: 4 }}>
+          {monthLabels.map(({ week, label }) => (
+            <span key={`${week}-${label}`} className="text-xs text-neutral-400" style={{ position: 'absolute', left: week * 13 }}>{label}</span>
+          ))}
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateRows: 'repeat(7, 11px)',
+            gridAutoFlow: 'column',
+            gridAutoColumns: '11px',
+            gap: 2,
+          }}
+        >
+          {cells.map((c) => (
+            <div
+              key={c.iso}
+              title={c.count == null ? '' : `${c.iso}: ${c.count} ticket${c.count === 1 ? '' : 's'}`}
+              style={{
+                width: 11, height: 11, borderRadius: 2,
+                background: c.level == null ? 'transparent' : colorScale[c.level],
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center justify-center gap-1 mt-2 text-xs text-neutral-400">
+        <span>Fewer</span>
+        {colorScale.map((color, i) => (
+          <span key={`${color}-${i}`} style={{ width: 11, height: 11, borderRadius: 2, background: color, display: 'inline-block' }} />
+        ))}
+        <span>More</span>
+      </div>
+    </div>
+  );
+}
+
+// Same "focused queue" definition hubspotTickets.js's own
+// FOCUSED_OPEN_STATUS_LABELS uses (duplicated, not shared — same per-file
+// convention as everywhere else in this app): status is Client Submitted or
+// In Progress. Matches Aaron's own HubSpot ticket report and the "Open
+// Tickets" reading elsewhere in this app.
+function isFocusedQueueTicket(t) {
+  return t.pipelineStageLabel === 'Client Submitted' || t.pipelineStageLabel === 'In Progress';
+}
+
+/**
+ * Trailing-12-months OPEN BACKLOG trend, one point per month-end — how many
+ * of this account's tickets were sitting open at that point in time, not
+ * how many were newly created (the Opened heatmap below covers creation
+ * volume). Same math as AccountHealthDashboard.jsx's
+ * computeOpenBacklogSeriesByTier, single-account here so no tier breakdown
+ * is needed — just the one line.
+ */
+function computeOpenTicketVolumeSeries(tickets) {
+  const now = new Date();
+  const months = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (11 - i), 1)));
+
+  return months.map((monthStart, idx) => {
+    const isCurrentMonth = idx === months.length - 1;
+    const cutoff = isCurrentMonth ? now : new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+    const label = monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    let total = 0;
+    for (const t of tickets) {
+      if (!t.createdAt) continue;
+      if (new Date(t.createdAt) > cutoff) continue;
+      if (t.closedAt && new Date(t.closedAt) <= cutoff) continue;
+      total += 1;
+    }
+    return { label, total };
+  });
+}
+
+/**
+ * Ticket activity for this one account (Sep 2026, Aaron) — open backlog
+ * trend plus GitHub-style opened/closed heatmaps, trailing 12 months.
+ * Single-account mirror of AccountHealthDashboard.jsx's portfolio-wide
+ * Ticket Activity panel, minus the by-tier toggle (meaningless for one
+ * account) — sourced straight from ticketSummary.tickets, this account's
+ * own full ticket population already loaded on this page, no extra API
+ * calls.
+ */
+function TicketActivityPanel({ tickets }) {
+  const focused = useMemo(() => tickets.filter(isFocusedQueueTicket), [tickets]);
+  const volumeSeries = useMemo(() => computeOpenTicketVolumeSeries(focused), [focused]);
+
+  if (!tickets.some((t) => t.createdAt)) {
+    return <p className="text-sm text-neutral-500 italic">No dated tickets to chart yet.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-neutral-700 mb-2">Open Ticket Volume <span className="font-normal text-neutral-400">(Client Submitted + In Progress)</span></h3>
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={volumeSeries} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip />
+            <Line type="monotone" dataKey="total" name="Open Tickets" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div>
+        <h3 className="text-sm font-medium text-neutral-700 mb-2">Opened — Trailing 12 Months</h3>
+        <TicketCalendarHeatmap tickets={tickets} dateField="createdAt" colorScale={TICKET_OPENED_COLOR_SCALE} emptyLabel="No dated tickets to map yet." />
+      </div>
+      <div>
+        <h3 className="text-sm font-medium text-neutral-700 mb-2">Closed — Trailing 12 Months</h3>
+        <TicketCalendarHeatmap tickets={tickets} dateField="closedAt" colorScale={TICKET_CLOSED_COLOR_SCALE} emptyLabel="No closed tickets to map yet." />
+      </div>
+    </div>
+  );
+}
+
 /** Renders a `{ value, confidence, method }`-shaped field from an account-health-export import. */
 function ConfidenceValue({ field }) {
   if (!field) return '—';
@@ -1177,7 +1538,7 @@ function HubspotRefreshButton({ jobId, onRefreshed }) {
 
   return (
     <div className="text-right">
-      <button onClick={handleClick} disabled={refreshing} className="btn btn-sm btn-secondary">
+      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`}>
         {refreshing ? 'Refreshing…' : '🔄 Refresh HubSpot'}
       </button>
       {error && <p className="text-xs text-error mt-1 max-w-xs">{error}</p>}
@@ -1522,11 +1883,347 @@ function ReleaseRecommendationsImport({ jobId, releaseRecommendations, initialWa
   );
 }
 
+// Same terminal-status handling as AccountHealthDashboard.jsx/
+// TeamAmDashboard.jsx's identical constant — Merged reads as "superseded
+// elsewhere" alongside Completed/Cancelled, confirmed live against Viva
+// Senior Living. Duplicated, not shared, per this codebase's convention.
+const TERMINAL_PROJECT_STATUSES = new Set(['Completed', 'Cancelled', 'Merged']);
+function isOpenProject(p) {
+  return !TERMINAL_PROJECT_STATUSES.has(p.projectStatus);
+}
+
+const RAG_COLOR = { red: '#dc2626', amber: '#ea580c', green: '#16a34a' };
+function RagBadge({ rag }) {
+  if (!rag) return <span className="text-neutral-400">—</span>;
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold text-white"
+      style={{ backgroundColor: RAG_COLOR[rag] || '#737373' }}
+    >
+      {rag.charAt(0).toUpperCase() + rag.slice(1)}
+    </span>
+  );
+}
+
+function daysSince(iso) {
+  return iso ? Math.round((Date.now() - new Date(iso).getTime()) / 86400000) : null;
+}
+
+const RAG_SORT_WEIGHT = { red: 0, amber: 1, green: 2 };
+
+/**
+ * Trailing-12-months volume of implementation-tracked deals for this one
+ * account, by creation month — same "creation-date volume is the closest
+ * honest trend available" reasoning as AccountHealthDashboard.jsx/
+ * TeamAmDashboard.jsx's identical function (HubSpot only exposes
+ * project_status's CURRENT value, not a status-change history). No tier
+ * breakdown here — unlike the portfolio dashboards, every deal on this
+ * page belongs to the same one account, so there's only ever one tier
+ * value to show.
+ *
+ * `cumulative` (Sep 2026, Aaron: "why is my Total Open Projects showing as
+ * 0 on the graph and 3 in the KPI 'Open Projects' above") — a flat
+ * per-month bucket count reads as "nothing's happening" in whichever
+ * recent month happens to have no NEW open projects, even while the
+ * account's total open count (shown in the stat tile above) stays high,
+ * because most of that total started in earlier months. For the "Total
+ * Open Projects" metric this returns a RUNNING total instead — seeded
+ * with every currently-open project created before the visible 12-month
+ * window, then adding each month's new-open count on top — so the final
+ * (current) month always lands on the exact same number as the "Open
+ * Projects" stat tile, and the line reads as an honest cumulative growth
+ * curve rather than a monthly-volume histogram. "Projects Started" stays
+ * a plain per-month count (cumulative doesn't apply — it isn't scoped to
+ * "still open", so it has no stable running total to seed against).
+ */
+function computeProjectVolumeSeries(items, cumulative = false) {
+  const now = new Date();
+  const months = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (11 - i), 1)));
+
+  let running = cumulative
+    ? items.filter((p) => p.createdAt && new Date(p.createdAt) < months[0]).length
+    : 0;
+
+  return months.map((monthStart) => {
+    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+    const label = monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    let count = 0;
+    for (const p of items) {
+      if (!p.createdAt) continue;
+      const d = new Date(p.createdAt);
+      if (d < monthStart || d > monthEnd) continue;
+      count += 1;
+    }
+    if (cumulative) {
+      running += count;
+      return { label, total: running };
+    }
+    return { label, total: count };
+  });
+}
+
+function ProjectVolumeTooltip({ active, payload, label, verb, showClosed }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+      <p className="font-semibold text-primary-900">{label}: {d.total} {verb}</p>
+      {showClosed && <p className="text-neutral-600">{d.closed} closed this month</p>}
+      {showClosed && <p className="text-neutral-600">{d.closedTotal} closed to date</p>}
+    </div>
+  );
+}
+
+// Same two metrics as the portfolio dashboards' identical charts (Sep
+// 2026, Aaron: "add in a couple of reports... total open projects and
+// total open projects broken out by tier") — no by-tier toggle here since
+// this account only ever has one tier value (see computeProjectVolumeSeries's
+// own doc comment). "Total Open Projects" is the default per Aaron ("gives
+// the clearest indication of projects in flight").
+const PROJECT_VOLUME_METRICS = [
+  { key: 'open', label: 'Total Open Projects', verb: 'open' },
+  { key: 'started', label: 'Projects Started', verb: 'started' },
+];
+
+function OnboardingVolumeChart({ allProjects, openProjects }) {
+  const [metric, setMetric] = useState('open');
+  const activeMetric = PROJECT_VOLUME_METRICS.find((m) => m.key === metric);
+  const items = metric === 'open' ? openProjects : allProjects;
+  const data = useMemo(() => computeProjectVolumeSeries(items, metric === 'open'), [items, metric]);
+
+  // "Closed Projects" overlay (Sep 2026, Aaron: "layer on closed projects
+  // by month to the open projects view" — then "capture the total
+  // projects closed in the hover detail window, but on the chart only
+  // plot projects closed that month" — then "add the projects closed per
+  // month to the projects started per month graph," i.e. on BOTH metrics,
+  // not just Total Open Projects). PLOTTED value is a per-month bucket,
+  // same non-cumulative shape as "Projects Started" itself — same
+  // creation-month-bucketing caveat as everywhere else in this feature
+  // (see computeProjectVolumeSeries's own doc comment: HubSpot doesn't
+  // expose a real close-transition date, so "closed that month" means
+  // "created that month, currently closed," not a literal close date).
+  // The TOOLTIP separately surfaces the cumulative running total (ending
+  // at today's true closed count) alongside the monthly figure.
+  const closedProjects = useMemo(() => allProjects.filter((p) => !isOpenProject(p)), [allProjects]);
+  const combinedData = useMemo(() => {
+    const closedMonthly = computeProjectVolumeSeries(closedProjects, false);
+    const closedCumulative = computeProjectVolumeSeries(closedProjects, true);
+    return data.map((row, i) => ({
+      ...row,
+      closed: closedMonthly[i]?.total ?? 0,
+      closedTotal: closedCumulative[i]?.total ?? 0,
+    }));
+  }, [data, closedProjects]);
+
+  if (allProjects.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No implementation-tracked deals yet.</p>;
+  }
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <h3 className="text-sm font-medium text-neutral-700">
+          {activeMetric.label} <span className="font-normal text-neutral-400">(trailing 12 months)</span>
+        </h3>
+        <select value={metric} onChange={(e) => setMetric(e.target.value)} className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5">
+          {PROJECT_VOLUME_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+      </div>
+      {items.length === 0 && closedProjects.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No {activeMetric.verb} projects to chart.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={combinedData} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip content={<ProjectVolumeTooltip verb={activeMetric.verb} showClosed />} />
+            <Legend />
+            <Line type="monotone" dataKey="total" name={activeMetric.label} stroke="#7c3aed" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}>
+              <LabelList dataKey="total" position="top" style={{ fontSize: 11, fontWeight: 600, fill: '#1e293b' }} />
+            </Line>
+            <Line type="monotone" dataKey="closed" name="Closed Projects (that month)" stroke="#0891b2" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}>
+              <LabelList dataKey="closed" position="bottom" style={{ fontSize: 11, fontWeight: 600, fill: '#1e293b' }} />
+            </Line>
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </>
+  );
+}
+
+/**
+ * "Health Score Trend" (Sep 2026, Aaron: "capture the progress of this
+ * kpi over time... or just the health score if it is on the KPI/QBR
+ * dashboard") — this page never computes its own Health Score; it just
+ * displays whichever portfolio dashboard (Account Health/Team AM) already
+ * scored this company, via GET /api/qbr/:jobId/health-score-history. A
+ * brand-new metric with no backfill possible, so a short/empty trail is
+ * expected, not an error — see HealthScoreHistoryChart below.
+ */
+function HealthScoreHistoryChart({ history }) {
+  if (!history) return <p className="text-sm text-neutral-400">Loading trend…</p>;
+  if (history.length < 2) {
+    return (
+      <p className="text-sm text-neutral-500 italic">
+        Not enough history yet — a point is captured every time this account's Health Score is refreshed on the Account Health or Team AM dashboard. Check back after a couple more refreshes to see the trend.
+      </p>
+    );
+  }
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <LineChart data={history} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="recorded_date" tick={{ fontSize: 12 }} />
+        <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+        <Tooltip formatter={(value) => [value, 'Health Score']} labelFormatter={(label) => label} />
+        <Line type="monotone" dataKey="avg_health_score" name="Health Score" stroke="#7c3aed" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false}>
+          <LabelList dataKey="avg_health_score" position="top" style={{ fontSize: 11, fontWeight: 600, fill: '#1e293b' }} />
+        </Line>
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function HealthScoreTrendSection({ jobId, dealSummary }) {
+  const [history, setHistory] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!dealSummary) return;
+    fetch(`/api/qbr/${jobId}/health-score-history`)
+      .then((r) => r.json())
+      .then((data) => setHistory(data.history || []))
+      .catch((err) => setError(err.message));
+  }, [jobId, dealSummary]);
+
+  if (!dealSummary) return null;
+
+  return (
+    <SectionCard title="Health Score Trend" description="This account's Health Score over time, as scored on the Account Health or Team AM dashboard" defaultExpanded={false}>
+      {error ? <p className="text-sm text-error">{error}</p> : <HealthScoreHistoryChart history={history} />}
+    </SectionCard>
+  );
+}
+
+/**
+ * "Onboarding" (Sep 2026, Aaron: "add a parallel section to the KPI/QBR
+ * dashboard focusing on the specific client") — this account's own
+ * implementation-tracked deals, single-account mirror of
+ * AccountHealthDashboard.jsx/TeamAmDashboard.jsx's portfolio-wide
+ * Onboarding section. No Company column or tier breakdown (every deal
+ * here belongs to this one account) and no interactive column sorting
+ * (this account's own project list is small enough that the same
+ * worst-first default ordering those dashboards fall back to is enough
+ * on its own). Sourced from dealSummary.deals — the same full deal
+ * history already loaded for Support & Context's HubSpot Deals column,
+ * just filtered to deals HubSpot has a Project Status on.
+ */
+function OnboardingSection({ dealSummary }) {
+  const allProjects = useMemo(
+    () => (dealSummary?.deals || []).filter((d) => d.projectStatus),
+    [dealSummary]
+  );
+  const openProjects = useMemo(() => allProjects.filter(isOpenProject), [allProjects]);
+  const avgDaysOpen = openProjects.length > 0
+    ? Math.round(openProjects.reduce((s, p) => s + (daysSince(p.createdAt) || 0), 0) / openProjects.length)
+    : null;
+
+  const sorted = useMemo(() => [...allProjects].sort((a, b) => {
+    const aOpen = isOpenProject(a);
+    const bOpen = isOpenProject(b);
+    if (aOpen !== bOpen) return aOpen ? -1 : 1;
+    if (aOpen) {
+      const ragDiff = (RAG_SORT_WEIGHT[a.projectHealthRag] ?? 3) - (RAG_SORT_WEIGHT[b.projectHealthRag] ?? 3);
+      if (ragDiff !== 0) return ragDiff;
+      const aDate = a.projectedGoLiveDate ? new Date(a.projectedGoLiveDate) : null;
+      const bDate = b.projectedGoLiveDate ? new Date(b.projectedGoLiveDate) : null;
+      if (aDate && bDate) return aDate - bDate;
+      return aDate ? -1 : bDate ? 1 : 0;
+    }
+    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  }), [allProjects]);
+
+  if (!dealSummary) return null;
+
+  return (
+    <SectionCard
+      title="Onboarding"
+      description="Implementation-tracked deals for this account — only deals HubSpot has a Project Status on; tracking only started around mid-2025, so older deals won't show up here"
+    >
+      {allProjects.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No implementation-tracked deals for this account.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="card">
+              <p className="text-xs text-neutral-500 uppercase tracking-wide">Open Projects</p>
+              <p className="text-2xl font-bold text-primary-900 mt-1">{openProjects.length}</p>
+            </div>
+            <div className="card">
+              <p className="text-xs text-neutral-500 uppercase tracking-wide">Avg. Days Open</p>
+              <p className="text-2xl font-bold text-primary-900 mt-1">{avgDaysOpen != null ? `${avgDaysOpen}d` : '—'}</p>
+            </div>
+            <div className="card">
+              <p className="text-xs text-neutral-500 uppercase tracking-wide">Red / Amber</p>
+              <p className="text-2xl font-bold text-primary-900 mt-1">
+                {openProjects.filter((p) => p.projectHealthRag === 'red').length} / {openProjects.filter((p) => p.projectHealthRag === 'amber').length}
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-xs text-neutral-500 uppercase tracking-wide">Total Tracked</p>
+              <p className="text-2xl font-bold text-primary-900 mt-1">{allProjects.length}</p>
+              <p className="text-xs text-neutral-400 mt-0.5">{allProjects.length - openProjects.length} completed/closed</p>
+            </div>
+          </div>
+
+          <div className="mb-6">
+            <OnboardingVolumeChart allProjects={allProjects} openProjects={openProjects} />
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                  <th className="pb-2 pr-4">Project</th>
+                  <th className="pb-2 pr-4">RAG</th>
+                  <th className="pb-2 pr-4">Progress</th>
+                  <th className="pb-2 pr-4">Status</th>
+                  <th className="pb-2 pr-4">Owner</th>
+                  <th className="pb-2">Projected Go-Live</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((p) => (
+                  <tr key={p.id} className={`border-t border-neutral-100 ${!isOpenProject(p) ? 'opacity-60' : ''}`}>
+                    <td className="py-2 pr-4 font-medium">
+                      {p.url ? (
+                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-neutral-700 hover:text-accent-600 hover:underline">{p.name}</a>
+                      ) : p.name}
+                    </td>
+                    <td className="py-2 pr-4"><RagBadge rag={p.projectHealthRag} /></td>
+                    <td className="py-2 pr-4 text-neutral-500">{p.projectProgress != null ? `${p.projectProgress}%` : '—'}</td>
+                    <td className="py-2 pr-4 text-neutral-500">{p.projectStatus || '—'}</td>
+                    <td className="py-2 pr-4 text-neutral-500">{p.projectOwner || '—'}</td>
+                    <td className="py-2 text-neutral-500">{p.projectedGoLiveDate ? p.projectedGoLiveDate.slice(0, 10) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
 export default function KpiDashboard() {
   const { jobId } = useParams();
   const [snapshot, setSnapshot] = useState(null);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [excelExportError, setExcelExportError] = useState('');
   // Defaults on once billing data is confirmed present (see the effect
   // below) — some accounts never have ALIS billing data at all (billing
   // run elsewhere), and this lets them exclude it from the exported deck
@@ -1583,6 +2280,18 @@ export default function KpiDashboard() {
     }
   }
 
+  async function handleExportExcel() {
+    setExportingExcel(true);
+    setExcelExportError('');
+    try {
+      await exportKpiOverviewExcel(summary, { includeBilling, includeHubspot, truncateEmptySlides });
+    } catch (err) {
+      setExcelExportError(err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  }
+
   if (error) {
     return <div className="max-w-3xl mx-auto py-12"><div className="alert alert-error"><span>⚠️</span><p>{error}</p></div></div>;
   }
@@ -1598,6 +2307,52 @@ export default function KpiDashboard() {
   );
   const hasAnyHubspotData = Boolean(ticketSummary || dealSummary || hubspotHealth);
 
+  // Single source of truth for "every section on this report" — used by
+  // both the Report Overview card's QuickJumpNav and the floating
+  // butterfly FloatingSectionNav that takes over once that card scrolls
+  // out of view (Sep 2026, Aaron). Two sections are genuinely absent from
+  // the DOM some of the time (WinsKudosSection/the Upcoming Birthdays
+  // SectionCard both return null / are conditionally omitted with no
+  // data) — left out here to match, so the nav never links to a section
+  // that isn't actually mounted.
+  //
+  // Grouped by theme (Sep 2026, Aaron: "keep the alphabetical ordering but
+  // introduce a thematic grouping to the links -- accounts, financials,
+  // tickets") — same 3-bucket taxonomy as Account Health/Team AM, so a
+  // section's category means the same thing across all 3 dashboards. No
+  // separate Operational catch-all (Aaron, Sep 2026: "totally comfortable
+  // with sections in that group joining the accounts section") —
+  // everything clinical/operational/administrative that doesn't fit
+  // Financials or Tickets just lives in Accounts instead. Every
+  // ticket-related title also starts with "Ticket(s)" now (was "Escalation
+  // Tickets") so they already sort together within their own bucket. Each
+  // bucket's items are alphabetized here at build time (not hand-ordered)
+  // so a newly added section can't silently drift out of order; empty
+  // buckets (none currently, but harmless to guard) are dropped before
+  // rendering.
+  const overviewSections = [
+    {
+      category: 'Accounts',
+      items: [
+        'Account Health Import (HubSpot)',
+        'Alerts & Flags',
+        'Levels of Care',
+        ...(dealSummary ? ['Health Score Trend', 'Onboarding'] : []),
+        'Operational / Facility Overview',
+        'Recent ALIS Platform Releases',
+        'Resident Management',
+        'Staffing',
+        'Support & Context',
+        ...(hasUpcomingBirthdays(normalized.upcomingBirthdays) ? ['Upcoming Birthdays & Milestones'] : []),
+        ...((hubspotHealth?.wins_kudos?.length || 0) > 0 ? ['Wins & Kudos'] : []),
+      ],
+    },
+    { category: 'Financials', items: ['Community Revenue & Occupancy', 'Days Sales Outstanding (DSO)', 'Financial', 'Revenue Yield (PPD)'] },
+    { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Tickets: Escalation'] },
+  ]
+    .map((group) => ({ ...group, items: [...group.items].sort((a, b) => a.localeCompare(b)) }))
+    .filter((group) => group.items.length > 0);
+
   return (
     <div className="max-w-6xl mx-auto">
       {/* Header */}
@@ -1608,9 +2363,19 @@ export default function KpiDashboard() {
             {summary.periodStart} – {summary.periodEnd} · benchmarked against ALIS 500 ({summary.benchmarkQuarter})
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          {hasAnyBillingData && (
-            <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer select-none" title="Controls whether ALIS billing data (revenue, AR aging, revenue-leakage flags) is included in the exported PPTX. Doesn't affect this dashboard view.">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent(UTILITIES_TOGGLE_EVENT))}
+          className="btn btn-sm btn-secondary border border-accent-500/40 shrink-0"
+        >
+          Utilities
+        </button>
+      </div>
+
+      <UtilityPanel>
+        {hasAnyBillingData && (
+          <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer select-none" title="Controls whether ALIS billing data (revenue, AR aging, revenue-leakage flags) is included in the exported PPTX and Excel. Doesn't affect this dashboard view.">
               <input
                 type="checkbox"
                 checked={includeBilling}
@@ -1619,9 +2384,11 @@ export default function KpiDashboard() {
               />
               Include billing in export
             </label>
-          )}
-          {hasAnyHubspotData && (
-            <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer select-none" title="Controls whether HubSpot-sourced sections (Support Review, HubSpot Deals, Account Health, Project Status, Enhancement Requests, Deal-Related Activity) are included in the exported PPTX. Doesn't affect this dashboard view.">
+          </div>
+        )}
+        {hasAnyHubspotData && (
+          <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+            <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer select-none" title="Controls whether HubSpot-sourced sections (Support Review, HubSpot Deals, Account Health, Project Status, Enhancement Requests, Deal-Related Activity) are included in the exported PPTX and Excel. Doesn't affect this dashboard view.">
               <input
                 type="checkbox"
                 checked={includeHubspot}
@@ -1630,8 +2397,10 @@ export default function KpiDashboard() {
               />
               Include HubSpot data in export
             </label>
-          )}
-          <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer select-none" title="Drops every section with nothing real to show (and its agenda line) — e.g. no HubSpot deals, no enhancement-tagged tickets, the always-blank AM Alignment/Strategic Initiatives/Industry Updates placeholders. Off by default so the full deck can still be printed and filled in by hand; turn this on for a lighter monthly/bi-weekly touchpoint deck.">
+          </div>
+        )}
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer select-none" title="Drops every section with nothing real to show — e.g. no HubSpot deals, no enhancement-tagged tickets, the always-blank AM Alignment/Strategic Initiatives/Industry Updates placeholders. In the PPTX that also drops the agenda line; in the Excel export it drops the whole empty sheet. Off by default so the full deck/workbook can still be printed and filled in by hand; turn this on for a lighter monthly/bi-weekly touchpoint deck.">
             <input
               type="checkbox"
               checked={truncateEmptySlides}
@@ -1640,11 +2409,19 @@ export default function KpiDashboard() {
             />
             Truncate to sections with data
           </label>
-          <button onClick={handleExportPptx} disabled={exporting} className="btn btn-accent">
+        </div>
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <button onClick={handleExportPptx} disabled={exporting} className="btn btn-sm btn-accent">
             {exporting ? 'Building deck...' : '⬇ Export PPTX'}
           </button>
         </div>
-      </div>
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <button onClick={handleExportExcel} disabled={exportingExcel} className="btn btn-sm btn-accent" title="Overview, Alerts & Flags, Escalation Tickets, Enhancement Requests: Top 3, Enhancement Requests, and HubSpot Deals — for this account. Respects the billing/HubSpot/truncate checkboxes above.">
+            {exportingExcel ? 'Exporting…' : '📊 Export Excel'}
+          </button>
+          {excelExportError && <p className="text-xs text-error mt-1 max-w-xs">{excelExportError}</p>}
+        </div>
+      </UtilityPanel>
 
       {dataWarnings && dataWarnings.length > 0 && (
         <div className="alert alert-warning mb-8">
@@ -1657,6 +2434,42 @@ export default function KpiDashboard() {
           </div>
         </div>
       )}
+
+      {/* Report Overview — jump index + KPI preview (Sep 2026, Aaron:
+          "same UI overhaul as the other dashboards"). Every section below
+          is now collapsed by default; this box (deliberately kept open —
+          `defaultExpanded` — a closed table of contents defeats its own
+          purpose) is the fast way back into any of them without scrolling
+          the whole report. */}
+      <SectionCard title="Report Overview" defaultExpanded>
+        <QuickJumpNav sections={overviewSections} />
+      </SectionCard>
+
+      <StatGroup title="Operational & Occupancy">
+        <StatCard label="Occupancy %" value={pctStr(normalized.occupancy?.pct)} jumpTo="operational-facility-overview" />
+        <StatCard label="Median Length of Stay" value={normalized.lengthOfStay?.medianDays != null ? `${Math.round(normalized.lengthOfStay.medianDays)}d` : '—'} jumpTo="operational-facility-overview" />
+        <StatCard label="Total Residents" value={normalized.demographics?.totalResidents ?? '—'} jumpTo="resident-management" />
+        <StatCard label="Admissions / Discharges" value={`${normalized.admissionsDischarges?.totalAdmissions ?? '—'} / ${normalized.admissionsDischarges?.totalDischarges ?? '—'}`} jumpTo="resident-management" />
+      </StatGroup>
+
+      <StatGroup title="Risk & Service Signals">
+        <StatCard label="Falls / 1,000 Res-Days" value={normalized.falls?.per1000ResidentDays?.toFixed(1) ?? '—'} jumpTo="alerts-flags" />
+        <StatCard label="Hospital/SNF Visits / 1,000 Res-Days" value={normalized.hospitalVisits?.per1000ResidentDays?.toFixed(1) ?? '—'} jumpTo="alerts-flags" />
+        <StatCard label="Incident Reports Fully Documented" value={normalized.incidentCompletion?.hasData ? pctStr(normalized.incidentCompletion.overall.pctComplete) : '—'} jumpTo="alerts-flags" />
+        <StatCard label="Levels of Care Needing Attention" value={normalized.careLevelEvaluations?.needsAttention ?? '—'} jumpTo="levels-of-care" />
+      </StatGroup>
+
+      <StatGroup title="Financial">
+        <StatCard label="Billed Revenue" value={currencyStr(normalized.billedRevenue?.total)} jumpTo="financial" />
+        <StatCard label="Company Avg DSO" value={dsoStr(normalized.dso?.portfolio?.dsoDays)} jumpTo="days-sales-outstanding-dso" />
+        <StatCard label="PPD (Census)" value={ppdStr(normalized.ppd?.portfolio?.ppdByCensus)} jumpTo="revenue-yield-ppd" />
+        <StatCard label="Total Outstanding" value={currencyStr(normalized.outstandingInvoiceSummary?.total)} jumpTo="financial" />
+      </StatGroup>
+
+      <StatGroup title="Staffing">
+        <StatCard label="Staff Active (30d)" value={pctStr(normalized.staffActivity?.pct)} jumpTo="staffing" />
+        <StatCard label="Staff : Census Ratio" value={normalized.staffActivity?.staffToCensusRatio != null ? `1 : ${(1 / normalized.staffActivity.staffToCensusRatio).toFixed(1)}` : '—'} jumpTo="staffing" />
+      </StatGroup>
 
       {/* 1. OPERATIONAL / FACILITY OVERVIEW */}
       <SectionCard title="Operational / Facility Overview" description="Occupancy, census, and resident movement trends">
@@ -1701,108 +2514,7 @@ export default function KpiDashboard() {
         </div>
       </SectionCard>
 
-      {/* 3. FINANCIAL */}
-      <SectionCard title="Financial" description="Billed revenue, payer mix, level-of-care mix, and accounts receivable — from real billing data">
-        {normalized.billedRevenue?.hasBillingData ? (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-              <StatCard label="Billed Revenue" value={currencyStr(normalized.billedRevenue.total)} />
-              <StatCard label="Revenue / Resident" value={currencyStr(normalized.billedRevenue.revenuePerResident)} />
-            </div>
-            <RevenueBreakdown data={normalized.billedRevenue} />
-            <p className="text-xs text-neutral-400 mt-4">
-              Actual invoiced charges for the reporting period — the real billed figure, not an estimate. Revenue per bed and cost analysis still require GL sync data or HQ Dashboard reports. This mirrors ALIS's own invoice/transaction records and isn't reconciled against an external accounting system (QuickBooks, a rent roll) — a mismatch there is a data-entry issue in the source system, not this report.
-            </p>
-            {normalized.recurringRevenue?.hasBillingData && (
-              <div className="mt-4 pt-4 border-t border-neutral-100">
-                <p className="text-xs text-neutral-500">
-                  Current active billing schedule (forward-looking run rate, not what was billed this period): <span className="font-medium text-neutral-700">{currencyStr(normalized.recurringRevenue.total)}</span>
-                </p>
-              </div>
-            )}
-          </>
-        ) : normalized.recurringRevenue?.hasBillingData ? (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-              <StatCard label="Active Billing Schedule" value={currencyStr(normalized.recurringRevenue.total)} />
-              <StatCard label="Revenue / Resident" value={currencyStr(normalized.recurringRevenue.revenuePerResident)} />
-              <StatCard label="Per-Diem Revenue" value={currencyStr(normalized.recurringRevenue.perDiemTotal)} />
-            </div>
-            <RevenueBreakdown data={normalized.recurringRevenue} />
-            <p className="text-xs text-neutral-400 mt-4">
-              No billed-invoice data available for this period — showing the active recurring-charge schedule instead, a forward-looking run rate rather than a reconciled invoice total. Revenue per bed and cost analysis still require GL sync data or HQ Dashboard reports.
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-neutral-500 italic mb-6">
-            This account has no billing records in ALIS — either billing isn't run through ALIS for this account, or none were active this period. Revenue per bed and cost analysis still require GL sync data or HQ Dashboard reports.
-          </p>
-        )}
-
-        {normalized.careLevelEvaluations?.revenueLeakage?.affectedResidents > 0 && (
-          <div className="mt-6 pt-6 border-t border-neutral-200">
-            <h3 className="font-semibold text-primary-900 text-sm mb-3">Potential revenue opportunity</h3>
-            <div className="grid grid-cols-2 gap-4 mb-2">
-              <StatCard label="Residents Underbilled" value={normalized.careLevelEvaluations.revenueLeakage.affectedResidents} />
-              <StatCard label="Potential Monthly Gap" value={currencyStr(normalized.careLevelEvaluations.revenueLeakage.totalMonthlyGap)} />
-            </div>
-            <p className="text-xs text-neutral-400">
-              ALIS-computed: the evaluation's own recommended fee exceeds what's actually being charged. May be a legitimate exception (family agreement, promo rate) — see the flagged residents in Levels of Care below.
-            </p>
-          </div>
-        )}
-
-        {normalized.outstandingInvoiceSummary?.hasBillingData && (
-          <div className="mt-6 pt-6 border-t border-neutral-200">
-            <h3 className="font-semibold text-primary-900 text-sm mb-3">Accounts receivable aging</h3>
-            {normalized.outstandingInvoiceSummary.total > 0 ? (
-              <>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                  <StatCard label="Total Outstanding" value={currencyStr(normalized.outstandingInvoiceSummary.total)} />
-                  <StatCard label="60+ Days Past Due" value={currencyStr((normalized.outstandingInvoiceSummary.aging.days61to90 || 0) + (normalized.outstandingInvoiceSummary.aging.days90plus || 0))} />
-                  <StatCard label="Outstanding Invoices" value={normalized.outstandingInvoiceSummary.invoiceCount} />
-                </div>
-                <div className="space-y-1">
-                  {[
-                    ['Current', normalized.outstandingInvoiceSummary.aging.current],
-                    ['1-30 days', normalized.outstandingInvoiceSummary.aging.days1to30],
-                    ['31-60 days', normalized.outstandingInvoiceSummary.aging.days31to60],
-                    ['61-90 days', normalized.outstandingInvoiceSummary.aging.days61to90],
-                    ['90+ days', normalized.outstandingInvoiceSummary.aging.days90plus],
-                  ].map(([label, amount]) => (
-                    <div key={label} className="flex justify-between text-sm">
-                      <span className="text-neutral-700">{label}</span>
-                      <span className="text-neutral-500">{currencyStr(amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-success">✓ No outstanding balance — fully collected as of this period.</p>
-            )}
-          </div>
-        )}
-      </SectionCard>
-
-      {/* 3b. DAYS SALES OUTSTANDING (DSO) */}
-      <SectionCard title="Days Sales Outstanding (DSO)" description="Collection speed — company average, with Region/Facility/Resident drill-down and month-over-month trend">
-        <DsoSection dso={normalized.dso} companyName={summary.companyName} jobId={jobId} />
-      </SectionCard>
-
-      {/* 3c. REVENUE YIELD (PPD) */}
-      <SectionCard title="Revenue Yield (PPD)" description="Revenue per occupied/census day — company average, with Region/Facility drill-down and month-over-month trend">
-        <PpdSection ppd={normalized.ppd} companyName={summary.companyName} jobId={jobId} />
-      </SectionCard>
-
-      {/* 3d. COMMUNITY REVENUE & OCCUPANCY SNAPSHOT — renders nothing if this account has never had the job run */}
-      <CommunityRevenueSection companyName={summary.companyName} />
-
-      {/* 4. STAFFING */}
-      <SectionCard title="Staffing" description="Staff ratios and activity metrics">
-        <StaffingSection data={normalized.staffActivity} communities={summary.communities} companyName={summary.companyName} />
-      </SectionCard>
-
-      {/* 5. RESIDENT MANAGEMENT */}
+      {/* 4. RESIDENT MANAGEMENT */}
       <SectionCard title="Resident Management" description="Census, admissions, discharges, and length of stay">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
           <StatCard label="Total Residents" value={normalized.demographics?.totalResidents ?? '—'} />
@@ -1838,17 +2550,22 @@ export default function KpiDashboard() {
         )}
       </SectionCard>
 
-      {/* 5b. UPCOMING BIRTHDAYS & MILESTONES */}
+      {/* 5. LEVELS OF CARE */}
+      <SectionCard title="Levels of Care" description="Care-level evaluation compliance — excludes Independent Living residents">
+        <CareLevelEvaluations data={normalized.careLevelEvaluations} communities={summary.communities} companyName={summary.companyName} />
+      </SectionCard>
+
+      {/* 6. STAFFING */}
+      <SectionCard title="Staffing" description="Staff ratios and activity metrics">
+        <StaffingSection data={normalized.staffActivity} communities={summary.communities} companyName={summary.companyName} />
+      </SectionCard>
+
+      {/* 6b. UPCOMING BIRTHDAYS & MILESTONES */}
       {hasUpcomingBirthdays(normalized.upcomingBirthdays) && (
         <SectionCard title="Upcoming Birthdays & Milestones" description="Residents and staff with a birthday in the next ~90 days, based on birthdate data already on file in ALIS">
           <UpcomingBirthdaysPanel data={normalized.upcomingBirthdays} />
         </SectionCard>
       )}
-
-      {/* 6. LEVELS OF CARE */}
-      <SectionCard title="Levels of Care" description="Care-level evaluation compliance — excludes Independent Living residents">
-        <CareLevelEvaluations data={normalized.careLevelEvaluations} communities={summary.communities} companyName={summary.companyName} />
-      </SectionCard>
 
       {/* SUPPORT & CONTEXT */}
       <SectionCard
@@ -1862,6 +2579,14 @@ export default function KpiDashboard() {
           )
         }
       >
+        {ticketSummary && (
+          <div className="mb-6 pb-6 border-b border-neutral-100">
+            <h3 className="font-semibold text-primary-900 text-sm mb-3">Ticket Activity</h3>
+            <p className="text-xs text-neutral-500 mb-4">Trailing 12 months, opened vs. closed, for this account</p>
+            <TicketActivityPanel tickets={ticketSummary.tickets} />
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Tickets — flex column stretched to the grid row's full height
               (driven by whichever of the 3 columns has the most natural
@@ -1975,6 +2700,45 @@ export default function KpiDashboard() {
         </div>
       </SectionCard>
 
+      <HealthScoreTrendSection jobId={jobId} dealSummary={dealSummary} />
+
+      <OnboardingSection dealSummary={dealSummary} />
+
+      {/* ESCALATION TICKETS — same concept as the portfolio-wide "Escalation
+          Tickets" section on Account Health / Team AM (see
+          EscalationRequestsSection.jsx: category_2_0 "ALIS Bug", displayed
+          as "ALIS Escalation"), scoped to just this account's own open
+          tickets rather than a cross-account rollup, so it's a plain list
+          here instead of that component's tier chart / calendar heatmap /
+          sortable table (which only make sense across many accounts). */}
+      <SectionCard title="Tickets: Escalation" description="Every open ticket categorized ALIS Escalation for this account">
+        {!ticketSummary ? (
+          <p className="text-sm text-neutral-500">No HubSpot company was linked for this pull.</p>
+        ) : ticketSummary.escalationTickets.length === 0 ? (
+          <p className="text-sm text-neutral-500 italic">No open escalation tickets for this account.</p>
+        ) : (
+          <div className="space-y-2">
+            {[...ticketSummary.escalationTickets]
+              .sort((a, b) => (b.daysOpen || 0) - (a.daysOpen || 0))
+              .map((t) => (
+                <div key={t.id} className="flex items-start justify-between gap-4 text-sm py-2 border-b border-neutral-100 last:border-0">
+                  <div>
+                    {t.url ? (
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline break-words">{t.subject || `Ticket #${t.id}`}</a>
+                    ) : (
+                      <span className="font-medium text-neutral-700 break-words">{t.subject || `Ticket #${t.id}`}</span>
+                    )}
+                    <div className="text-xs text-neutral-500">
+                      {t.pipelineStageLabel}{t.nextStep ? ` · Next: ${t.nextStep}` : ''}
+                    </div>
+                  </div>
+                  <div className="text-xs text-neutral-500 shrink-0 whitespace-nowrap">{t.daysOpen != null ? `${t.daysOpen}d open` : ''}</div>
+                </div>
+              ))}
+          </div>
+        )}
+      </SectionCard>
+
       {/* TOP 3 ENHANCEMENT REQUESTS — deliberately its own section (not a
           Support & Context grid cell): per Aaron (Sep 2026), these are the
           client's own highest-priority asks and need to be impossible to
@@ -1985,7 +2749,7 @@ export default function KpiDashboard() {
           (rank 1/2/3) and the "Top 3 Enhancements" pipeline stage — a
           ticket can drift to having only one, which is exactly what
           `misaligned` calls out. */}
-      <SectionCard title="Top 3 Enhancement Requests">
+      <SectionCard title="Enhancement Requests: Top 3">
         {!ticketSummary ? (
           <p className="text-sm text-neutral-500">No HubSpot company was linked for this pull.</p>
         ) : !ticketSummary.topThreeEnhancements?.hasAny ? (
@@ -2045,6 +2809,46 @@ export default function KpiDashboard() {
         )}
       </SectionCard>
 
+      {/* ENHANCEMENT REQUESTS — broader bucket than Top 3 above (see
+          hubspotTickets.js's isEnhancementRequest): every open ticket
+          categorized or titled Enhancement, independent of Top 3
+          tag/stage. Same pattern as the portfolio-wide "Enhancement
+          Requests" section on Account Health / Team AM
+          (EnhancementRequestsSection.jsx), scoped to this account as a
+          plain list rather than a cross-account rollup. */}
+      <SectionCard title="Enhancement Requests" description="Every open ticket categorized or titled as an Enhancement for this account — broader than the Enhancement Requests: Top 3 section above">
+        {!ticketSummary ? (
+          <p className="text-sm text-neutral-500">No HubSpot company was linked for this pull.</p>
+        ) : ticketSummary.enhancementRequests.length === 0 ? (
+          <p className="text-sm text-neutral-500 italic">No open enhancement requests for this account.</p>
+        ) : (
+          <div className="space-y-2">
+            {[...ticketSummary.enhancementRequests]
+              .sort((a, b) => (b.daysOpen || 0) - (a.daysOpen || 0))
+              .map((t) => (
+                <div key={t.id} className="flex items-start justify-between gap-4 text-sm py-2 border-b border-neutral-100 last:border-0">
+                  <div>
+                    {t.url ? (
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline break-words">{t.subject || `Ticket #${t.id}`}</a>
+                    ) : (
+                      <span className="font-medium text-neutral-700 break-words">{t.subject || `Ticket #${t.id}`}</span>
+                    )}
+                    <div className="text-xs text-neutral-500">
+                      {t.pipelineStageLabel}{t.nextStep ? ` · Next: ${t.nextStep}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                    {t.isTopThree && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-primary-100 text-primary-800">Top 3</span>
+                    )}
+                    <span className="text-xs text-neutral-500">{t.daysOpen != null ? `${t.daysOpen}d open` : ''}</span>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </SectionCard>
+
       <AccountHealthImport
         jobId={jobId}
         hubspotHealth={hubspotHealth}
@@ -2059,6 +2863,108 @@ export default function KpiDashboard() {
         releaseRecommendations={releaseRecommendations}
         initialWarning={releaseImportWarning}
         onImported={(newSummary) => setSnapshot((prev) => ({ ...prev, summary: newSummary }))}
+      />
+
+      {/* FINANCIAL, DSO, PPD, COMMUNITY REVENUE & OCCUPANCY -- moved to the very end of the report (Sep 2026, Aaron): keeps the whole financials family together, and keeps Community Revenue & Occupancy's always-open (non-collapsible) table from sitting mid-scroll ahead of shorter collapsible sections. */}
+      <SectionCard title="Financial" description="Billed revenue, payer mix, level-of-care mix, and accounts receivable — from real billing data">
+        {normalized.billedRevenue?.hasBillingData ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+              <StatCard label="Billed Revenue" value={currencyStr(normalized.billedRevenue.total)} />
+              <StatCard label="Revenue / Resident" value={currencyStr(normalized.billedRevenue.revenuePerResident)} />
+            </div>
+            <RevenueBreakdown data={normalized.billedRevenue} />
+            <p className="text-xs text-neutral-400 mt-4">
+              Actual invoiced charges for the reporting period — the real billed figure, not an estimate. Revenue per bed and cost analysis still require GL sync data or HQ Dashboard reports. This mirrors ALIS's own invoice/transaction records and isn't reconciled against an external accounting system (QuickBooks, a rent roll) — a mismatch there is a data-entry issue in the source system, not this report.
+            </p>
+            {normalized.recurringRevenue?.hasBillingData && (
+              <div className="mt-4 pt-4 border-t border-neutral-100">
+                <p className="text-xs text-neutral-500">
+                  Current active billing schedule (forward-looking run rate, not what was billed this period): <span className="font-medium text-neutral-700">{currencyStr(normalized.recurringRevenue.total)}</span>
+                </p>
+              </div>
+            )}
+          </>
+        ) : normalized.recurringRevenue?.hasBillingData ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+              <StatCard label="Active Billing Schedule" value={currencyStr(normalized.recurringRevenue.total)} />
+              <StatCard label="Revenue / Resident" value={currencyStr(normalized.recurringRevenue.revenuePerResident)} />
+              <StatCard label="Per-Diem Revenue" value={currencyStr(normalized.recurringRevenue.perDiemTotal)} />
+            </div>
+            <RevenueBreakdown data={normalized.recurringRevenue} />
+            <p className="text-xs text-neutral-400 mt-4">
+              No billed-invoice data available for this period — showing the active recurring-charge schedule instead, a forward-looking run rate rather than a reconciled invoice total. Revenue per bed and cost analysis still require GL sync data or HQ Dashboard reports.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-neutral-500 italic mb-6">
+            This account has no billing records in ALIS — either billing isn't run through ALIS for this account, or none were active this period. Revenue per bed and cost analysis still require GL sync data or HQ Dashboard reports.
+          </p>
+        )}
+
+        {normalized.careLevelEvaluations?.revenueLeakage?.affectedResidents > 0 && (
+          <div className="mt-6 pt-6 border-t border-neutral-200">
+            <h3 className="font-semibold text-primary-900 text-sm mb-3">Potential revenue opportunity</h3>
+            <div className="grid grid-cols-2 gap-4 mb-2">
+              <StatCard label="Residents Underbilled" value={normalized.careLevelEvaluations.revenueLeakage.affectedResidents} />
+              <StatCard label="Potential Monthly Gap" value={currencyStr(normalized.careLevelEvaluations.revenueLeakage.totalMonthlyGap)} />
+            </div>
+            <p className="text-xs text-neutral-400">
+              ALIS-computed: the evaluation's own recommended fee exceeds what's actually being charged. May be a legitimate exception (family agreement, promo rate) — see the flagged residents in Levels of Care below.
+            </p>
+          </div>
+        )}
+
+        {normalized.outstandingInvoiceSummary?.hasBillingData && (
+          <div className="mt-6 pt-6 border-t border-neutral-200">
+            <h3 className="font-semibold text-primary-900 text-sm mb-3">Accounts receivable aging</h3>
+            {normalized.outstandingInvoiceSummary.total > 0 ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                  <StatCard label="Total Outstanding" value={currencyStr(normalized.outstandingInvoiceSummary.total)} />
+                  <StatCard label="60+ Days Past Due" value={currencyStr((normalized.outstandingInvoiceSummary.aging.days61to90 || 0) + (normalized.outstandingInvoiceSummary.aging.days90plus || 0))} />
+                  <StatCard label="Outstanding Invoices" value={normalized.outstandingInvoiceSummary.invoiceCount} />
+                </div>
+                <div className="space-y-1">
+                  {[
+                    ['Current', normalized.outstandingInvoiceSummary.aging.current],
+                    ['1-30 days', normalized.outstandingInvoiceSummary.aging.days1to30],
+                    ['31-60 days', normalized.outstandingInvoiceSummary.aging.days31to60],
+                    ['61-90 days', normalized.outstandingInvoiceSummary.aging.days61to90],
+                    ['90+ days', normalized.outstandingInvoiceSummary.aging.days90plus],
+                  ].map(([label, amount]) => (
+                    <div key={label} className="flex justify-between text-sm">
+                      <span className="text-neutral-700">{label}</span>
+                      <span className="text-neutral-500">{currencyStr(amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-success">✓ No outstanding balance — fully collected as of this period.</p>
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* 3b. DAYS SALES OUTSTANDING (DSO) */}
+      <SectionCard title="Days Sales Outstanding (DSO)" description="Collection speed — company average, with Region/Facility/Resident drill-down and month-over-month trend">
+        <DsoSection dso={normalized.dso} companyName={summary.companyName} jobId={jobId} />
+      </SectionCard>
+
+      {/* 3c. REVENUE YIELD (PPD) */}
+      <SectionCard title="Revenue Yield (PPD)" description="Revenue per occupied/census day — company average, with Region/Facility drill-down and month-over-month trend">
+        <PpdSection ppd={normalized.ppd} companyName={summary.companyName} jobId={jobId} />
+      </SectionCard>
+
+      {/* 3d. COMMUNITY REVENUE & OCCUPANCY SNAPSHOT — renders nothing if this account has never had the job run */}
+      <CommunityRevenueSection companyName={summary.companyName} />
+
+      <FloatingSectionNav
+        watchSectionId={slugify('Report Overview')}
+        sections={overviewSections}
+        onSelect={(title) => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(title) } }))}
       />
       <BackToTopButton />
     </div>

@@ -29,6 +29,14 @@ playwright-report/
 # Raw KPI-export API pulls (resident-level data — cache only, never commit)
 server/automation/kpi-cache/
 
+# Resident Acuity History job output (resident names, care levels, fees — never commit)
+server/automation/acuity-reports/
+
+# Stray raw resident-level data dumps at the server root (e.g. one-off
+# recon pulls like community139_care_mar_aug.json — residentId/careDate/
+# careItem rows) — never commit, same reasoning as kpi-cache/ above.
+server/community*_care_*.json
+
 # Build output
 client/dist/
 client/build/

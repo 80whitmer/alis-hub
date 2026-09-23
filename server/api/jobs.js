@@ -128,7 +128,10 @@ router.post('/create', (req, res) => {
     let itemsToTrack = [];
     if (payload.communities) {
       itemCount = payload.communities.length;
-      itemsToTrack = payload.communities;
+      // A community given by ID only has no name to track yet — the job
+      // handler backfills its item (via syncJobItems) once it knows the label,
+      // rather than leaving a nameless row stuck at pending.
+      itemsToTrack = payload.communities.filter((c) => c?.name);
     } else if (payload.items) {
       itemCount = payload.items.length;
       itemsToTrack = payload.items;

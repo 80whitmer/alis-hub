@@ -20,7 +20,7 @@ export async function exportEnhancementRequests(items, includeAccountManager = f
   const sheet = workbook.addWorksheet('Enhancement Requests');
   sheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    ...(includeAccountManager ? [{ header: 'Account Manager', key: 'accountManagerName', width: 20 }] : []),
+    ...(includeAccountManager ? [{ header: 'AM', key: 'accountManagerName', width: 20 }] : []),
     { header: 'Enhancement', key: 'subject', width: 45 },
     { header: 'Request Date', key: 'createdAt', width: 14 },
     { header: 'Days Open', key: 'daysOpen', width: 10 },

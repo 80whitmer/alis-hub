@@ -13,7 +13,7 @@ export async function exportAtRiskAccounts(accounts) {
   const sheet = workbook.addWorksheet('At-Risk Accounts');
   sheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    { header: 'Account Manager', key: 'accountManagerName', width: 22 },
+    { header: 'AM', key: 'accountManagerName', width: 22 },
     { header: 'Health Score', key: 'score', width: 12 },
     { header: 'Band', key: 'band', width: 12 },
     { header: 'Why', key: 'why', width: 60 },

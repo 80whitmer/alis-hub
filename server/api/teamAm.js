@@ -2,12 +2,19 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 
-const { getAllHomeOfficeCompanies, getAccountManagerName } = require('../services/hubspotAccounts');
+const {
+  getAllHomeOfficeCompanies, getAccountManagerName, getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS,
+  shouldDropLifecycleFlaggedAccount,
+} = require('../services/hubspotAccounts');
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
 const { computeHealthScore, computeDsoDays, explainRisk } = require('../services/accountHealthScoring');
+const { getOccupancySnapshotForAccount } = require('../services/accountHealthOccupancy');
 const {
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging,
+  updateTeamAmOccupancy, setTeamAmOccupancyError,
   listAccountHealthSnapshots, createJob, setJobStatus, setItemStatus,
+  recordHealthScoreSnapshots, getHealthScoreHistory,
+  recordKpiMetricSnapshots, getKpiMetricHistory,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -71,6 +78,15 @@ function mapLiveServiceHealth(ticketSummary) {
       createdAt: t.createdAt, daysOpen: t.daysOpen,
       nextStep: t.nextStep, isTopThree: t.isTopThree,
     })),
+    // Closed enhancement requests (Sep 2026) — mirrors accountHealth.js's
+    // own copy; feeds EnhancementRequestsSection.jsx's new Opened vs. Closed
+    // trend chart on this dashboard too (same shared component). isTopThree
+    // rides along so the Top-3-only view can filter closed items the same
+    // way it filters open ones.
+    enhancementClosedItems: ticketSummary.closedEnhancementRequests.map((t) => ({
+      ticketId: t.id, subject: t.subject, url: t.url,
+      createdAt: t.createdAt, closedAt: t.closedAt, isTopThree: t.isTopThree,
+    })),
     // For the Cost to Serve by Tier chart's "open + closed this calendar
     // year" ticket count — see hubspotTickets.js's closedThisYear.
     closedTicketCountThisYear: ticketSummary.closedThisYear,
@@ -83,6 +99,38 @@ function mapLiveServiceHealth(ticketSummary) {
     alisPayOpenItems: ticketSummary.alisPayTickets.map((t) => ({
       ticketId: t.id, subject: t.subject, url: t.url,
       createdAt: t.createdAt, daysOpen: t.daysOpen, stage: t.pipelineStageLabel,
+    })),
+    // Open "Escalation" tickets (Sep 2026) — category_2_0 === "ALIS
+    // Escalation" (see hubspotTickets.js's isEscalation). Mirrors
+    // accountHealth.js's own copy of this exact field — same per-file
+    // duplication convention this function already follows everywhere
+    // else. Named alisEscalation* deliberately, not escalationCount — see
+    // accountHealth.js's comment for why that name is already taken by an
+    // unrelated, currently-unpopulated Jira-ESC bridge-schema concept.
+    alisEscalationOpenCount: ticketSummary.escalationTickets.length,
+    alisEscalationOpenItems: ticketSummary.escalationTickets.map((t) => ({
+      ticketId: t.id, subject: t.subject, url: t.url,
+      createdAt: t.createdAt, daysOpen: t.daysOpen, nextStep: t.nextStep,
+    })),
+    // Closed escalations (Sep 2026) — mirrors accountHealth.js's own copy;
+    // feeds EscalationRequestsSection.jsx's "Closed — Trailing 12 Months"
+    // heatmap on this dashboard too (same shared component).
+    alisEscalationClosedCount: ticketSummary.closedEscalationTickets.length,
+    alisEscalationClosedItems: ticketSummary.closedEscalationTickets.map((t) => ({
+      ticketId: t.id, subject: t.subject, url: t.url,
+      createdAt: t.createdAt, closedAt: t.closedAt,
+    })),
+    // Slim per-ticket date list (Sep 2026) for this dashboard's own Ticket
+    // Activity heatmap/Open Ticket Volume chart — mirrors accountHealth.js's
+    // identical field exactly (see that file's doc comment for the full
+    // reasoning). tier isn't riding along here since TicketActivitySection
+    // tags each ticket with its own account's tier client-side, the same
+    // way this file's other by-tier charts already do.
+    ticketDates: ticketSummary.tickets.map((t) => ({
+      createdAt: t.createdAt || null,
+      closedAt: t.closedAt || null,
+      pipelineStageLabel: t.pipelineStageLabel || null,
+      isEnhancementRequest: t.category === 'Enhancement' || /enhancement/i.test(t.subject || ''),
     })),
   };
 }
@@ -140,6 +188,18 @@ async function mapLiveFinancialHealth(dealSummary) {
     dealsThisYear: dealSummary.deals
       .filter((d) => d.closeDate && new Date(d.closeDate).getFullYear() === currentYear)
       .map((d) => ({ isOpen: !d.isClosed, dealOwnerName: getAccountManagerName(d.dealOwnerId) })),
+    // Onboarding/implementation tracking (Sep 2026) — same reasoning as
+    // AccountHealthDashboard's identical field: every deal with a
+    // projectStatus, open OR closed (a HubSpot deal usually closes sales-
+    // wise long before its onboarding project actually finishes), one
+    // Home Office can have several at once (one per community/batch).
+    implementationProjects: dealSummary.deals
+      .filter((d) => d.projectStatus)
+      .map((d) => ({
+        dealId: d.id, name: d.name, projectStatus: d.projectStatus, projectHealthRag: d.projectHealthRag,
+        projectProgress: d.projectProgress, projectOwner: d.projectOwner, projectedGoLiveDate: d.projectedGoLiveDate,
+        createdAt: d.createdAt, url: d.url,
+      })),
   };
 }
 
@@ -199,11 +259,13 @@ async function runTeamAmRefreshJob(jobId, companies) {
         enhancementTopCount: serviceHealth.enhancementTopCount,
         enhancementLesserCount: serviceHealth.enhancementLesserCount,
         otherOpenTicketCount: serviceHealth.otherOpenCount,
+        alisEscalationOpenCount: serviceHealth.alisEscalationOpenCount,
         activeCommunityCount: company.activeCommunityCount,
         healthScore: score,
         healthBand: band?.label || null,
         tier: company.tier,
         lastActivityDate: company.lastActivityDate,
+        hubspotCapacity: company.hubspotCapacity,
       });
       setItemStatus(jobId, company.name, 'success');
       emit('item_done', { name: company.name });
@@ -215,6 +277,99 @@ async function runTeamAmRefreshJob(jobId, companies) {
   });
 
   pruneTeamAmSnapshots(companies.map((c) => c.id));
+
+  // Avg Health Score trend point for today — same reasoning/shape as
+  // accountHealth.js's identical capture in its own /refresh handler (see
+  // health_score_history's doc comment in database.js). Reads through
+  // getEnrichedTeamAmAccounts (not the raw stored health_score column)
+  // since that's what GET '/' — and so the on-screen "Avg Health Score"
+  // KPI tile — actually shows: it recomputes the score live including
+  // aging, which the raw column written by upsertTeamAmSnapshot above does
+  // not. Capturing anything else would let this trend quietly drift from
+  // the number it's supposed to be tracking.
+  const freshAccounts = getEnrichedTeamAmAccounts();
+  const cleanAccounts = freshAccounts.filter((a) => !a.lifecycle_flag);
+  const scoredAccounts = cleanAccounts.filter((a) => a.health_score != null);
+  if (scoredAccounts.length > 0) {
+    const avgScore = Math.round(scoredAccounts.reduce((s, a) => s + a.health_score, 0) / scoredAccounts.length);
+    recordHealthScoreSnapshots('team_am', [
+      { scopeKey: 'portfolio', scopeLabel: 'Portfolio (All Accounts)', avgHealthScore: avgScore, accountCount: scoredAccounts.length },
+      ...scoredAccounts.map((a) => ({ scopeKey: a.hubspot_company_id, scopeLabel: a.company_name, avgHealthScore: a.health_score, accountCount: 1 })),
+    ]);
+    recordKpiMetricSnapshots('team_am', [{ scopeKey: 'portfolio', metricKey: 'avgScore', value: avgScore }]);
+  }
+
+  // "KPI by AM" dropdown's trend chart (Aaron, Sep 2026: "wire up the KPI
+  // by AM reports... with the tracking and trending treatment") — same
+  // portfolio-wide, one-point-per-metric-per-day capture as
+  // accountHealth.js's identical block, just against this file's own
+  // team-wide `cleanAccounts` (every Home Office, not just owned ones) so
+  // the trend never drifts from what KpiByAmChart shows today. Trended
+  // per portfolio total here, not per-AM — same "answers how the team
+  // overall is moving" scope as HealthScoreTrendSection already has.
+  // dealsThisYear/arrAddedThisYearDeals aren't flat columns on `a` the way
+  // ticket/capacity counts are (computeDealMetricsByOwner reads them off
+  // financialHealth per-account), so they're summed directly here instead
+  // of via the plain `sum(field)` helper.
+  const sum = (field) => cleanAccounts.reduce((s, a) => s + (a[field] || 0), 0);
+  let dealsThisYearOpen = 0;
+  let dealsThisYearClosed = 0;
+  let arrAddedThisYearCents = 0;
+  for (const a of cleanAccounts) {
+    for (const d of a.financialHealth?.dealsThisYear || []) {
+      if (d.isOpen) dealsThisYearOpen += 1;
+      else dealsThisYearClosed += 1;
+    }
+    for (const d of a.financialHealth?.arrAddedThisYearDeals || []) {
+      arrAddedThisYearCents += d.arrValueCents;
+    }
+  }
+  recordKpiMetricSnapshots('team_am', [
+    { scopeKey: 'portfolio', metricKey: 'totalAccounts', value: cleanAccounts.length },
+    { scopeKey: 'portfolio', metricKey: 'totalCommunities', value: sum('active_community_count') },
+    { scopeKey: 'portfolio', metricKey: 'openTickets', value: sum('open_ticket_count') },
+    { scopeKey: 'portfolio', metricKey: 'closedTickets', value: sum('closed_ticket_count') },
+    { scopeKey: 'portfolio', metricKey: 'dealsThisYearOpen', value: dealsThisYearOpen },
+    { scopeKey: 'portfolio', metricKey: 'dealsThisYearClosed', value: dealsThisYearClosed },
+    { scopeKey: 'portfolio', metricKey: 'arrAddedThisYearCents', value: arrAddedThisYearCents },
+    { scopeKey: 'portfolio', metricKey: 'arrCents', value: sum('arr_cents') },
+    { scopeKey: 'portfolio', metricKey: 'totalCapacity', value: sum('total_capacity') },
+    { scopeKey: 'portfolio', metricKey: 'currentCensus', value: sum('current_census') },
+    // Backs the "Deals by Type" chart's trend line (Aaron, Sep 2026: "add
+    // the tracking and trending feature" to that section) — same overall-
+    // total-not-per-type reasoning as accountHealth.js's identical capture.
+    {
+      scopeKey: 'portfolio',
+      metricKey: 'dealsByTypeTotalArr',
+      value: cleanAccounts.reduce((s, a) => s + Object.values(a.financialHealth?.dealsByType || {}).reduce((s2, t) => s2 + (t.valueCents || 0), 0), 0),
+    },
+  ]);
+
+  // "ARR by Tier" trend subsection (Sep 2026, Aaron: "tracking and
+  // trending" on that section too) — a separate recordKpiMetricSnapshots
+  // call using Client Tier names as scope_key instead of 'portfolio' —
+  // additive use of the same kpi_metric_history table, no schema change.
+  // Only the two ARR metrics per Aaron's ask (Team AM doesn't need the
+  // ticket/cost-to-serve tier trends accountHealth.js's own refresh handler
+  // also captures). Grouping/label reimplemented here to exactly match this
+  // page's own tierLabel() (TeamAmDashboard.jsx) — unset/0 tiers labeled
+  // 'Unassigned', NOT 'Unset' (accountHealth.js's own convention) — so
+  // these trend keys line up with what the chart above them shows today;
+  // getting this string wrong would silently produce an empty trend rather
+  // than an error.
+  const tierBuckets = {};
+  for (const a of cleanAccounts) {
+    const key = (a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`;
+    (tierBuckets[key] ||= []).push(a);
+  }
+  const tierRows = [];
+  for (const [tierName, list] of Object.entries(tierBuckets)) {
+    tierRows.push(
+      { scopeKey: tierName, metricKey: 'arrCents', value: list.reduce((s, a) => s + (a.arr_cents || 0), 0) },
+      { scopeKey: tierName, metricKey: 'arrAddedThisYearCents', value: list.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0) },
+    );
+  }
+  recordKpiMetricSnapshots('team_am', tierRows);
 
   setJobStatus(jobId, 'done');
   emit('job_done', {
@@ -252,6 +407,92 @@ router.post('/refresh', async (req, res) => {
     res.status(202).json({ id, total: companies.length, excludedInactiveCommunities });
   } catch (err) {
     console.error('[teamAm] Refresh failed to start:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * This dashboard's own occupancy pull (Sep 2026) — previously Team AM only
+ * ever showed census/capacity opportunistically cross-referenced from
+ * account_health_snapshots (Aaron's personal dashboard's own refresh), per
+ * his original scoping worry about hitting ALIS for 600+ Home Offices at
+ * once. That worry turned out to be smaller than feared: the ALIS pull is
+ * per-subdomain HOST, not per-community, and only a fraction of this
+ * portfolio has a mapped subdomain at all (company_hosts is a single
+ * global table, same one Account Health Dashboard's mapping UI already
+ * writes to) — so this job's real work scales with mapped-host count, not
+ * with the 500+ company count, same as the personal dashboard's own job.
+ * Mirrors accountHealth.js's runOccupancyRefreshJob exactly (same
+ * concurrency, same getOccupancySnapshotForAccount call, unchanged), just
+ * writing into team_am_snapshots via updateTeamAmOccupancy/
+ * setTeamAmOccupancyError instead of the account-health equivalents.
+ */
+async function runTeamAmOccupancyRefreshJob(jobId, accounts) {
+  const emit = (event, data) => broadcast(jobId, event, data);
+  setJobStatus(jobId, 'running');
+
+  const errors = [];
+  let updated = 0;
+  let skippedNoMapping = 0;
+
+  await mapWithConcurrency(accounts, 3, async (a) => {
+    setItemStatus(jobId, a.company_name, 'running');
+    emit('item_start', { name: a.company_name });
+    try {
+      const occupancy = await getOccupancySnapshotForAccount(a.company_name, a.hubspot_company_id);
+      if (!occupancy) {
+        skippedNoMapping += 1;
+        setItemStatus(jobId, a.company_name, 'success');
+        emit('item_done', { name: a.company_name, skipped: true });
+        return;
+      }
+      updateTeamAmOccupancy(a.hubspot_company_id, occupancy);
+      updated += 1;
+      setItemStatus(jobId, a.company_name, 'success');
+      emit('item_done', { name: a.company_name, skipped: false });
+    } catch (err) {
+      errors.push({ company: a.company_name, error: err.message });
+      setItemStatus(jobId, a.company_name, 'failed', err.message);
+      setTeamAmOccupancyError(a.hubspot_company_id, err.message);
+      emit('item_fail', { name: a.company_name, error: err.message });
+    }
+  });
+
+  setJobStatus(jobId, 'done');
+  emit('job_done', {
+    refreshedAt: new Date().toISOString(),
+    accountsUpdated: updated,
+    accountsSkippedNoMapping: skippedNoMapping,
+    errorCount: errors.length,
+    errors,
+  });
+}
+
+// POST /api/team-am/refresh-occupancy — same job-tracked pattern as
+// accountHealth.js's /refresh-occupancy, scoped to every company already
+// cached in team_am_snapshots (i.e. run /refresh at least once first).
+router.post('/refresh-occupancy', (req, res) => {
+  try {
+    const accounts = listTeamAmSnapshots();
+    const id = uuidv4();
+    createJob({
+      id,
+      type: 'team-am-occupancy',
+      label: 'Team AM Dashboard — Occupancy Refresh',
+      payload: {},
+      total: accounts.length,
+      items: accounts.map((a) => ({ name: a.company_name })),
+    });
+
+    runTeamAmOccupancyRefreshJob(id, accounts).catch((err) => {
+      console.error(`[team-am-occupancy:${id}] Unhandled error:`, err);
+      setJobStatus(id, 'failed', err.message);
+      broadcast(id, 'job_error', { error: err.message });
+    });
+
+    res.status(202).json({ id, total: accounts.length });
+  } catch (err) {
+    console.error('[teamAm] Occupancy refresh failed to start:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -339,15 +580,20 @@ router.post('/import-aging-report', async (req, res) => {
 
 /**
  * Score/subScores recomputed on every read from whatever's cached, same
- * reasoning as accountHealth.js's getEnrichedAccounts. Additionally
- * cross-references account_health_snapshots (Aaron's personal dashboard's
- * table) by hubspot_company_id — READ-ONLY, never written here — to
- * opportunistically attach Total Capacity/Current Census/occupancy % for
- * whichever of these companies Aaron has already refreshed occupancy for
- * from his own dashboard. This table never calls ALIS directly (Aaron's
- * own scoping ask, Sep 2026 — a fresh per-company ALIS pull across 600+
- * Home Offices was explicitly ruled out), so most accounts will show no
- * census/capacity here, same as they do today outside Aaron's own ~94.
+ * reasoning as accountHealth.js's getEnrichedAccounts. This table now runs
+ * its OWN ALIS occupancy pull (see runTeamAmOccupancyRefreshJob/
+ * POST /refresh-occupancy above, Sep 2026) — Aaron's original scoping
+ * worry (a fresh per-company ALIS pull across 600+ Home Offices) turned
+ * out to be smaller than feared, since the pull is per mapped subdomain
+ * HOST, not per company or per community, and only a fraction of the
+ * portfolio has one mapped at all. Additionally still cross-references
+ * account_health_snapshots (Aaron's personal dashboard's table) by
+ * hubspot_company_id — READ-ONLY, never written here — as a FALLBACK for
+ * whichever accounts Team AM hasn't pulled occupancy for yet itself, so an
+ * account Aaron already refreshed personally shows data immediately.
+ * Most accounts will still show no census/capacity until subdomain mapping
+ * coverage broadens beyond the ~98 of 514 mapped today — a data-coverage
+ * gap, not a scoping one anymore.
  */
 function getEnrichedTeamAmAccounts() {
   const accounts = listTeamAmSnapshots();
@@ -358,26 +604,59 @@ function getEnrichedTeamAmAccounts() {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
     });
-    const occupancySource = occupancyByCompanyId.get(a.hubspot_company_id);
+    // This table now runs its own ALIS occupancy pull (runTeamAmOccupancyRefreshJob
+    // above) — its own occupancy_as_of_date wins when present. Falls back to
+    // the account_health_snapshots cross-reference only when Team AM hasn't
+    // pulled occupancy for this account yet, so an account Aaron already
+    // refreshed from his own personal dashboard still shows data immediately
+    // rather than waiting on a full Team AM-wide occupancy run.
+    const crossRef = occupancyByCompanyId.get(a.hubspot_company_id);
+    const hasOwnOccupancy = a.occupancy_as_of_date != null;
     const dsoDays = computeDsoDays(a.aging, a.arr_cents);
+    const lifecycleFlag = getLifecycleDataQualityFlag(a.lifecycle_stage);
+    // A Lead/Canceled Home Office that still owes money is the one case
+    // shouldDropLifecycleFlaggedAccount keeps around (see its doc comment)
+    // — called out in the badge label so it's obvious WHY a "Canceled"
+    // account is still sitting in this table instead of just saying
+    // "Canceled" and looking like a filtering bug.
+    const keptForAgingBalance = (lifecycleFlag === 'lead' || lifecycleFlag === 'canceled') && (a.aging_total_cents || 0) > 0;
     return {
       ...a,
       health_score: score,
       health_band: band?.label || null,
       subScores,
       dsoDays,
+      // Sep 2026 (Aaron): this Home Office's OWN lifecycle stage isn't
+      // "Client - Home Office" — see getLifecycleDataQualityFlag's doc
+      // comment. A pure Lead/Canceled record is dropped from this list
+      // entirely below (see the .filter after this .map) unless it still
+      // carries an aging balance; every other flagged category (Client -
+      // Community, no stage set) stays fully visible/searchable in the
+      // Accounts table. computeRollupByAccountManager and this page's own
+      // client-side rollup exclude every flagged account from ARR/health/
+      // ticket SUMS regardless, so a stray non-client record can't skew
+      // "the real" portfolio numbers.
+      lifecycle_flag: lifecycleFlag,
+      lifecycle_flag_label: lifecycleFlag
+        ? (keptForAgingBalance ? `${LIFECYCLE_FLAG_LABELS[lifecycleFlag]} — kept, owes a balance` : LIFECYCLE_FLAG_LABELS[lifecycleFlag])
+        : null,
       // Only meaningful for the two lower bands — kept off Stable/Healthy
       // accounts rather than computed-and-ignored, since "no reasons" for
       // a healthy account isn't a finding worth carrying around.
       riskReasons: (band?.label === 'Unhealthy' || band?.label === 'At Risk')
-        ? explainRisk({ serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, dsoDays })
+        ? explainRisk({ serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, dsoDays, arrCents: a.arr_cents })
         : [],
       hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
-      total_capacity: occupancySource?.total_capacity ?? null,
-      current_census: occupancySource?.current_census ?? null,
-      occupancy_pct: occupancySource?.occupancy_pct ?? null,
+      total_capacity: hasOwnOccupancy ? a.total_capacity : (crossRef?.total_capacity ?? null),
+      current_census: hasOwnOccupancy ? a.current_census : (crossRef?.current_census ?? null),
+      occupancy_pct: hasOwnOccupancy ? a.occupancy_pct : (crossRef?.occupancy_pct ?? null),
+      occupancy_as_of_date: hasOwnOccupancy ? a.occupancy_as_of_date : (crossRef?.occupancy_as_of_date ?? null),
+      // HubSpot's own "Total Beds on ALIS" property — a genuinely different,
+      // always-free number (no ALIS call involved), never blended with the
+      // ALIS-pull-derived total_capacity above.
+      hubspot_capacity: a.hubspot_capacity ?? null,
     };
-  });
+  }).filter((a) => !shouldDropLifecycleFlaggedAccount(a.lifecycle_flag, a.aging_total_cents));
 }
 
 /** One rollup bucket per Account Manager — reuses the exact same summable-fields shape accountHealth.js's computePortfolioRollup already established, just grouped first. */
@@ -425,22 +704,45 @@ function computeRollupByAccountManager(accounts) {
   const dealMetricsByOwner = computeDealMetricsByOwner(accounts);
 
   const rows = Array.from(byAm.entries()).map(([accountManagerName, amAccounts]) => {
-    const scored = amAccounts.filter((a) => a.health_score != null);
+    // lifecycle_flag'd accounts (Lead/Canceled/wrong-stage/no-stage Home
+    // Offices — see getLifecycleDataQualityFlag) stay counted in
+    // totalAccounts (still fully visible on the Accounts table below) but
+    // are excluded from every $/score/ticket SUM here, so a stray $0-ARR
+    // non-client record can't drag down an AM's avg health score or ARR
+    // total (Aaron, Sep 2026).
+    const clean = amAccounts.filter((a) => !a.lifecycle_flag);
+    const scored = clean.filter((a) => a.health_score != null);
     const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
     const dealMetrics = dealMetricsByOwner.get(accountManagerName);
     dealMetricsByOwner.delete(accountManagerName); // consumed — any left over get their own row below
     return {
       accountManagerName,
       totalAccounts: amAccounts.length,
-      totalCommunities: amAccounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
-      openTickets: amAccounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
-      closedTickets: amAccounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
+      flaggedAccountCount: amAccounts.length - clean.length,
+      totalCommunities: clean.reduce((s, a) => s + (a.active_community_count || 0), 0),
+      openTickets: clean.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
+      closedTickets: clean.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
       dealsThisYearOpen: dealMetrics?.dealsThisYearOpen || 0,
       dealsThisYearClosed: dealMetrics?.dealsThisYearClosed || 0,
-      arrCents: amAccounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
-      arrAddedThisYearCents: dealMetrics?.arrAddedThisYearCents || 0,
-      totalCapacity: amAccounts.reduce((s, a) => s + (a.total_capacity || 0), 0),
-      currentCensus: amAccounts.reduce((s, a) => s + (a.current_census || 0), 0),
+      arrCents: clean.reduce((s, a) => s + (a.arr_cents || 0), 0),
+      // Two different questions, both worth asking separately (Sep 2026,
+      // Aaron): "Added to Book" sums each of THIS AM's currently-owned
+      // accounts' own arr_added_this_year_cents — a workload signal, since
+      // ARR added to your book counts whether you personally touched the
+      // deal or inherited it (a handoff, a manager assist, a house
+      // account). "Personally Closed" instead comes from
+      // dealMetricsByOwner above, grouped by the deal's own HubSpot Deal
+      // Owner — a productivity/growth signal, since it only credits deals
+      // this AM actually closed, on any account. These two used to be
+      // conflated under one "ARR Added This Year" field sourced from
+      // dealMetrics alone, which silently disagreed with the Accounts
+      // tab's own per-account sums (an external audit caught this, Sep
+      // 2026) for every AM who'd ever had a deal closed on their behalf,
+      // or closed a deal on someone else's account.
+      arrAddedToBookCents: clean.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+      arrPersonallyClosedCents: dealMetrics?.arrAddedThisYearCents || 0,
+      totalCapacity: clean.reduce((s, a) => s + (a.total_capacity || 0), 0),
+      currentCensus: clean.reduce((s, a) => s + (a.current_census || 0), 0),
       avgScore,
     };
   });
@@ -450,7 +752,8 @@ function computeRollupByAccountManager(accounts) {
   // account was since reassigned to a different AM) — still surfaced as
   // its own row so the ARR/deal count isn't silently dropped, just with
   // no account-level stats (they aren't an "account manager" in the
-  // accounts-owned sense here, only a deal owner).
+  // accounts-owned sense here, only a deal owner). arrAddedToBookCents is
+  // always 0 here — by definition they own no accounts to add book ARR to.
   for (const [accountManagerName, dealMetrics] of dealMetricsByOwner.entries()) {
     rows.push({
       accountManagerName,
@@ -461,7 +764,8 @@ function computeRollupByAccountManager(accounts) {
       dealsThisYearOpen: dealMetrics.dealsThisYearOpen,
       dealsThisYearClosed: dealMetrics.dealsThisYearClosed,
       arrCents: 0,
-      arrAddedThisYearCents: dealMetrics.arrAddedThisYearCents,
+      arrAddedToBookCents: 0,
+      arrPersonallyClosedCents: dealMetrics.arrAddedThisYearCents,
       totalCapacity: 0,
       currentCensus: 0,
       avgScore: null,
@@ -482,20 +786,73 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/team-am/health-score-history — portfolio-wide Avg Health
+// Score trend, one point per day a portal-wide refresh has run — see
+// accountHealth.js's identical route for the "brand-new metric, short
+// history is expected" framing.
+router.get('/health-score-history', (req, res) => {
+  try {
+    res.json({ history: getHealthScoreHistory('team_am', 'portfolio') });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/team-am/kpi-metric-history — portfolio-wide trend for every KPI
+// by AM dropdown metric at once (keyed by metric_key), one point per day a
+// /refresh has run — see kpi_metric_history's own doc comment in
+// database.js. A brand-new metric as of Sep 2026, so a short/empty array
+// per key is expected at first, not an error.
+router.get('/kpi-metric-history', (req, res) => {
+  try {
+    res.json({ history: getKpiMetricHistory('team_am', 'portfolio') });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/team-am/kpi-metric-history-by-tier — same idea as
+// kpi-metric-history just above, but keyed by Client Tier (scope_key) for
+// the "ARR by Tier" trend subsection (Sep 2026, Aaron: "tracking and
+// trending" on that section too) — see the tier-grouped
+// recordKpiMetricSnapshots call in the refresh handler above for what
+// populates each tier's rows. Last key is 'Unassigned', not 'Unset' —
+// this page's own tierLabel() convention, different from accountHealth.js's.
+router.get('/kpi-metric-history-by-tier', (req, res) => {
+  try {
+    res.json({
+      history: {
+        'Tier 1': getKpiMetricHistory('team_am', 'Tier 1'),
+        'Tier 2': getKpiMetricHistory('team_am', 'Tier 2'),
+        'Tier 3': getKpiMetricHistory('team_am', 'Tier 3'),
+        'Tier 4': getKpiMetricHistory('team_am', 'Tier 4'),
+        Unassigned: getKpiMetricHistory('team_am', 'Unassigned'),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Same shape as the client's `rollup` useMemo in TeamAmDashboard.jsx — duplicated rather than shared, same reasoning as computePortfolioRollup in accountHealth.js. Needed server-side only for the PPT export's Cards slide. */
 function computePortfolioRollup(accounts) {
-  const scored = accounts.filter((a) => a.health_score != null);
+  // Same lifecycle_flag exclusion as computeRollupByAccountManager above —
+  // totalAccounts/totalAms still count everyone (nothing hidden), every
+  // other sum is "clean" accounts only.
+  const clean = accounts.filter((a) => !a.lifecycle_flag);
+  const scored = clean.filter((a) => a.health_score != null);
   const avgScore = scored.length > 0 ? Math.round(scored.reduce((s, a) => s + a.health_score, 0) / scored.length) : null;
   const distinctAms = new Set(accounts.map((a) => a.account_manager_name).filter((n) => n && !n.startsWith('Other AM') && n !== 'Unassigned'));
   return {
     totalAms: distinctAms.size,
     totalAccounts: accounts.length,
-    totalCommunities: accounts.reduce((s, a) => s + (a.active_community_count || 0), 0),
-    openTickets: accounts.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
-    closedTickets: accounts.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
-    enhancementTopCount: accounts.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
-    arrCents: accounts.reduce((s, a) => s + (a.arr_cents || 0), 0),
-    arrAddedThisYearCents: accounts.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
+    flaggedAccountCount: accounts.length - clean.length,
+    totalCommunities: clean.reduce((s, a) => s + (a.active_community_count || 0), 0),
+    openTickets: clean.reduce((s, a) => s + (a.open_ticket_count || 0), 0),
+    closedTickets: clean.reduce((s, a) => s + (a.closed_ticket_count || 0), 0),
+    enhancementTopCount: clean.reduce((s, a) => s + (a.enhancement_top_count || 0), 0),
+    arrCents: clean.reduce((s, a) => s + (a.arr_cents || 0), 0),
+    arrAddedThisYearCents: clean.reduce((s, a) => s + (a.arr_added_this_year_cents || 0), 0),
     avgScore,
   };
 }
@@ -511,8 +868,10 @@ router.get('/export-ppt', async (req, res) => {
     const accounts = getEnrichedTeamAmAccounts();
     const rollupByAccountManager = computeRollupByAccountManager(accounts);
     const rollup = computePortfolioRollup(accounts);
+    const healthScoreHistory = getHealthScoreHistory('team_am', 'portfolio');
+    const kpiMetricHistory = getKpiMetricHistory('team_am', 'portfolio');
 
-    const buffer = await renderTeamAmPpt(rollup, rollupByAccountManager, accounts);
+    const buffer = await renderTeamAmPpt(rollup, rollupByAccountManager, accounts, healthScoreHistory, kpiMetricHistory);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
     res.setHeader('Content-Disposition', 'attachment; filename="Team-AM-Dashboard.pptx"');
     res.send(buffer);

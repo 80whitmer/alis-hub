@@ -6,8 +6,9 @@
  * this only ever loads a local HTML string, not alisonline.com.
  */
 const { newPage } = require('../automation/playwright/browser');
-const { WELLNESS_ROWS, resolveWellnessRow } = require('./wellnessRowDefinitions');
+const { WELLNESS_ROWS, resolveWellnessRow, NOT_TRACKED } = require('./wellnessRowDefinitions');
 const ALIS_CONTACT = require('./alisContactInfo');
+const { bandFor } = require('./wellnessHealthScoring');
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -44,13 +45,57 @@ function residentAgeLine(snapshot, communityId) {
   return `<p style="font-size:10px; color:#4a4a4c; margin:0 0 8px;"><strong>${ageData.avgAge.toFixed(1)}</strong> avg resident age${coverage}  —  ${escapeHtml(bands)}</p>`;
 }
 
-function buildTable(title, snapshot, communityId) {
+/**
+ * Same per-community occupancy breakdown as the Excel export's Occupancy
+ * sheet and the on-screen WellnessTable (Aaron, Sep 2026: "add the
+ * occupancy breakdown per community on the community sections") — only
+ * when there's a communityId; the portfolio gets its own full-width
+ * buildOccupancySection instead, so this doesn't duplicate that.
+ * wellnessNormalizer.js's normalizeOccupancySnapshot scopes
+ * byProductType/byClassification to each community's own occupied count
+ * now, not just the portfolio's.
+ */
+function communityOccupancyBlock(snapshot, communityId) {
+  if (!communityId) return '';
+  const cOcc = snapshot.rows?.occupancy?.byCommunity?.[communityId];
+  if (!cOcc?.total) return '';
+
+  const pctStr = (p) => (p != null ? `${(p * 100).toFixed(1)}%` : '—');
+  const breakdownTable = (title, rows, keyField) => rows?.length ? `
+    <div style="flex:1">
+      <h4 style="font-size:9.5px;margin:0 0 4px;color:#4a4a4c;">${escapeHtml(title)}</h4>
+      <table>
+        <thead><tr><th>${keyField === 'productType' ? 'Product Type' : 'Classification'}</th><th class="num">% of Census</th><th class="num">Occupied / Total</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `<tr><td>${escapeHtml(String(r[keyField]))}</td><td class="num">${pctStr(r.pct)}</td><td class="num">${r.occupied} / ${r.total}</td></tr>`).join('\n')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  return `
+    <div style="margin:0 0 8px;">
+      <p style="font-size:10px; color:#4a4a4c; margin:0 0 6px;"><strong>${pctStr(cOcc.occupied / cOcc.total)}</strong> occupied — ${cOcc.occupied} / ${cOcc.total}</p>
+      <div style="display:flex; gap:16px;">
+        ${breakdownTable('By Product Type', cOcc.byProductType, 'productType')}
+        ${breakdownTable('By Classification', cOcc.byClassification, 'classification')}
+      </div>
+    </div>`;
+}
+
+function buildTable(title, snapshot, communityId, hideUntracked) {
   let currentCategory = null;
-  const rows = WELLNESS_ROWS.map((row) => {
-    const v = resolveWellnessRow(row, snapshot, communityId);
-    const showCategory = row.category !== currentCategory;
-    currentCategory = row.category;
-    return `<tr>
+  // Resolve-then-filter, not a filter on the row's static `source` — see
+  // client/src/utils/wellnessScorecardExport.js's identical reasoning
+  // (Sep 2026, Aaron): a `source: 'rows'` row can still have no real data
+  // for this account/week, and the hide toggle is meant to catch those
+  // too, not just the always-manual rows.
+  const rows = WELLNESS_ROWS
+    .map((row) => ({ row, v: resolveWellnessRow(row, snapshot, communityId) }))
+    .filter(({ v }) => !hideUntracked || v.total !== NOT_TRACKED)
+    .map(({ row, v }) => {
+      const showCategory = row.category !== currentCategory;
+      currentCategory = row.category;
+      return `<tr>
       <td class="cat">${showCategory ? escapeHtml(row.category) : ''}</td>
       <td>${escapeHtml(row.label)}${docCompletionNote(row, v)}</td>
       <td class="num">${escapeHtml(v.al)}</td>
@@ -59,12 +104,13 @@ function buildTable(title, snapshot, communityId) {
       <td class="num">${escapeHtml(v.prior)}</td>
       ${trendCell(v.trend)}
     </tr>`;
-  }).join('\n');
+    }).join('\n');
 
   return `
     <section class="scorecard">
       <h2>${escapeHtml(title)}</h2>
       ${residentAgeLine(snapshot, communityId)}
+      ${communityOccupancyBlock(snapshot, communityId)}
       <table>
         <thead>
           <tr>
@@ -99,6 +145,131 @@ function buildClosingPage(companyName) {
           <p>Interested in ALIS updates and training webinars? <a href="${ALIS_CONTACT.emailSignupUrl}">Sign up today!</a></p>
         </div>
       </div>
+    </section>`;
+}
+
+// Same 0-100/red-orange-blue-green convention as the on-screen ScoreBadge
+// (WellnessScorecard.jsx) and wellnessHealthScoring.js's SCORE_BANDS.
+const BAND_COLOR = { red: '#dc2626', orange: '#ea580c', blue: '#2563eb', green: '#16a34a' };
+
+/**
+ * One row per community — same fields as the on-screen CommunitiesTable
+ * (WellnessScorecard.jsx), so a Wellness Director skimming the printed
+ * report gets the same rollup as the dashboard, not just the per-community
+ * detail tables below.
+ */
+function buildCommunitiesSection(snapshot) {
+  const communityHealth = snapshot.communityHealth;
+  if (!communityHealth?.length) return '';
+
+  const pctStr = (p) => (p != null ? `${(p * 100).toFixed(1)}%` : '—');
+  const scoreCell = (c) => {
+    if (c.score == null) return '<td class="center">—</td>';
+    const color = BAND_COLOR[c.band?.color] || '#737373';
+    return `<td class="center"><span style="display:inline-block; min-width:22px; padding:1px 6px; border-radius:10px; color:#fff; font-weight:700; background:${color};" title="${escapeHtml(c.band?.label || '')}">${c.score}</span></td>`;
+  };
+
+  const rows = communityHealth.map((c) => `<tr>
+      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.region || '—')}</td>
+      ${scoreCell(c)}
+      <td class="num">${pctStr(c.occupancyPct)}</td>
+      <td class="num">${c.census}</td>
+      <td class="num">${c.fallsTotal}</td>
+      <td class="num">${c.hospitalTotal}</td>
+      <td class="num">${c.medExceptionsTotal}</td>
+      <td class="num">${c.evaluationsOverdueTotal}</td>
+    </tr>`).join('\n');
+
+  return `
+    <section class="scorecard">
+      <h2>Communities</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Community</th><th>Region</th><th class="num">Health Score</th><th class="num">Occupancy</th><th class="num">Census</th><th class="num">Falls</th><th class="num">Hospital/ER</th><th class="num">Med Exceptions</th><th class="num">Evals Overdue</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>`;
+}
+
+/**
+ * Same region grouping as wellnessScorecardExport.js's groupByRegion — kept
+ * as a separate copy rather than shared, matching how this whole
+ * client-export/server-PDF pair already duplicates its row-building logic
+ * (see buildTable above vs. addScorecardSheet). Communities with no region
+ * on file group under 'Unassigned', same as wellnessHealthScoring.js's
+ * computeRollup.
+ */
+function groupByRegion(communityHealth) {
+  const map = new Map();
+  for (const c of communityHealth) {
+    const region = c.region || 'Unassigned';
+    if (!map.has(region)) map.set(region, []);
+    map.get(region).push(c);
+  }
+  const avg = (list, field) => {
+    const vals = list.map((c) => c[field]).filter((v) => v != null);
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  const sum = (list, field) => list.reduce((a, c) => a + (c[field] || 0), 0);
+  return Array.from(map.entries())
+    .map(([region, list]) => ({
+      region,
+      communityCount: list.length,
+      avgScore: avg(list, 'score') != null ? Math.round(avg(list, 'score')) : null,
+      avgOccupancyPct: avg(list, 'occupancyPct'),
+      census: sum(list, 'census'),
+      fallsTotal: sum(list, 'fallsTotal'),
+      hospitalTotal: sum(list, 'hospitalTotal'),
+      medExceptionsTotal: sum(list, 'medExceptionsTotal'),
+      evaluationsOverdueTotal: sum(list, 'evaluationsOverdueTotal'),
+    }))
+    .sort((a, b) => (b.avgScore ?? -1) - (a.avgScore ?? -1));
+}
+
+/**
+ * Regional roll-up (Aaron, Sep 2026: "add a regional roll up for the
+ * communities") — same grouping as the on-screen RegionComparisonSection
+ * but with the underlying KPI totals, not just avgScore, same rationale as
+ * the Excel export's Regional Rollup sheet.
+ */
+function buildRegionalRollupSection(snapshot) {
+  const communityHealth = snapshot.communityHealth;
+  if (!communityHealth?.length) return '';
+
+  const pctStr = (p) => (p != null ? `${(p * 100).toFixed(1)}%` : '—');
+  const scoreCell = (r) => {
+    if (r.avgScore == null) return '<td class="center">—</td>';
+    const color = BAND_COLOR[bandFor(r.avgScore).color] || '#737373';
+    return `<td class="center"><span style="display:inline-block; min-width:22px; padding:1px 6px; border-radius:10px; color:#fff; font-weight:700; background:${color};">${r.avgScore}</span></td>`;
+  };
+
+  const rows = groupByRegion(communityHealth).map((r) => `<tr>
+      <td>${escapeHtml(r.region)}</td>
+      <td class="num">${r.communityCount}</td>
+      ${scoreCell(r)}
+      <td class="num">${pctStr(r.avgOccupancyPct)}</td>
+      <td class="num">${r.census}</td>
+      <td class="num">${r.fallsTotal}</td>
+      <td class="num">${r.hospitalTotal}</td>
+      <td class="num">${r.medExceptionsTotal}</td>
+      <td class="num">${r.evaluationsOverdueTotal}</td>
+    </tr>`).join('\n');
+
+  return `
+    <section class="scorecard">
+      <h2>Regional Rollup</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Region</th><th class="num">Communities</th><th class="num">Avg Health Score</th><th class="num">Avg Occupancy</th><th class="num">Total Census</th><th class="num">Total Falls</th><th class="num">Total Hospital/ER</th><th class="num">Total Med Exceptions</th><th class="num">Total Evals Overdue</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
     </section>`;
 }
 
@@ -158,13 +329,31 @@ function buildBirthdaysSection(snapshot) {
       </ul>`
     : '<p style="font-size:10px; color:#909295; margin:0;">None in this window.</p>';
 
+  // Decade milestones (80, 90, 100...) — same tile as the on-screen MilestoneCountTile.
+  const milestones = residents.filter((r) => r.isDecadeMilestone);
+  const byAge = milestones.reduce((acc, r) => {
+    acc[r.turningAge] = (acc[r.turningAge] || 0) + 1;
+    return acc;
+  }, {});
+  const milestoneBreakdown = Object.entries(byAge)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([age, count]) => `Turning ${age}: ${count}`)
+    .join(' &middot; ');
+  const milestoneTile = `
+    <div style="display:inline-block; border:1px solid #e5e5e5; border-radius:6px; padding:8px 12px; margin-bottom:10px;">
+      <p style="font-size:9px; color:#909295; text-transform:uppercase; margin:0;">Decade Milestones (next 14 days)</p>
+      <p style="font-size:18px; font-weight:700; margin:2px 0 0;">${milestones.length}</p>
+      ${milestoneBreakdown ? `<p style="font-size:9px; color:#909295; margin:2px 0 0;">${milestoneBreakdown}</p>` : ''}
+    </div>`;
+
   return `
   <div class="scorecard">
     <h2>Upcoming Birthdays &amp; Milestones — next 14 days</h2>
+    ${milestoneTile}
     <div style="padding:10px; border:1px solid #e5e5e5; border-top:none; display:flex; gap:24px;">
       <div style="flex:1">
         <h3 style="font-size:11px;margin:0 0 6px;">Residents</h3>
-        ${list(residents, (r) => `turning ${r.turningAge}${r.isMajorMilestone ? ' 🎉' : ''}`)}
+        ${list(residents, (r) => `${r.productType ? `${r.productType}, ` : ''}turning ${r.turningAge}${r.isDecadeMilestone ? ' 🎉' : ''}`)}
       </div>
       <div style="flex:1">
         <h3 style="font-size:11px;margin:0 0 6px;">Staff</h3>
@@ -174,9 +363,9 @@ function buildBirthdaysSection(snapshot) {
   </div>`;
 }
 
-function buildHtml(snapshot) {
-  const sections = [buildOccupancySection(snapshot), buildBirthdaysSection(snapshot), buildTable('Portfolio', snapshot, null)]
-    .concat(snapshot.communities.map((c) => buildTable(c.name, snapshot, String(c.communityId))))
+function buildHtml(snapshot, hideUntracked) {
+  const sections = [buildCommunitiesSection(snapshot), buildRegionalRollupSection(snapshot), buildOccupancySection(snapshot), buildBirthdaysSection(snapshot), buildTable('Portfolio', snapshot, null, hideUntracked)]
+    .concat(snapshot.communities.map((c) => buildTable(c.name, snapshot, String(c.communityId), hideUntracked)))
     .join('\n');
 
   return `<!doctype html>
@@ -226,10 +415,10 @@ function buildHtml(snapshot) {
 </html>`;
 }
 
-async function renderWellnessPdf(snapshot) {
+async function renderWellnessPdf(snapshot, hideUntracked = false) {
   const page = await newPage();
   try {
-    await page.setContent(buildHtml(snapshot), { waitUntil: 'load' });
+    await page.setContent(buildHtml(snapshot, hideUntracked), { waitUntil: 'load' });
     // 'load' fires once the Google Fonts stylesheet is fetched, but the
     // WOFF2 files it references can still be downloading — without this,
     // the PDF risks snapshotting the Arial fallback instead of Lexend Exa.

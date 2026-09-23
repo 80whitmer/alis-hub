@@ -16,10 +16,11 @@ export async function exportTopThreeEnhancements(items) {
 
   const includeAm = items.some((i) => i.accountManagerName != null);
 
-  const sheet = workbook.addWorksheet('Top 3 Enhancement Requests');
+  // No colon — Excel sheet names can't contain ':\/?*[]'.
+  const sheet = workbook.addWorksheet('Enhancement Requests - Top 3');
   sheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    ...(includeAm ? [{ header: 'Account Manager', key: 'accountManagerName', width: 20 }] : []),
+    ...(includeAm ? [{ header: 'AM', key: 'accountManagerName', width: 20 }] : []),
     { header: 'Ticket Subject', key: 'subject', width: 40 },
     { header: 'Rank', key: 'rank', width: 8 },
     { header: 'Stage', key: 'stage', width: 20 },

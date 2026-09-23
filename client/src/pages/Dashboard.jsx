@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { formatLocalTime } from '../utils/timezone';
 import BackToTopButton from '../components/BackToTopButton';
+import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -117,6 +118,8 @@ function JobDrawer({ jobId, onClose }) {
             <UsageAuditDetail job={job} pct={pct} />
           ) : job?.type === 'audit-history' ? (
             <AuditHistoryDetail job={job} pct={pct} />
+          ) : job?.type === 'resident-acuity-history' ? (
+            <AcuityHistoryDetail job={job} pct={pct} />
           ) : (
             <p className="text-neutral-500 text-sm">No detail view for this job type.</p>
           )}
@@ -439,6 +442,35 @@ function AuditHistoryDetail({ job, pct }) {
         <Link to={`/audit-history/${job.id}`} className="btn btn-accent">🕵 Open Audit History →</Link>
       ) : (
         <p className="text-sm text-neutral-400">Audit history will be available once the job completes.</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Resident Acuity History detail view ────────────────────────────────────
+function AcuityHistoryDetail({ job, pct }) {
+  return (
+    <div>
+      <div className="mb-5 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-neutral-600">
+            <strong className="text-primary-900">{job.completed || 0}</strong> of{' '}
+            <strong className="text-primary-900">{job.total}</strong> communit{job.total === 1 ? 'y' : 'ies'} built
+          </span>
+          <span className="font-semibold text-primary-900">{pct}%</span>
+        </div>
+        <div className="progress-bar">
+          <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {(job.failed || 0) > 0 && (
+          <p className="text-xs text-red-600 mt-2">{job.failed} failed</p>
+        )}
+      </div>
+
+      {job.status === 'done' ? (
+        <AcuityHistoryDownloads jobId={job.id} />
+      ) : (
+        <p className="text-sm text-neutral-400">Reports will be available to download once the job completes.</p>
       )}
     </div>
   );

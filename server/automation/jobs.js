@@ -11,6 +11,7 @@ const { runWellnessScorecardJob }          = require('./wellnessExport');
 const { runCommunityRevenueSnapshotJob }   = require('./communityRevenueSnapshot');
 const { runCompanyUsageAuditJob }          = require('./usageAudit');
 const { runAuditHistoryJob }               = require('./auditHistoryJob');
+const { runAcuityHistoryJob }              = require('./acuityHistoryJob');
 
 /**
  * Run the create-communities job.
@@ -101,6 +102,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'audit-history':
         return await runAuditHistoryJob(jobId, payload);
+
+      case 'resident-acuity-history':
+        return await runAcuityHistoryJob(jobId, payload);
 
       default: {
         const error = `No handler for template: ${template.id}`;

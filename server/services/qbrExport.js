@@ -852,6 +852,127 @@ function addDealActivitySlide(pptx, dealSummary) {
   }
 }
 
+// Same terminal-status set as the dashboard's isOpenProject
+// (KpiDashboard.jsx) — Completed/Cancelled/Merged read as closed,
+// everything else as open.
+const TERMINAL_PROJECT_STATUSES = new Set(['Completed', 'Cancelled', 'Merged']);
+function isOpenProject(p) {
+  return !TERMINAL_PROJECT_STATUSES.has(p.projectStatus);
+}
+
+/**
+ * Trailing-12-months volume of implementation-tracked deals, by creation
+ * month — same shape/caveat as the dashboard's computeProjectVolumeSeries
+ * (KpiDashboard.jsx): HubSpot only exposes project_status's CURRENT value,
+ * not a history of when it changed, so this is the closest honest trend
+ * available. `cumulative` seeds the first month with every matching item
+ * created before the visible window, then adds a running total.
+ */
+function computeProjectVolumeSeries(items, cumulative) {
+  const now = new Date();
+  const months = Array.from({ length: 12 }, (_, i) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (11 - i), 1)));
+  let running = cumulative
+    ? items.filter((p) => p.createdAt && new Date(p.createdAt) < months[0]).length
+    : 0;
+  return months.map((monthStart) => {
+    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+    const label = monthStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+    let count = 0;
+    for (const p of items) {
+      if (!p.createdAt) continue;
+      const d = new Date(p.createdAt);
+      if (d < monthStart || d > monthEnd) continue;
+      count += 1;
+    }
+    if (!cumulative) return { label, total: count };
+    running += count;
+    return { label, total: running };
+  });
+}
+
+/**
+ * "Onboarding" (Sep 2026) — this account's own implementation-tracked
+ * deals, mirroring the on-screen OnboardingSection/OnboardingVolumeChart:
+ * a "Total Open Projects" line (cumulative, ending on the same count as
+ * the stat cards) plus a "Closed Projects (that month)" line (plain
+ * per-month count). Sourced from dealSummary.deals — the same full deal
+ * history addDealActivitySlide above already reads, just filtered to
+ * deals HubSpot has a Project Status on.
+ */
+function addOnboardingSlide(pptx, dealSummary) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Onboarding');
+
+  const allProjects = (dealSummary?.deals || []).filter((d) => d.projectStatus);
+  if (allProjects.length === 0) {
+    slide.addText('No implementation-tracked deals yet.', { x: 0.7, y: 1.5, w: 8.5, h: 0.5, fontFace: FONT_BODY, fontSize: 12, italic: true, color: BRAND.slate });
+    return;
+  }
+
+  const openProjects = allProjects.filter(isOpenProject);
+  const closedProjects = allProjects.filter((p) => !isOpenProject(p));
+  const avgDaysOpen = openProjects.length > 0
+    ? Math.round(openProjects.reduce((s, p) => s + (p.createdAt ? (Date.now() - new Date(p.createdAt).getTime()) / 86400000 : 0), 0) / openProjects.length)
+    : null;
+
+  statCard(slide, 0.5, 1.05, 'Open Projects', String(openProjects.length));
+  statCard(slide, 3.4, 1.05, 'Closed Projects', String(closedProjects.length));
+  statCard(slide, 6.3, 1.05, 'Avg Days Open', avgDaysOpen != null ? String(avgDaysOpen) : '—');
+
+  const openSeries = computeProjectVolumeSeries(openProjects, true);
+  const closedMonthly = computeProjectVolumeSeries(closedProjects, false);
+  const labels = openSeries.map((r) => r.label);
+
+  slide.addChart(pptx.ChartType.line, [
+    { name: 'Total Open Projects', labels, values: openSeries.map((r) => r.total) },
+    { name: 'Closed Projects (that month)', labels, values: closedMonthly.map((r) => r.total) },
+  ], {
+    x: 0.5, y: 2.75, w: 9, h: 2.6,
+    chartColors: [BRAND.flame, BRAND.glacier],
+    lineSize: 2, lineDataSymbol: 'circle', lineDataSymbolSize: 5,
+    showValue: false,
+    catAxisLabelFontFace: FONT_BODY, catAxisLabelFontSize: 8,
+    valAxisLabelFontFace: FONT_BODY, valAxisLabelFontSize: 9,
+    showLegend: true, legendPos: 'b', legendFontFace: FONT_BODY, legendFontSize: 9, legendColor: BRAND.slate,
+  });
+}
+
+/**
+ * "Health Score Trend" (Sep 2026, Aaron: "capture the progress of this
+ * kpi over time... or just the health score if it is on the KPI/QBR
+ * dashboard") — this account's own Health Score over time, sourced from
+ * whichever portfolio dashboard already scored it (see the
+ * /:jobId/export-pptx route's lookup). A brand-new metric with no
+ * backfill possible, so a short/empty history is expected at first, not
+ * an error.
+ */
+function addHealthScoreTrendSlide(pptx, healthScoreHistory) {
+  const slide = pptx.addSlide();
+  addSectionHeader(slide, 'Health Score Trend');
+
+  if (!healthScoreHistory || healthScoreHistory.length < 2) {
+    slide.addText('Not enough history yet — a point is captured every time this account’s Health Score is refreshed on the Account Health or Team AM dashboard.', {
+      x: 0.7, y: 1.5, w: 8.5, h: 0.7, fontFace: FONT_BODY, fontSize: 12, italic: true, color: BRAND.slate,
+    });
+    return;
+  }
+
+  slide.addChart(pptx.ChartType.line, [{
+    name: 'Health Score',
+    labels: healthScoreHistory.map((h) => h.recorded_date),
+    values: healthScoreHistory.map((h) => h.avg_health_score),
+  }], {
+    x: 0.5, y: 1.1, w: 9, h: 4.2,
+    chartColors: [BRAND.flame],
+    lineSize: 2, lineDataSymbol: 'circle', lineDataSymbolSize: 5,
+    showValue: true, dataLabelPosition: 't', dataLabelFontFace: FONT_BODY, dataLabelFontSize: 10, dataLabelColor: BRAND.onyx,
+    valAxisMinVal: 0, valAxisMaxVal: 100,
+    catAxisLabelFontFace: FONT_BODY, catAxisLabelFontSize: 9,
+    valAxisLabelFontFace: FONT_BODY, valAxisLabelFontSize: 9,
+    showLegend: false,
+  });
+}
+
 /**
  * Two independent sources feed the Enhancement Requests slide: the live
  * ALIS-linked ticket pull (`ticketSummary`, category text-matched on
@@ -906,7 +1027,7 @@ function addEnhancementRequestsSlide(pptx, ticketSummary, hubspotHealth) {
  */
 function addTopThreeEnhancementsSlide(pptx, ticketSummary) {
   const slide = pptx.addSlide();
-  addSectionHeader(slide, 'Top 3 Enhancement Requests');
+  addSectionHeader(slide, 'Enhancement Requests: Top 3');
 
   const top3 = ticketSummary?.topThreeEnhancements;
   if (!top3?.hasAny) {
@@ -1182,6 +1303,15 @@ async function buildQbrDeck(snapshot, options = {}) {
   const hasRealDealsData = Boolean(dealSummary) && (dealSummary.open > 0 || dealSummary.closed > 0);
   const showHubspotDeals = includeHubspot && hasRealDealsData;
 
+  // Same "only worth a slide if there's something to show" treatment as
+  // HubSpot Deals above, not the always-shown-with-a-fallback treatment —
+  // an account with no implementation-tracked deals at all just isn't
+  // onboarding right now. Same gate as the on-screen OnboardingSection.
+  const hasImplementationProjects = includeHubspot && Boolean(dealSummary?.deals?.some((d) => d.projectStatus));
+  // Health Score Trend's own showX flag is defined just below keep()'s
+  // declaration (see there) — kept next to it rather than here, since it
+  // depends on keep() and this file declares that after this point.
+
   // These three always render — even with nothing real to show, they fall
   // back to their own "no data"/"[ fill in by hand ]" copy (see each
   // function above) — so whether they're truly empty has to be checked
@@ -1197,6 +1327,14 @@ async function buildQbrDeck(snapshot, options = {}) {
   // it's actually empty. All three of these are HubSpot-sourced, so
   // includeHubspot is a hard override on top regardless of truncate mode.
   const keep = (hasData) => !truncateEmptySlides || hasData;
+  // Same "always shown in the full deck, dropped if empty in the
+  // truncated one" treatment as Support Review/Project Status/Enhancement
+  // Requests below — a same-day-new metric with a thin trail is still
+  // worth showing (with its own "not enough history yet" copy) in the
+  // full deck, but isn't worth a slide in the lighter touchpoint deck
+  // until there's a real trend to show.
+  const hasHealthScoreHistory = (options.healthScoreHistory?.length || 0) >= 2;
+  const showHealthScoreTrend = includeHubspot && keep(hasHealthScoreHistory);
   const showSupportReview = includeHubspot && keep(hasSupportReviewData);
   // Deliberately NOT gated by keep()/truncateEmptySlides like the others —
   // per Aaron (Sep 2026), an account with nothing tagged/staged Top 3 needs
@@ -1232,8 +1370,10 @@ async function buildQbrDeck(snapshot, options = {}) {
   }
   for (const [label, show, populated] of [
     ['Support Review', showSupportReview, hasSupportReviewData],
-    ['Top 3 Enhancement Requests', showTopThreeEnhancements, Boolean(ticketSummary?.topThreeEnhancements?.hasAny)],
+    ['Enhancement Requests: Top 3', showTopThreeEnhancements, Boolean(ticketSummary?.topThreeEnhancements?.hasAny)],
     ['HubSpot Deals', showHubspotDeals, true],
+    ['Onboarding', hasImplementationProjects, true],
+    ['Health Score Trend', showHealthScoreTrend, hasHealthScoreHistory],
     ['Project Status', showProjectStatus, hasProjectStatusData],
     ['Enhancement Requests', showEnhancementRequests, hasEnhancementRequestsData],
   ]) {
@@ -1262,6 +1402,8 @@ async function buildQbrDeck(snapshot, options = {}) {
   if (showSupportReview) addSupportReviewSlide(pptx, ticketSummary, hubspotHealth);
   if (showTopThreeEnhancements) addTopThreeEnhancementsSlide(pptx, ticketSummary);
   if (showHubspotDeals) addDealActivitySlide(pptx, dealSummary);
+  if (hasImplementationProjects) addOnboardingSlide(pptx, dealSummary);
+  if (showHealthScoreTrend) addHealthScoreTrendSlide(pptx, options.healthScoreHistory);
   if (hasHubspotHealth) addAccountHealthImportSlide(pptx, hubspotHealth);
   if (hasWinsKudos) addWinsKudosSlide(pptx, hubspotHealth.wins_kudos);
   if (hasReleaseRecommendations) addReleaseRecommendationsSlide(pptx, releaseRecommendations, companyName);

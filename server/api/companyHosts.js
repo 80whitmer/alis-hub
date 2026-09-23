@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 
-const { getCompanyHost, bulkImportCompanyHosts, listCompanyHosts } = require('../db/database');
+const { getCompanyHost, bulkImportCompanyHosts, listCompanyHosts, deleteCompanyHost } = require('../db/database');
+const { newPage, ensureLoggedIn } = require('../automation/playwright/browser');
+const { captureCompanyDirectory } = require('../automation/playwright/companiesPage');
 
 // GET /api/company-hosts/lookup?companyName=...&hubspotCompanyId=...
 // Returns the remembered ALIS subdomain for a company, if any.
@@ -39,6 +41,42 @@ router.post('/import', (req, res) => {
     }
     const imported = bulkImportCompanyHosts(rows);
     res.json({ imported, skipped: rows.length - imported });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/company-hosts/refresh-from-admin
+// Logs in to admin.alisonline.com and scrapes the Companies directory
+// (Company Name + Text Key/subdomain) directly, bulk-upserting the result
+// the same way the template-upload path does — this is the automated
+// alternative to the Download/Upload Template flow, not a replacement for
+// it (the template export is still how Aaron shares a subdomain list with
+// colleagues on the branched ALIS Hub).
+router.post('/refresh-from-admin', async (req, res) => {
+  let page;
+  try {
+    page = await newPage();
+    await ensureLoggedIn(page);
+    const rows = await captureCompanyDirectory(page);
+    if (rows.length === 0) {
+      return res.status(500).json({ error: 'No companies with a subdomain found on admin.alisonline.com/Customers/Companies — page structure may have changed.' });
+    }
+    const imported = bulkImportCompanyHosts(rows);
+    res.json({ imported, skipped: rows.length - imported, found: rows.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    if (page) await page.context().close().catch(() => {});
+  }
+});
+
+// DELETE /api/company-hosts/:id — remove one bad mapping (e.g. a garbled
+// name or wrong subdomain) without touching the rest of the table.
+router.delete('/:id', (req, res) => {
+  try {
+    const rowsModified = deleteCompanyHost(req.params.id);
+    res.json({ deleted: rowsModified });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

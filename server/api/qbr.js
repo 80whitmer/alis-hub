@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { getKpiSnapshot, updateKpiSnapshotSummary, getDsoHistory, getPpdHistory, getJob } = require('../db/database');
+const { getKpiSnapshot, updateKpiSnapshotSummary, getDsoHistory, getPpdHistory, getJob, getHealthScoreHistory } = require('../db/database');
 const { getLatestBenchmarks, getBenchmarksForQuarter, listAvailableQuarters } = require('../services/alis500Benchmarks');
 const { buildQbrDeck } = require('../services/qbrExport');
 const { generateFlags } = require('../services/qbrFlags');
@@ -70,6 +70,33 @@ router.get('/:jobId/ppd-history', (req, res) => {
 
     const history = getPpdHistory({ companyName: snapshot.company_name, scope, scopeKey, limit: Number(req.query.limit) || 12 });
     res.json({ scope, scopeKey, history });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/qbr/:jobId/health-score-history — this company's own Avg
+// Health Score trend (Sep 2026, Aaron: "capture the progress of this kpi
+// over time... or just the health score if it is on the KPI/QBR
+// dashboard"). This page never computes its own health score — it looks
+// up whichever portfolio dashboard already scored this company, keyed by
+// hubspotCompanyId: 'team_am' scope covers every Home Office (the
+// superset), so it's checked first; 'account_health' (Aaron's owned
+// subset) is the fallback for the rare case a company was refreshed there
+// but has no team_am history yet. No hubspotCompanyId on this snapshot
+// (older jobs, or a company never linked to HubSpot) means no history is
+// possible — an empty array, not an error.
+router.get('/:jobId/health-score-history', (req, res) => {
+  try {
+    const snapshot = getKpiSnapshot(req.params.jobId);
+    if (!snapshot) return res.status(404).json({ error: 'No KPI snapshot found for this job (has it completed yet?)' });
+
+    const hubspotCompanyId = snapshot.summary?.hubspotCompanyId || getJob(req.params.jobId)?.payload?.hubspotCompanyId;
+    if (!hubspotCompanyId) return res.json({ history: [], hubspotCompanyId: null });
+
+    const teamAmHistory = getHealthScoreHistory('team_am', hubspotCompanyId);
+    const history = teamAmHistory.length > 0 ? teamAmHistory : getHealthScoreHistory('account_health', hubspotCompanyId);
+    res.json({ history, hubspotCompanyId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -218,7 +245,18 @@ router.post('/:jobId/export-pptx', async (req, res) => {
     const includeBilling = req.query.includeBilling !== 'false';
     const includeHubspot = req.query.includeHubspot !== 'false';
     const truncateEmptySlides = req.query.truncateEmptySlides === 'true';
-    const buffer = await buildQbrDeck(snapshot.summary, { includeBilling, includeHubspot, truncateEmptySlides });
+
+    // Same lookup as GET /:jobId/health-score-history — this account's own
+    // Health Score Trend, sourced from whichever portfolio dashboard
+    // already scored it (team_am is the superset, checked first).
+    const hubspotCompanyId = snapshot.summary?.hubspotCompanyId || getJob(req.params.jobId)?.payload?.hubspotCompanyId;
+    let healthScoreHistory = [];
+    if (hubspotCompanyId) {
+      const teamAmHistory = getHealthScoreHistory('team_am', hubspotCompanyId);
+      healthScoreHistory = teamAmHistory.length > 0 ? teamAmHistory : getHealthScoreHistory('account_health', hubspotCompanyId);
+    }
+
+    const buffer = await buildQbrDeck(snapshot.summary, { includeBilling, includeHubspot, truncateEmptySlides, healthScoreHistory });
     const filename = `${snapshot.company_name || 'QBR'}-${snapshot.period_start}-${snapshot.period_end}.pptx`.replace(/[^a-z0-9.\-]/gi, '_');
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');

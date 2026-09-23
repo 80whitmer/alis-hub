@@ -140,8 +140,24 @@ function filterByCommunity(rows, communityKeys) {
 const { getLatestBenchmarks } = require('../services/alis500Benchmarks');
 const { getTicketSummaryForCompany, getDealSummaryForCompany, enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets } = require('../services/hubspotTickets');
 const { generateFlags } = require('../services/qbrFlags');
-const { setJobStatus, setItemStatus, addKpiSnapshot, addDsoSnapshots, addPpdSnapshots, syncJobItems, upsertCompanyHost, getCompanyHost } = require('../db/database');
+const { setJobStatus, setItemStatus, addKpiSnapshot, addDsoSnapshots, addPpdSnapshots, syncJobItems, upsertCompanyHost, getCompanyHost, getJob } = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
+
+/**
+ * True once someone has cancelled this job (POST /api/jobs/:id/cancel —
+ * see database.js's cancelJob) — that call only ever flips the DB row's
+ * status to 'failed', it never touches this function's own execution, so
+ * without checking this a cancelled job just kept running in the
+ * background regardless (confirmed live, Sep 2026, on the wellness-
+ * scorecard job runner — same gap, folded into this fix here too). Safe
+ * to key off `status === 'failed'` specifically: this function is the
+ * only thing that ever sets that status for its own job, always at a
+ * `return` point — so seeing 'failed' while still mid-run can only mean
+ * an external cancelJob() call, never this same run's own error path.
+ */
+function isCancelled(jobId) {
+  return getJob(jobId)?.status === 'failed';
+}
 
 const CACHE_ROOT = path.join(__dirname, 'kpi-cache');
 
@@ -337,6 +353,10 @@ async function runKpiExportJob(jobId, payload) {
   const hostWorked = {}; // host -> did at least one account-wide endpoint succeed for it
 
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     const settled = await Promise.allSettled(ACCOUNT_WIDE_ENDPOINTS.map((e) => e.fn(host)));
     hostWorked[host] = false;
     settled.forEach((result, i) => {
@@ -394,6 +414,10 @@ async function runKpiExportJob(jobId, payload) {
   const recurringCharges = [];
   const chargeErrors = [];
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     try {
       const rows = await getRecurringCharges(host, { residentStatus: 'CurrentResident', chargeStatus: 'Active', serviceStartDate: periodStart, serviceEndDate: periodEnd });
       const tagged = asArray(rows).map((r) => ({ ...r, _host: host }));
@@ -421,6 +445,10 @@ async function runKpiExportJob(jobId, payload) {
   const invoiceCharges = [];
   const invoiceChargeErrors = [];
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     for (const monthStartIso of months) {
       const { rangeStart, rangeEnd } = clipMonthToPeriod(monthStartIso, periodStart, periodEnd);
       try {
@@ -445,6 +473,10 @@ async function runKpiExportJob(jobId, payload) {
   const outstandingInvoices = [];
   const invoiceErrors = [];
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     try {
       const rows = await getOutstandingInvoices(host);
       outstandingInvoices.push(...rows.map((r) => ({ ...r, _host: host })));
@@ -485,6 +517,16 @@ async function runKpiExportJob(jobId, payload) {
   await mapWithConcurrency(communities, COMMUNITY_CONCURRENCY, async (community) => {
     const { name, communityId, host } = community;
     const itemName = multiHost ? `${name} [${host}]` : name;
+    // Checked per-community, not once before the loop — this is the
+    // long-running worker-pool loop (up to 46+ communities observed live),
+    // so a cancel needs to reach every worker currently draining the
+    // queue, not just be noticed before the loop even starts. Skips the
+    // item outright rather than marking it failed — a cancellation isn't
+    // this community's own data problem.
+    if (isCancelled(jobId)) {
+      setItemStatus(jobId, itemName, 'failed', 'Job was cancelled.');
+      return;
+    }
     setItemStatus(jobId, itemName, 'running');
     emit('item_start', { name: itemName });
 
@@ -587,6 +629,16 @@ async function runKpiExportJob(jobId, payload) {
       emit('item_fail', { name: itemName, error: err.message });
     }
   });
+  // A cancel that lands mid-community-loop skips every remaining
+  // community (see the per-item check above) but otherwise this function
+  // would carry on normalizing and writing a snapshot as if it had
+  // finished normally — overwriting cancelJob()'s own 'failed' status with
+  // 'done' at the very end. Bail out here instead, same as every other
+  // cancellation checkpoint in this job.
+  if (isCancelled(jobId)) {
+    emit('job_error', { error: 'Job was cancelled.' });
+    return;
+  }
   cacheRaw(jobId, 'occupancy', occupancyRows);
   cacheRaw(jobId, 'careCompletionDailySummaries', careCompletionDailySummaries);
   cacheRaw(jobId, 'prnAdministration', prnAdministrationRows);
@@ -715,7 +767,7 @@ async function runKpiExportJob(jobId, payload) {
   });
   const lengthOfStay = normalizeLengthOfStayAndMoveOuts(scopedMoveInsAndOuts, { communities });
   const admissionsDischarges = normalizeAdmissionsDischarges(communityScopedMoveInsAndOuts, periodStart, periodEnd);
-  const careLevelEvaluations = normalizeCareLevelEvaluations(scopedEvaluations, scopedResidents, periodEnd);
+  const careLevelEvaluations = normalizeCareLevelEvaluations(scopedEvaluations, scopedResidents, periodEnd, { communities });
   const recurringRevenue = normalizeRecurringRevenue(scopedRecurringCharges);
   const billedRevenue = normalizeInvoiceCharges(scopedInvoiceCharges);
   const outstandingInvoiceSummary = normalizeOutstandingInvoices(scopedOutstandingInvoices, periodEnd);

@@ -11,9 +11,11 @@ const wellnessRouter = require('./api/wellness');
 const companyHostsRouter = require('./api/companyHosts');
 const usageAuditRouter = require('./api/usageAudit');
 const auditHistoryRouter = require('./api/auditHistory');
+const acuityHistoryRouter = require('./api/acuityHistory');
 const evaluationsRouter = require('./api/evaluations');
 const accountHealthRouter = require('./api/accountHealth');
 const teamAmRouter = require('./api/teamAm');
+const googleCalendarRouter = require('./api/googleCalendar');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -38,9 +40,11 @@ app.use('/api/wellness', wellnessRouter);
 app.use('/api/company-hosts', companyHostsRouter);
 app.use('/api/usage-audit', usageAuditRouter);
 app.use('/api/audit-history', auditHistoryRouter);
+app.use('/api/acuity-history', acuityHistoryRouter);
 app.use('/api/evaluations', evaluationsRouter);
 app.use('/api/account-health', accountHealthRouter);
 app.use('/api/team-am', teamAmRouter);
+app.use('/api/google', googleCalendarRouter);
 app.get('/api/health', (_, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Error handler middleware — must be last

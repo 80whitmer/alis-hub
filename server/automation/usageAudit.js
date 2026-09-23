@@ -10,8 +10,13 @@ const { captureCareTracking } = require('./playwright/careTrackingPage');
 const { computeUsageSignals, setUsageCount } = require('../services/usageSignals');
 const { getSignalDescriptions } = require('../services/usageAuditCatalog');
 const { buildAuditGrid } = require('../services/usageAuditNormalizer');
-const { setJobStatus, setItemStatus, syncJobItems, addUsageAuditSnapshot } = require('../db/database');
+const { setJobStatus, setItemStatus, syncJobItems, addUsageAuditSnapshot, getJob } = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
+
+/** Same reasoning/contract as kpiExport.js's identical helper — see that file's doc comment. Folded into this job runner too (Sep 2026) since it shares the same "Cancel Job is cosmetic" gap. */
+function isCancelled(jobId) {
+  return getJob(jobId)?.status === 'failed';
+}
 
 const asArray = (v) => (Array.isArray(v) ? v : v?.items || []);
 
@@ -135,6 +140,10 @@ async function runCompanyUsageAuditJob(jobId, payload) {
     communities = [];
     const hostErrors = [];
     for (const host of hosts) {
+      if (isCancelled(jobId)) {
+        emit('job_error', { error: 'Job was cancelled.' });
+        return;
+      }
       try {
         const all = await getCommunities(host);
         const resolved = all
@@ -175,6 +184,7 @@ async function runCompanyUsageAuditJob(jobId, payload) {
       page = await newPage();
       await ensureLoggedIn(page);
       for (const host of hostsNeedingEntitlements) {
+        if (isCancelled(jobId)) break;
         try {
           const snapshot = await captureEntitlements(page, adminIdByHost[host]);
           entitlementsByHost[host] = snapshot;
@@ -194,6 +204,11 @@ async function runCompanyUsageAuditJob(jobId, payload) {
     }
   } else {
     dataWarnings.push('No ALIS Admin Company ID(s) provided — the Enabled column will be blank for every feature.');
+  }
+
+  if (isCancelled(jobId)) {
+    emit('job_error', { error: 'Job was cancelled.' });
+    return;
   }
 
   // ── Contracted: disabled for now (Aaron, 2026-09-03) — the HubSpot
@@ -228,6 +243,10 @@ async function runCompanyUsageAuditJob(jobId, payload) {
   const pulled = { recurringCharges: [], invoiceCharges: [], outstandingInvoices: [], evaluations: [], staffComplianceDetails: [], observations: [], residents: [], prospects: [] };
   const endpointErrors = [];
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     const settled = await Promise.allSettled(ACCOUNT_WIDE_ENDPOINTS.map((e) => e.fn(host)));
     settled.forEach((result, i) => {
       const { key } = ACCOUNT_WIDE_ENDPOINTS[i];
@@ -251,6 +270,10 @@ async function runCompanyUsageAuditJob(jobId, payload) {
   for (const community of communities) {
     const { name, communityId, host } = community;
     const itemName = multiHost ? `${name} [${host}]` : name;
+    if (isCancelled(jobId)) {
+      setItemStatus(jobId, itemName, 'failed', 'Job was cancelled.');
+      continue;
+    }
     setItemStatus(jobId, itemName, 'running');
     emit('item_start', { name: itemName });
 
@@ -299,6 +322,7 @@ async function runCompanyUsageAuditJob(jobId, payload) {
     try {
       page = await newPage();
       for (const community of communities) {
+        if (isCancelled(jobId)) break;
         const { communityId, host } = community;
         if (loggedInHost !== host) {
           // Confirmed live: a transient ERR_NETWORK_CHANGED / interrupted-
@@ -342,6 +366,11 @@ async function runCompanyUsageAuditJob(jobId, payload) {
     } finally {
       if (page) await page.context().close().catch(() => {});
     }
+  }
+
+  if (isCancelled(jobId)) {
+    emit('job_error', { error: 'Job was cancelled.' });
+    return;
   }
 
   const billing = [...pulled.recurringCharges, ...pulled.invoiceCharges, ...pulled.outstandingInvoices];

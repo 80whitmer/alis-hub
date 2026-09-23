@@ -571,6 +571,64 @@
         },
         "required": ["companyName", "companyHost"]
       }
+    },
+    {
+      "id": "resident-acuity-history",
+      "name": "Resident Acuity History",
+      "description": "Per-resident, per-month care level, care points, and care level fee for one or more communities, exported to Excel (Summary, Monthly Detail, Level/Fee by Month grids, Evaluation Log, Level Fee Schedule, Methodology Notes). For accounts that bill in ALIS, also compares invoiced care charges to the care level fee (care fee variance).",
+      "category": "reporting",
+      "icon": "📋",
+      "timeout": 900000,
+      "scriptPath": "./acuityHistoryJob.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Resident Acuity History",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Leisure Care LLC"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS URL (e.g. \"leisurecare\" for leisurecare.alisonline.com).",
+            "examples": ["leisurecare"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities",
+            "description": "Leave empty to run every community on the host (excluding Training and canceled/suspended). One Excel file per community. Give the ALIS Community ID, or just the community name (exact or a unique partial match) and the ID is looked up for you.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Community Name", "examples": ["Empress Senior Living"] },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["472"] }
+              }
+            }
+          },
+          "months": {
+            "type": "number",
+            "title": "Number of Months",
+            "description": "How many calendar months to cover, ending with the End Month (the current month is included through today).",
+            "default": 12,
+            "examples": [12]
+          },
+          "endMonth": {
+            "type": "string",
+            "title": "End Month (YYYY-MM)",
+            "description": "Defaults to the current month. Not needed if you want the report to run through today.",
+            "examples": ["2026-09"]
+          },
+          "careItemNames": {
+            "type": "string",
+            "title": "Care Billing Items (optional)",
+            "description": "Only used if the account bills in ALIS. Exact billing item names to count as care charges, comma separated. Leave blank to count any item with \"care\" in its name. Each workbook's Billing Items tab lists every item invoiced and whether it was counted, so run once blank and adjust from there.",
+            "examples": ["AL - Care Plan Fees, Harbor - Care Plan Fees"]
+          }
+        },
+        "required": ["companyName", "companyHost"]
+      }
     }
   ]
 }

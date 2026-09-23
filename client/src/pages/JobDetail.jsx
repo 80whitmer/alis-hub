@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { formatLocalTime, formatLocalDate, formatLocalTimeOnly, getUserTimezone } from '../utils/timezone';
 import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvExport';
 import BackToTopButton from '../components/BackToTopButton';
+import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
 
 const ITEM_CONFIG = {
   pending: { icon: '○', badge: 'badge-neutral', dot: 'status-dot-pending' },
@@ -343,6 +344,13 @@ export default function JobDetail() {
         </div>
       </div>
 
+
+      {job.type === 'resident-acuity-history' && job.status === 'done' && (
+        <div className="card mt-6">
+          <h3 className="font-semibold text-primary-900 mb-4">Acuity Reports</h3>
+          <AcuityHistoryDownloads jobId={job.id} />
+        </div>
+      )}
 
       {/* Live Log (for any in-progress job — surfaces item start/done/fail
           and free-text progress messages from the job handler) */}

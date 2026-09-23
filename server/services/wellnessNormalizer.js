@@ -391,7 +391,30 @@ function normalizeEvaluationsNeedingAttention(evaluations, residents, allCommuni
       flagged.push({ ...base, attentionReason: 'overdue' });
     }
   }
-  return groupByCommunityAndProductType(flagged, allCommunityIds);
+  const result = groupByCommunityAndProductType(flagged, allCommunityIds);
+
+  // Each community's share of ITS OWN considered (non-IL, in-house)
+  // resident population — not a share of the portfolio total, matching the
+  // QBR pipeline's normalizeCareLevelEvaluations byCommunity ranking. A raw
+  // count alone can't tell a Wellness Director which community is actually
+  // falling behind: 5 flagged residents at a 20-bed community is a much
+  // bigger problem than the same 5 at a 120-bed one. Purely additive —
+  // existing callers reading only `.AL`/`.MC`/`.total` are unaffected.
+  const consideredByCommunity = {};
+  for (const cid of allCommunityIds) consideredByCommunity[String(cid)] = 0;
+  for (const r of activeResidents) {
+    const cid = String(r.communityId ?? 'unknown');
+    consideredByCommunity[cid] = (consideredByCommunity[cid] || 0) + 1;
+  }
+  for (const cid of Object.keys(result.byCommunity)) {
+    const considered = consideredByCommunity[cid] || 0;
+    result.byCommunity[cid].consideredResidents = considered;
+    result.byCommunity[cid].pct = considered ? result.byCommunity[cid].total / considered : null;
+  }
+  result.portfolio.consideredResidents = activeResidents.length;
+  result.portfolio.pct = activeResidents.length ? result.portfolio.total / activeResidents.length : null;
+
+  return result;
 }
 
 // ── Medication exceptions ────────────────────────────────────────────────
@@ -512,33 +535,55 @@ function normalizeOccupancySnapshot(occupancyRows, allCommunityIds = []) {
   }
 
   const byCommunity = {};
-  for (const cid of allCommunityIds) byCommunity[String(cid)] = { occupied: 0, total: 0 };
+  for (const cid of allCommunityIds) byCommunity[String(cid)] = { occupied: 0, total: 0, byProductType: {}, byClassification: {} };
 
   const byProductType = {};
   const byClassification = {};
 
   for (const r of relevant) {
     const cid = String(r.communityId ?? 'unknown');
-    byCommunity[cid] = byCommunity[cid] || { occupied: 0, total: 0 };
+    byCommunity[cid] = byCommunity[cid] || { occupied: 0, total: 0, byProductType: {}, byClassification: {} };
     byCommunity[cid].total++;
 
     const productType = (r.residentProductType || 'Unspecified').toString().trim() || 'Unspecified';
     byProductType[productType] = byProductType[productType] || { occupied: 0, total: 0 };
     byProductType[productType].total++;
+    byCommunity[cid].byProductType[productType] = byCommunity[cid].byProductType[productType] || { occupied: 0, total: 0 };
+    byCommunity[cid].byProductType[productType].total++;
 
     const classification = (r.residentClassification || 'Unspecified').toString().trim() || 'Unspecified';
     byClassification[classification] = byClassification[classification] || { occupied: 0, total: 0 };
     byClassification[classification].total++;
+    byCommunity[cid].byClassification[classification] = byCommunity[cid].byClassification[classification] || { occupied: 0, total: 0 };
+    byCommunity[cid].byClassification[classification].total++;
 
     if (r.dataSet === 'Occupied') {
       byCommunity[cid].occupied++;
       byProductType[productType].occupied++;
       byClassification[classification].occupied++;
+      byCommunity[cid].byProductType[productType].occupied++;
+      byCommunity[cid].byClassification[classification].occupied++;
     }
   }
 
   const totalOccupied = Object.values(byCommunity).reduce((s, c) => s + c.occupied, 0);
   const total = Object.values(byCommunity).reduce((s, c) => s + c.total, 0);
+
+  // Per-community breakdowns use the same "share of occupied" pct
+  // convention as the portfolio-level ones below, just scoped to that
+  // community's own occupied count instead of the portfolio's (Aaron, Sep
+  // 2026: "add the occupancy breakdown per community on the community
+  // sections") — so e.g. "40%" on one community's Memory Care Medicaid row
+  // means 40% of that community's occupied units, not the portfolio's.
+  for (const cid of Object.keys(byCommunity)) {
+    const c = byCommunity[cid];
+    c.byProductType = Object.entries(c.byProductType)
+      .map(([productType, v]) => ({ productType, pct: c.occupied ? v.occupied / c.occupied : null, occupied: v.occupied, total: v.total }))
+      .sort((a, b) => b.total - a.total);
+    c.byClassification = Object.entries(c.byClassification)
+      .map(([classification, v]) => ({ classification, pct: c.occupied ? v.occupied / c.occupied : null, occupied: v.occupied, total: v.total }))
+      .sort((a, b) => b.total - a.total);
+  }
 
   return {
     hasOccupancyData: true,
@@ -647,6 +692,73 @@ function normalizeResidentAge(residents, allCommunityIds) {
   return { portfolio, byCommunity };
 }
 
+// ── Activity-pattern risk ────────────────────────────────────────────────
+
+// First-pass thresholds (Sep 2026) — derived from a real 5-resident sample
+// against `viva`'s recordedCare data, not a statistically tuned model. Only
+// 1 of the 5 showed the hypothesized decline; expect to revisit these once
+// live portfolio data accumulates. See the "Predictive change-of-condition
+// flagging" note in the project-wellness-scorecard memory for the full
+// investigation.
+const ACTIVITY_RISK_MIN_BASELINE_WEEKS = 4; // of the 6 baseline weeks, how many must have any logging at all
+const ACTIVITY_RISK_MIN_BASELINE_VOLUME = 6; // pooled Activities item count across the baseline weeks
+const ACTIVITY_RISK_SKIP_RATE_DELTA = 0.2; // current skip-rate must clear baseline + this margin
+const ACTIVITY_RISK_MIN_ABS_SKIP_RATE = 0.35; // ...and never below this floor, so a ~0% baseline can't flag on a trivial blip
+
+/**
+ * Flags residents whose Activities-category care logging shows a sustained
+ * skip-rate spike against their own recent baseline — an inferred early
+ * signal, not a measured event (see wellnessExport.js's top-of-file comment
+ * on why fuzzy/derived signals are handled carefully in this codebase). A
+ * resident is only ever flagged or left out of `items` entirely — there is
+ * no "confirmed stable" state, since most residents don't have enough
+ * Activities logging to say anything at all about them yet.
+ *
+ * `weeklyHistoryByResidentId` — { [residentId]: history[] }, each history
+ * already DESC by week_ending and already including the current week (see
+ * getResidentActivityHistory in database.js). `residentMetaById` —
+ * { [residentId]: { residentName, communityId, residentProductType } }.
+ */
+function computeActivityPatternRisk(weeklyHistoryByResidentId, residentMetaById, allCommunityIds) {
+  const flagged = [];
+  for (const [residentId, history] of Object.entries(weeklyHistoryByResidentId)) {
+    const current = history.slice(0, 2);
+    const baseline = history.slice(2, 8);
+    if (current.length < 2 || current.some((w) => w.activity_count === 0)) continue; // no trustworthy current skip-rate
+
+    const baselineWeeksWithData = baseline.filter((w) => w.activity_count > 0);
+    const baselineCount = baseline.reduce((sum, w) => sum + w.activity_count, 0);
+    const baselineSkipped = baseline.reduce((sum, w) => sum + w.activity_skipped_count, 0);
+    if (baselineWeeksWithData.length < ACTIVITY_RISK_MIN_BASELINE_WEEKS || baselineCount < ACTIVITY_RISK_MIN_BASELINE_VOLUME) continue; // not enough history to trust a baseline yet
+
+    const baselineSkipRate = baselineSkipped / baselineCount;
+    const threshold = Math.max(baselineSkipRate + ACTIVITY_RISK_SKIP_RATE_DELTA, ACTIVITY_RISK_MIN_ABS_SKIP_RATE);
+    const bothWeeksElevated = current.every((w) => w.activity_skipped_count / w.activity_count >= threshold);
+    if (!bothWeeksElevated) continue;
+
+    const meta = residentMetaById[residentId] || {};
+    const currentSkipRate = current[0].activity_skipped_count / current[0].activity_count;
+    flagged.push({
+      residentId,
+      residentName: meta.residentName || null,
+      communityId: meta.communityId,
+      communityName: meta.communityName || null,
+      residentProductType: meta.residentProductType,
+      baselineSkipRatePct: Math.round(baselineSkipRate * 100),
+      currentSkipRatePct: Math.round(currentSkipRate * 100),
+    });
+  }
+
+  const result = groupByCommunityAndProductType(flagged, allCommunityIds);
+  return attachItems(result, flagged, (f) => ({
+    residentId: f.residentId,
+    residentName: f.residentName,
+    communityId: f.communityId,
+    communityName: f.communityName,
+    detail: `Activity skip-rate ${f.baselineSkipRatePct}% baseline → ${f.currentSkipRatePct}% current`,
+  }));
+}
+
 module.exports = {
   groupByCommunityAndProductType,
   groupStaffByCommunity,
@@ -669,6 +781,7 @@ module.exports = {
   withCarePointsTrend,
   normalizeOccupancySnapshot,
   normalizeResidentAge,
+  computeActivityPatternRisk,
   withTrend,
   trendArrow,
 };

@@ -304,6 +304,7 @@ function normalizeUpcomingBirthdays(residents = [], staff = [], { windowStart, w
       residentId: r.residentId,
       name: personName(r, ['fullName', 'residentName']),
       communityId: r.communityId,
+      productType: firstDefined(r, ['productType', 'residentProductType']) || null,
       turningAge,
       birthdayDate: hit.toISOString().slice(0, 10),
       isDecadeMilestone: turningAge % 10 === 0,
@@ -934,7 +935,7 @@ const IL_PRODUCT_TYPES = ['il', 'independent'];
  *                      reproducible instead of drifting with the clock)
  * Checked in that order so one resident is never double-counted.
  */
-function normalizeCareLevelEvaluations(evaluationRows = [], residentRows = [], asOfIso) {
+function normalizeCareLevelEvaluations(evaluationRows = [], residentRows = [], asOfIso, { communities = [] } = {}) {
   const nonIlResidents = residentRows.filter((r) => {
     const productType = (firstDefined(r, ['productType', 'residentProductType', 'careType']) || '').toString().toLowerCase();
     return !IL_PRODUCT_TYPES.some((il) => productType.includes(il));
@@ -947,8 +948,10 @@ function normalizeCareLevelEvaluations(evaluationRows = [], residentRows = [], a
   const hasEvaluationData = evaluationRows.length > 0;
 
   if (nonIlResidents.length === 0) {
-    return { hasEvaluationData, totalResidents: 0, expired: 0, incomplete: 0, overdue: 0, neverEvaluated: 0, needsAttention: 0, pctNeedsAttention: null, flagged: [], revenueLeakage: { affectedResidents: 0, totalMonthlyGap: 0, items: [] } };
+    return { hasEvaluationData, totalResidents: 0, expired: 0, incomplete: 0, overdue: 0, neverEvaluated: 0, needsAttention: 0, pctNeedsAttention: null, flagged: [], byCommunity: [], revenueLeakage: { affectedResidents: 0, totalMonthlyGap: 0, items: [] } };
   }
+
+  const communityMeta = new Map(communities.map((c) => [`${c.host}::${c.communityId}`, c]));
 
   const mostCurrentByResident = new Map();
   for (const e of evaluationRows) {
@@ -1043,6 +1046,46 @@ function normalizeCareLevelEvaluations(evaluationRows = [], residentRows = [], a
 
   const needsAttention = expired + incomplete + overdue + neverEvaluated;
 
+  // Per-community ranking, worst-first — the actual "which communities
+  // aren't staying on top of assessments" signal (Aaron, Sep 2026): the
+  // portfolio-wide pctNeedsAttention above and the flat `flagged` list can't
+  // tell you that on their own (a 10-resident flag reads very differently
+  // at a 20-bed community vs. a 120-bed one). Residents with no communityId
+  // (shouldn't normally happen, but the API's nullability contract allows
+  // it) are excluded here, same convention as normalizeLengthOfStayAndMoveOuts'
+  // byCommunity cut — they're still counted in the portfolio totals above.
+  const totalByCommunity = new Map();
+  for (const r of nonIlResidents) {
+    if (r.communityId == null) continue;
+    const key = `${r._host}::${r.communityId}`;
+    totalByCommunity.set(key, (totalByCommunity.get(key) || 0) + 1);
+  }
+  const flaggedByCommunity = new Map();
+  for (const f of flagged) {
+    if (f.communityId == null) continue;
+    const key = `${f.host}::${f.communityId}`;
+    if (!flaggedByCommunity.has(key)) flaggedByCommunity.set(key, []);
+    flaggedByCommunity.get(key).push(f);
+  }
+  const byCommunity = Array.from(totalByCommunity.entries())
+    .map(([key, total]) => {
+      const communityFlagged = flaggedByCommunity.get(key) || [];
+      const [host, communityId] = key.split('::');
+      const meta = communityMeta.get(key);
+      const reasonCounts = { expired: 0, incomplete: 0, overdue: 0, neverEvaluated: 0 };
+      for (const f of communityFlagged) reasonCounts[f.reason]++;
+      return {
+        communityId,
+        host,
+        name: meta?.name || `Community ${communityId}`,
+        totalResidents: total,
+        needsAttention: communityFlagged.length,
+        pctNeedsAttention: total ? communityFlagged.length / total : null,
+        ...reasonCounts,
+      };
+    })
+    .sort((a, b) => (b.pctNeedsAttention ?? 0) - (a.pctNeedsAttention ?? 0));
+
   return {
     hasEvaluationData,
     totalResidents: nonIlResidents.length,
@@ -1053,6 +1096,7 @@ function normalizeCareLevelEvaluations(evaluationRows = [], residentRows = [], a
     needsAttention,
     pctNeedsAttention: needsAttention / nonIlResidents.length,
     flagged,
+    byCommunity,
     revenueLeakage: {
       affectedResidents: underbilledCount,
       totalMonthlyGap,

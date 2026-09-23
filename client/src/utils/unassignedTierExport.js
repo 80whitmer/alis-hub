@@ -13,7 +13,7 @@ export async function exportUnassignedTierAccounts(accounts) {
   const sheet = workbook.addWorksheet('Unassigned Tier');
   sheet.columns = [
     { header: 'Company', key: 'companyName', width: 30 },
-    { header: 'Account Manager', key: 'accountManagerName', width: 22 },
+    { header: 'AM', key: 'accountManagerName', width: 22 },
     { header: 'Open Tickets', key: 'openTickets', width: 14 },
     { header: 'Closed Tickets', key: 'closedTickets', width: 14 },
     { header: 'ARR', key: 'arr', width: 14 },

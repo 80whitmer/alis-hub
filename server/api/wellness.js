@@ -21,7 +21,8 @@ router.get('/:jobId/export-pdf', async (req, res) => {
     const snapshot = getWellnessSnapshot(req.params.jobId);
     if (!snapshot) return res.status(404).json({ error: 'No wellness snapshot found for this job (has it completed yet?)' });
 
-    const buffer = await renderWellnessPdf(snapshot.summary);
+    const hideUntracked = req.query.hideUntracked === 'true';
+    const buffer = await renderWellnessPdf(snapshot.summary, hideUntracked);
     const filename = `${snapshot.company_name || 'Wellness-Scorecard'}-${snapshot.week_ending}.pdf`.replace(/[^a-z0-9.\-]/gi, '_');
 
     res.setHeader('Content-Type', 'application/pdf');

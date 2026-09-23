@@ -7,6 +7,16 @@ import CompanyLookup from '../components/CompanyLookup';
 import EvaluationDetail from './EvaluationDetail';
 import { getLastCompletedQuarter, formatQuarterLabel, getMostRecentSunday } from '../utils/quarter';
 
+// Not a real job template — rendered in the same A–Z tile grid as the
+// templates (see the Job Type grid below for why). `isTool` gets the dashed border.
+const EVALUATION_LOOKUP_TILE = {
+  id: 'evaluation-lookup',
+  name: 'Evaluation Lookup',
+  icon: '🔍',
+  isTool: true,
+  description: 'Instant resident evaluation search — CarePoints, Care Level, and the question/answer breakdown where available. Not a job: replaces the Configuration section below with the live lookup tool instead of a job form.',
+};
+
 export default function NewJob() {
   const navigate = useNavigate();
 
@@ -310,11 +320,12 @@ export default function NewJob() {
   const isKpiExport = selectedTemplate === 'kpi-export';
   const isWellnessScorecard = selectedTemplate === 'wellness-scorecard';
   const isAuditHistory = selectedTemplate === 'audit-history';
-  // All three report templates share the same "look up the account,
+  const isAcuityHistory = selectedTemplate === 'resident-acuity-history';
+  // All the report templates share the same "look up the account,
   // auto-fill its known ALIS host" flow — only the QBR-specific
   // Health/Release Import JSON blocks further down stay gated to
   // isKpiExport alone.
-  const usesCompanyLookup = isKpiExport || isWellnessScorecard || isAuditHistory;
+  const usesCompanyLookup = isKpiExport || isWellnessScorecard || isAuditHistory || isAcuityHistory;
 
   function handleCompanySelect({ name, hubspotId }) {
     setFormData(prev => ({ ...prev, companyName: name, hubspotCompanyId: hubspotId }));
@@ -354,14 +365,32 @@ export default function NewJob() {
       <div className="mb-8">
         <label className="input-label">Job Type</label>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {templates.map(template => (
+          {/* Every tile — real templates plus the Evaluation Lookup tool —
+              sorted A–Z by name in one list, so a new template lands in its
+              alphabetical spot instead of wherever templates.json lists it.
+              Evaluation Lookup isn't a job template (no backend registration,
+              no batch/async run, no Job Board entry) — see EvaluationDetail.jsx's
+              own doc comment: it's a live search tool. Kept in this grid anyway
+              (Aaron, Sep 2026) so every automation-adjacent tool lives in one
+              place; the dashed border is the only visual hint it behaves
+              differently — selecting it swaps the Configuration section below
+              for the live lookup tool instead of a job form (no schema fetch,
+              no Run Job button — see the two render guards below that key off
+              selectedTemplate === 'evaluation-lookup'). */}
+          {[...templates, EVALUATION_LOOKUP_TILE]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map(template => (
             <div key={template.id} className="relative">
               <button
                 onClick={() => { setSelectedTemplate(template.id); setInfoOpenId(null); }}
                 className={`w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 text-center transition-all ${
+                  template.isTool ? 'border-dashed ' : ''
+                }${
                   selectedTemplate === template.id
                     ? 'border-accent-500 bg-accent-50'
-                    : 'border-neutral-200 bg-white hover:border-neutral-300'
+                    : template.isTool
+                      ? 'border-neutral-200 bg-white hover:border-accent-300'
+                      : 'border-neutral-200 bg-white hover:border-neutral-300'
                 }`}
               >
                 <span className="text-2xl leading-none">{template.icon}</span>
@@ -386,46 +415,6 @@ export default function NewJob() {
               )}
             </div>
           ))}
-
-          {/* Evaluation Lookup isn't a job template (no backend registration,
-              no batch/async run, no Job Board entry) — see EvaluationDetail.jsx's
-              own doc comment: it's a live search tool. Kept in this grid anyway
-              (Aaron, Sep 2026) so every automation-adjacent tool lives in one
-              place; the dashed border is the only visual hint it behaves
-              differently — selecting it swaps the Configuration section below
-              for the live lookup tool instead of a job form (no schema fetch,
-              no Run Job button — see the two render guards below that key off
-              selectedTemplate === 'evaluation-lookup'). */}
-          <div className="relative">
-            <button
-              onClick={() => { setSelectedTemplate('evaluation-lookup'); setInfoOpenId(null); }}
-              className={`w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 border-dashed text-center transition-all ${
-                selectedTemplate === 'evaluation-lookup'
-                  ? 'border-accent-500 bg-accent-50'
-                  : 'border-neutral-200 bg-white hover:border-accent-300'
-              }`}
-            >
-              <span className="text-2xl leading-none">🔍</span>
-              <span className="text-sm font-semibold text-primary-900 leading-tight">Evaluation Lookup</span>
-            </button>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setInfoOpenId(infoOpenId === 'evaluation-lookup' ? null : 'evaluation-lookup'); }}
-              className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white border border-neutral-200 text-neutral-400 hover:text-accent-600 hover:border-accent-300 flex items-center justify-center text-[10px] font-bold leading-none"
-              aria-label="About Evaluation Lookup"
-              title="What does this do?"
-            >
-              i
-            </button>
-            {infoOpenId === 'evaluation-lookup' && (
-              <div
-                ref={infoPopoverRef}
-                className="absolute z-20 top-full mt-1.5 left-0 right-0 p-3 rounded-lg border border-neutral-200 bg-white shadow-lg text-xs text-neutral-600 text-left"
-              >
-                Instant resident evaluation search — CarePoints, Care Level, and the question/answer breakdown where available. Not a job: replaces the Configuration section below with the live lookup tool instead of a job form.
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

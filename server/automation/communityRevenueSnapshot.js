@@ -4,8 +4,13 @@ const {
 const {
   normalizePpd, normalizeCommunityRevenue, normalizeCommunityMoveInOut,
 } = require('../services/kpiNormalizer');
-const { setJobStatus, setItemStatus, syncJobItems, addCommunityRevenueSnapshots } = require('../db/database');
+const { setJobStatus, setItemStatus, syncJobItems, addCommunityRevenueSnapshots, getJob } = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
+
+/** Same reasoning/contract as kpiExport.js's identical helper — see that file's doc comment. Folded into this job runner too (Sep 2026) since it shares the same "Cancel Job is cosmetic" gap. */
+function isCancelled(jobId) {
+  return getJob(jobId)?.status === 'failed';
+}
 
 const asArray = (v) => (Array.isArray(v) ? v : v?.items || []);
 
@@ -97,13 +102,64 @@ function countOccupiedUnitsByCommunity(occupancyRows, periodEnd) {
 }
 
 /**
+ * Occupancy by product type (AL/MC/etc.) and by classification, per
+ * community, as of the same month-end snapshot date
+ * countOccupiedUnitsByCommunity uses above (Crissy's team's monthly
+ * census-by-product-type/classification pull — Aaron, Sep 2026). `pct` is
+ * each product type/classification's share of THAT community's own
+ * occupied total (a composition-mix percentage), matching the exact
+ * convention kpiNormalizer.js's normalizeOccupancy already established for
+ * byProductType/byClassification (Aaron, 2026-09-07: "what percentage are
+ * each of the product types or classifications" of the whole) — not that
+ * group's own fill rate. Kept as its own implementation here rather than a
+ * shared import, same "this file and kpiNormalizer.js mirror rather than
+ * share logic" convention noted throughout this codebase.
+ */
+function computeOccupancyBreakdownByCommunity(occupancyRows, periodEnd) {
+  const actual = occupancyRows.filter((r) => r.dataSet === 'Occupied' || r.dataSet === 'Vacant');
+  const onOrBefore = actual.filter((r) => r.date && r.date <= periodEnd);
+  const dates = [...new Set(onOrBefore.map((r) => r.date))].sort();
+  const latest = dates[dates.length - 1];
+  const byCommunity = new Map();
+  if (!latest) return byCommunity;
+
+  const grouped = new Map(); // communityId -> { total, byProductType: Map, byClassification: Map }
+  for (const r of onOrBefore) {
+    if (r.date !== latest || r.dataSet !== 'Occupied') continue;
+    if (!grouped.has(r.communityId)) {
+      grouped.set(r.communityId, { total: 0, byProductType: new Map(), byClassification: new Map() });
+    }
+    const g = grouped.get(r.communityId);
+    g.total++;
+    const productType = (r.residentProductType || 'Unspecified').toString().trim() || 'Unspecified';
+    g.byProductType.set(productType, (g.byProductType.get(productType) || 0) + 1);
+    const classification = (r.residentClassification || 'Unspecified').toString().trim() || 'Unspecified';
+    g.byClassification.set(classification, (g.byClassification.get(classification) || 0) + 1);
+  }
+
+  for (const [communityId, g] of grouped) {
+    byCommunity.set(communityId, {
+      byProductType: Array.from(g.byProductType.entries())
+        .map(([productType, occupied]) => ({ productType, occupied, pct: g.total ? occupied / g.total : null }))
+        .sort((a, b) => b.occupied - a.occupied),
+      byClassification: Array.from(g.byClassification.entries())
+        .map(([classification, occupied]) => ({ classification, occupied, pct: g.total ? occupied / g.total : null }))
+        .sort((a, b) => b.occupied - a.occupied),
+    });
+  }
+  return byCommunity;
+}
+
+/**
  * Runs the monthly Community Revenue & Occupancy Snapshot job for one
  * account: pulls one calendar month of invoice charges, occupancy, and
  * move-in/move-out history, computes per-community Charges/Credits/
  * Discounts/Net Revenue (normalizeCommunityRevenue), Unit Capacity/Total
- * Occupied Units (normalizeOccupancy), Occupancy-Unit-Days/Census/both PPD
- * bases (normalizePpd), and Move-Ins/Move-Outs (normalizeCommunityMoveInOut),
- * then stores one row per community (addCommunityRevenueSnapshots) — the
+ * Occupied Units (normalizeOccupancy), occupancy by product type and by
+ * classification (computeOccupancyBreakdownByCommunity), Occupancy-Unit-Days/
+ * Census/both PPD bases (normalizePpd), and Move-Ins/Move-Outs
+ * (normalizeCommunityMoveInOut), then stores one row per community
+ * (addCommunityRevenueSnapshots) — the
  * Team AM Dashboard looks up each community's prior-month row itself to
  * compute the MoM diff at render time, same as every other trend view in
  * this app being computed from stored history rather than baked in here.
@@ -148,6 +204,10 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
     communities = [];
     const hostErrors = [];
     for (const host of hosts) {
+      if (isCancelled(jobId)) {
+        emit('job_error', { error: 'Job was cancelled.' });
+        return;
+      }
       try {
         const all = await getCommunities(host);
         const resolved = all
@@ -181,6 +241,10 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
   let floorPlanRows = [];
   const endpointErrors = [];
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     const [chargesResult, moveResult, floorPlanResult] = await Promise.allSettled([
       getInvoiceCharges(host, { invoiceStartDate: periodStart, invoiceEndDate: periodEnd }),
       getHistoricalMoveInMoveOuts(host),
@@ -222,6 +286,10 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
   const occupancyRows = [];
   await mapWithConcurrency(communities, COMMUNITY_CONCURRENCY, async (community) => {
     const { name, communityId, host } = community;
+    if (isCancelled(jobId)) {
+      setItemStatus(jobId, name, 'failed', 'Job was cancelled.');
+      return;
+    }
     try {
       const rows = await getOccupancy(host, { communityId, monthAndYear: periodStart });
       occupancyRows.push(...asArray(rows).map((r) => ({ ...r, communityId, _host: host })));
@@ -234,6 +302,11 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
     }
   });
 
+  if (isCancelled(jobId)) {
+    emit('job_error', { error: 'Job was cancelled.' });
+    return;
+  }
+
   emit('progress', { message: 'Computing per-community revenue and occupancy…' });
 
   const revenueByCommunity = normalizeCommunityRevenue(invoiceChargeRows, communities);
@@ -241,6 +314,7 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
   const moveInOutByCommunity = normalizeCommunityMoveInOut(moveInOutRows, communities, periodStart, periodEnd);
   const capacityByCommunity = countCapacityByCommunity(floorPlanRows);
   const occupiedUnitsByCommunity = countOccupiedUnitsByCommunity(occupancyRows, periodEnd);
+  const occupancyBreakdownByCommunity = computeOccupancyBreakdownByCommunity(occupancyRows, periodEnd);
 
   const revenueByKey = new Map(revenueByCommunity.map((r) => [`${r.host}::${r.communityId}`, r]));
   const moveByKey = new Map(moveInOutByCommunity.map((r) => [`${r.host}::${r.communityId}`, r]));
@@ -251,6 +325,7 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
     const rev = revenueByKey.get(key);
     const move = moveByKey.get(key);
     const p = ppdByKey.get(key);
+    const occupancyBreakdown = occupancyBreakdownByCommunity.get(c.communityId);
     return {
       companyName,
       companyHost: c.host,
@@ -269,6 +344,8 @@ async function runCommunityRevenueSnapshotJob(jobId, payload) {
       censusDays: p?.censusDays ?? null,
       ppdUnitDays: p?.ppdByUnitDays ?? null,
       ppdCensus: p?.ppdByCensus ?? null,
+      occupancyByProductType: occupancyBreakdown?.byProductType ?? null,
+      occupancyByClassification: occupancyBreakdown?.byClassification ?? null,
     };
   });
 

@@ -254,7 +254,17 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
       // dashboard listings can link straight to the record.
       url: ticketUrl(t.id),
     };
-  });
+  })
+    // category_2_0 === "ALIS Internal" (Sep 2026, confirmed live — 11
+    // portal-wide, e.g. "ALIS - ALIS Internal - AM Departmental Tea Party...")
+    // is internal team/process-tracking noise, not client support work —
+    // several are attached to real client companies, so left in they'd
+    // inflate that account's open/closed counts, the Ticket Activity
+    // heatmaps, and the Open Ticket Volume backlog chart on both
+    // dashboards. Filtered out here, at the one shared source both
+    // dashboards call, so every downstream count/bucket/chart is clean
+    // without needing a separate fix anywhere else.
+    .filter((t) => t.category !== 'ALIS Internal');
 
   const byCategory = {};
   for (const t of tickets) {
@@ -308,11 +318,22 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   // topThreeItems directly, since topThreeItems isn't filtered to isOpen.
   const isTopEnhancement = (t) => hasTag(t) || hasStage(t);
   const isLesserEnhancement = (t) => t.pipelineStageLabel === LONG_TERM_STATUS_LABEL && !isTopEnhancement(t);
-  const focusedOpenTickets = openTickets.filter((t) => FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel));
+  // Moved up from where this used to live (right above enhancementRequests
+  // below) so focusedOpenTickets can also use it — same category_2_0 ===
+  // 'Enhancement'-or-subject-match check, unchanged.
+  const isEnhancementRequest = (t) => t.category === 'Enhancement' || /enhancement/i.test(t.subject || '');
+  // Excludes enhancement requests (Sep 2026, Aaron: "Open Tickets" should
+  // capture Client Submitted + In Progress volume excluding enhancement
+  // requests, since those are already broken out in their own Enhancement
+  // Requests tile — a ticket categorized "Enhancement" that hasn't been
+  // staged into Top 3/Long-Term yet was previously counted in BOTH places).
+  // Falls into otherOpenTickets below instead of disappearing, same as
+  // every other non-focused open ticket.
+  const focusedOpenTickets = openTickets.filter((t) => FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel) && !isEnhancementRequest(t));
   const topEnhancementOpenTickets = openTickets.filter(isTopEnhancement);
   const lesserEnhancementOpenTickets = openTickets.filter(isLesserEnhancement);
   const otherOpenTickets = openTickets.filter((t) => (
-    !FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel) && !isTopEnhancement(t) && !isLesserEnhancement(t)
+    (!FOCUSED_OPEN_STATUS_LABELS.has(t.pipelineStageLabel) || isEnhancementRequest(t)) && !isTopEnhancement(t) && !isLesserEnhancement(t)
   ));
 
   // Broader "Enhancement Requests" bucket for the portfolio-wide Enhancement
@@ -323,7 +344,6 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   // the Top 3 tag/stage machinery above. A ticket can be a plain
   // Enhancement-categorized request without ever being ranked/staged Top 3,
   // and vice versa, so `isTopThree` is carried per-item rather than assumed.
-  const isEnhancementRequest = (t) => t.category === 'Enhancement' || /enhancement/i.test(t.subject || '');
   const enhancementRequests = openTickets
     .filter(isEnhancementRequest)
     .map((t) => ({ ...t, isTopThree: isTopEnhancement(t) }));
@@ -340,6 +360,32 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   // move, defeating the point of an ongoing indicator.
   const isAlisPayTicket = (t) => t.category === 'ALIS Pay';
   const alisPayTickets = openTickets.filter(isAlisPayTicket);
+
+  // Open "Escalation" tickets (Sep 2026, Aaron) — category_2_0's raw
+  // stored value "ALIS Bug" (see CATEGORY_2_0_LABELS above, which already
+  // maps it to the display label "ALIS Escalation"), confirmed live as a
+  // real, distinct, actively-used category (47 open portal-wide at time
+  // of writing). Not to be confused with serviceHealth's OTHER
+  // `escalationCount` field (accountHealth.js's mapLiveServiceHealth) —
+  // that one is a completely different, currently-unpopulated Jira-ESC
+  // concept from the aspirational bridge schema; this is real, live
+  // HubSpot category data.
+  const isEscalation = (t) => t.category === 'ALIS Escalation';
+  const escalationTickets = openTickets.filter(isEscalation);
+  // Closed escalations (Sep 2026, Aaron) — same category, but pulled from
+  // the full `tickets` population rather than openTickets, for the
+  // Escalation Tickets section's "Closed — Trailing 12 Months" heatmap
+  // (mirrors the Ticket Activity Opened/Closed heatmap pair on Account
+  // Health). All-time, like `closed` above — the heatmap itself only plots
+  // the trailing 12 months, so there's no need to pre-filter by date here.
+  const closedEscalationTickets = tickets.filter((t) => isEscalation(t) && !t.isOpen);
+  // Closed enhancement requests (Sep 2026, Aaron) — same category/subject
+  // rule as enhancementRequests above, but pulled from the full `tickets`
+  // population rather than openTickets, for EnhancementRequestsSection.jsx's
+  // new Opened vs. Closed trend chart (mirrors closedEscalationTickets).
+  const closedEnhancementRequests = tickets
+    .filter((t) => isEnhancementRequest(t) && !t.isOpen)
+    .map((t) => ({ ...t, isTopThree: isTopEnhancement(t) }));
 
   // Closed-this-calendar-year count, for the Cost to Serve by Tier chart
   // (Sep 2026, Aaron): that metric is meant to read as "current support
@@ -359,7 +405,10 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
     focusedOpenTickets,
     enhancementTickets: { top: topEnhancementOpenTickets, lesser: lesserEnhancementOpenTickets },
     enhancementRequests,
+    closedEnhancementRequests,
     alisPayTickets,
+    escalationTickets,
+    closedEscalationTickets,
     otherOpenTickets,
     byCategory,
     agingOpenTickets,
@@ -371,7 +420,7 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
 // HubSpot's standard CRM object type IDs — used to build direct record
 // links (https://app.hubspot.com/contacts/<portal>/record/<type>/<id>).
 // Same URL shape regardless of object type; only this ID changes.
-const HUBSPOT_OBJECT_TYPE = { ticket: '0-5', deal: '0-3', company: '0-2' };
+const HUBSPOT_OBJECT_TYPE = { ticket: '0-5', deal: '0-3', company: '0-2', contact: '0-1', task: '0-27' };
 
 function hubspotRecordUrl(objectType, id) {
   const portalId = process.env.HUBSPOT_PORTAL_ID;
@@ -417,6 +466,21 @@ const DEAL_PROPERTIES = [
   // but were not added by them personally"). Resolved to a name the same
   // way account_manager is, via getAccountManagerName.
   'hubspot_owner_id',
+  // Implementation/onboarding-project tracking (Sep 2026) — confirmed live
+  // against a real deal (Viva Senior Living at South Bend) that these are
+  // the exact fields behind the "Implementation" card HubSpot shows on a
+  // company record: `project_progress` is the 0-100 display value ("100%"
+  // on that card matched `project_progress: 100` exactly) — there's a
+  // SEPARATE `project_progress_percent` property too, but that one's a
+  // 0-1 fraction meant for other calculations, not display, so it's
+  // deliberately left out here. Only recently adopted (roughly mid-2025
+  // onward, per Aaron) — most historical deals carry null for all of
+  // these, which is expected, not a bug.
+  'project_status',
+  'project_health_rag',
+  'project_progress',
+  'project_owner',
+  'projected_golive_date',
 ];
 
 /** Deal IDs associated with a company, via the v4 associations API — same cursor pagination as getTicketIdsForCompany above, for the same reason. */
@@ -525,13 +589,30 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
       nextStep: p.hs_next_step || null,
       nextActivityDate: p.notes_next_activity_date || null,
       dealOwnerId: p.hubspot_owner_id || null,
+      // See DEAL_PROPERTIES' doc comment above — null on any deal that
+      // predates implementation tracking, or was never an onboarding/
+      // community-add deal to begin with.
+      projectStatus: p.project_status || null,
+      projectHealthRag: p.project_health_rag || null,
+      projectProgress: p.project_progress != null ? Number(p.project_progress) : null,
+      projectOwner: p.project_owner || null,
+      projectedGoLiveDate: p.projected_golive_date || null,
       url: hubspotRecordUrl('deal', d.id),
     };
   });
 
   const openDeals = deals.filter((d) => !d.isClosed);
   const closedDeals = deals.filter((d) => d.isClosed && d.closeDate && new Date(d.closeDate) >= ninetyDaysAgo);
-  const totalOpenValue = openDeals.reduce((sum, d) => sum + (d.amount || 0), 0);
+  // Sums arr_value, not the plain `amount` field (Aaron, Sep 2026: "Open
+  // Deals & Value" should read as ARR) — same fix already applied to
+  // arrAddedThisYearCents (accountHealth.js's mapLiveFinancialHealth):
+  // `amount` is a deal's raw contract-value field (one-time fee, partial
+  // add-on, anything), not an annualized figure, while `arr_value` is
+  // purpose-built for this ((AL/IL capacity × negotiated rate) × 12).
+  // Feeds every "Open Deal Value" display across the app (Account
+  // Health/Team AM stat tiles, PDF/Excel exports, QBR deck, qbrFlags.js) —
+  // one fix point, not a per-consumer patch.
+  const totalOpenValue = openDeals.reduce((sum, d) => sum + (d.arrValue || 0), 0);
 
   return {
     total: deals.length,
@@ -642,6 +723,7 @@ async function getOpenTasksForDeal(dealId) {
         status: t.properties.hs_task_status,
         dueDate: t.properties.hs_timestamp || null,
         isOverdue: t.properties.hs_task_is_overdue === 'true',
+        url: hubspotRecordUrl('task', t.id),
       }));
   } catch (err) {
     console.error(`[hubspotTickets] Failed to fetch tasks for deal ${dealId} — showing no tasks for it:`, err.message);

@@ -54,9 +54,15 @@ export const WELLNESS_ROWS = [
 
   { category: 'Compliance', label: 'Regulatory, ALIS, licensing, or survey-readiness concern', key: 'complianceReadiness', source: 'manual' },
   { category: 'Compliance', label: 'Reportable incident / required notification pending', key: 'reportableIncident', source: 'manual' },
+
+  { category: 'Predictive Risk Indicators', label: 'Residents with declining activity engagement (early risk flag)', key: 'activityPatternRisk', source: 'rows', hasResidentDrawer: true, note: "Inferred from a drop in Activities-category care logging vs. each resident's own recent baseline — a prompt for a wellness check, not a diagnosis. Residents without enough logging history aren't counted either way. Needs several weeks of history to build a baseline after this feature is first enabled." },
 ];
 
-const NOT_TRACKED = '— not tracked in ALIS';
+// Neutral framing (Sep 2026, Aaron: "'not tracked in ALIS' feels like a
+// shortcoming of ALIS, I just want to emphasize that there is no data") —
+// this scorecard is still in development, so a blank row just means that
+// signal hasn't been built/populated yet, not that ALIS itself is lacking.
+const NOT_TRACKED = '— No data available';
 
 /**
  * Resolves one row's display values for a given scope (the snapshot's

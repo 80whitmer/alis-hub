@@ -77,17 +77,35 @@ async function hubspotRequest(method, path, body, attempt = 1) {
   return res;
 }
 
-// client_tier ("Client Tier" — Account Management Tier based on ARR) and
+// client_teir_2_0 ("Client Tier (New)" in HubSpot's UI — yes, "teir" is a
+// typo baked into the internal property name) is the current Account
+// Management Tier field. An earlier pass (Sep 2026) preferred the older
+// client_tier property instead, on the theory that client_teir_2_0
+// defaulted to "4" on unmanaged/prospect companies — but confirmed live
+// (Sep 2026, against Jasmine Estates Holdings and Bethesda Senior Living,
+// both real managed accounts with an account_manager set) that client_tier
+// is the one going stale: blank on accounts where client_teir_2_0 holds
+// the real, current tier. resolveTier() below prefers client_teir_2_0 and
+// only falls back to the older client_tier for any account that somehow
+// has the old field set but not the new one.
 // notes_last_updated ("Last Activity Date" — last note/call/meeting/task
 // logged for the company, covering both an ALIS-initiated reach-out and a
 // client email/call logged back) added Sep 2026 for the Tier + Last
-// Activity columns/charts on both dashboards. Confirmed live: client_tier
-// correlates with actually-managed accounts (populated alongside
-// account_manager, values 1-4), unlike the newer client_teir_2_0 field,
-// which is populated on many unmanaged/prospect companies with no
-// account_manager set and defaults to "4" — client_tier is the one that
-// reflects real AM tiering.
-const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'notes_last_updated'];
+// Activity columns/charts on both dashboards.
+// company_total_capacity ("Total Beds on ALIS") is a real, always-populated-
+// when-known HubSpot property — unlike this portal's census-shaped
+// properties (total_census/census/il_current_census/...), which are all
+// "at signing" deal-time snapshots, not live occupancy (confirmed live via
+// HubSpot's own property search, Sep 2026). Free to pull here: same bulk
+// company-properties fetch, no extra API calls, no ALIS involved at all.
+const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'client_teir_2_0', 'notes_last_updated', 'company_total_capacity'];
+
+function resolveTier(properties) {
+  const newTier = properties.client_teir_2_0;
+  if (newTier != null && newTier !== '') return Number(newTier);
+  const oldTier = properties.client_tier;
+  return oldTier != null && oldTier !== '' ? Number(oldTier) : null;
+}
 
 /** Splits `arr` into chunks of at most `size` items — HubSpot's search endpoint's IN-filter is fine with 109 values in one call today, but this keeps a much bigger future portfolio from silently exceeding it. */
 function chunk(arr, size) {
@@ -101,6 +119,91 @@ function chunk(arr, size) {
 // (trailing space and all, exactly as stored) — the stage an individual
 // community moves to once it stops using ALIS.
 const CANCELED_LIFECYCLE_STAGE = '50833003';
+
+// The rest of this portal's lifecyclestage options (confirmed live, Sep
+// 2026, via GET /crm/v3/properties/companies/lifecyclestage) — needed
+// because "Home Office" (hs_num_child_companies > 0) is a company-
+// hierarchy shape, not a lifecycle stage: a Home Office record can still
+// sit at Lead, Canceled, or any other non-client stage. Aaron's own
+// portfolio audit (Sep 2026) found 36 of 130 "my accounts" Home Offices
+// weren't actually active Client - Home Office records — 27 Leads, 3
+// Canceled (the Home Office's OWN stage, not a child's — see
+// filterHomeOfficesWithActiveCommunity's separate child-stage check
+// below, which this doesn't replace), 2 sitting at Client - Community
+// instead, and 4 with no stage set at all — quietly padding both
+// dashboards' account counts and dragging down portfolio ARR/health
+// averages with $0-ARR noise.
+const LEAD_LIFECYCLE_STAGE = 'lead';
+const CLIENT_HOME_OFFICE_LIFECYCLE_STAGE = '61439006';
+const CLIENT_COMMUNITY_LIFECYCLE_STAGE = '57820710';
+
+/**
+ * Human label for a company's lifecycleFlag (see getLifecycleDataQualityFlag
+ * below) — shared so both dashboards render the exact same wording rather
+ * than each inventing their own.
+ */
+const LIFECYCLE_FLAG_LABELS = {
+  lead: 'Lead (not yet a client)',
+  canceled: 'Canceled',
+  client_community: 'Client - Community (not Home Office)',
+  no_stage: 'No lifecycle stage set',
+  other_stage: 'Unexpected lifecycle stage',
+};
+
+/**
+ * Flags a Home Office whose OWN lifecyclestage isn't "Client - Home
+ * Office" — the data-quality gap Aaron asked to clean up (Sep 2026): "I
+ * don't want anything too stringent that we are potentially [block]
+ * companies that should be flowing through... we'd still want some
+ * visibility of these marginal accounts." So this deliberately never
+ * removes anything from the pull — callers use the returned flag to keep
+ * a flagged account fully visible in its accounts table while excluding
+ * it from portfolio-wide rollup sums (ARR, avg health score, ticket
+ * totals) that a stray Lead or Canceled record would otherwise skew.
+ * Returns `null` for the expected value (Client - Home Office) — "no
+ * flag" — so callers can test truthiness directly.
+ */
+function getLifecycleDataQualityFlag(lifecycleStage) {
+  if (!lifecycleStage) return 'no_stage';
+  if (lifecycleStage === CLIENT_HOME_OFFICE_LIFECYCLE_STAGE) return null;
+  if (lifecycleStage === CANCELED_LIFECYCLE_STAGE) return 'canceled';
+  if (lifecycleStage === LEAD_LIFECYCLE_STAGE) return 'lead';
+  if (lifecycleStage === CLIENT_COMMUNITY_LIFECYCLE_STAGE) return 'client_community';
+  return 'other_stage';
+}
+
+/**
+ * True when a Lead or Canceled Home Office should be dropped from the
+ * tracked accounts list entirely, rather than merely flagged-and-summed-
+ * out — Aaron's rule (Sep 2026): "we ONLY want Home Office's coming
+ * through of active companies... but as a rule we really don't want
+ * accounts that are still leads or have been cancelled included... unless
+ * they have an aging balance, then they can remain... because they still
+ * have an active balance (they owe us money)." So the one thing that
+ * keeps a Lead/Canceled record tracked is real money still outstanding —
+ * checked directly against the CACHED aging balance (aging_total_cents on
+ * the snapshot row), not re-derived here, since aging only ever arrives
+ * via the separate weekly PDF import, on its own schedule from the
+ * HubSpot refresh that determines lifecycle stage.
+ *
+ * Deliberately narrower than getLifecycleDataQualityFlag's full set:
+ * Client - Community and no-lifecycle-stage-set are a HubSpot
+ * miscategorization, not a "this was never/no-longer a real relationship"
+ * signal the way Lead/Canceled are — Aaron didn't ask for those to be
+ * dropped, so they stay flagged-but-visible (and excluded from rollup
+ * sums) regardless of balance.
+ *
+ * IMPORTANT for callers: this must only ever filter what an already-
+ * cached HubSpot pull RETURNS to a dashboard, never what the pull ITSELF
+ * fetches/prunes from HubSpot — a Lead/Canceled Home Office dropped from
+ * the underlying company_hosts/snapshot table would silently stop being
+ * able to match a *future* aging-report row against it, permanently
+ * losing the one signal that could ever bring it back.
+ */
+function shouldDropLifecycleFlaggedAccount(lifecycleFlag, agingTotalCents) {
+  if (lifecycleFlag !== 'lead' && lifecycleFlag !== 'canceled') return false;
+  return !(agingTotalCents > 0);
+}
 
 // Owner ID essentially never changes for a running process — cached in
 // memory (not the DB) rather than re-resolved on every refresh.
@@ -221,7 +324,7 @@ async function getOwnedCompanies(ownerId) {
       // deal line items, which would need a far heavier historical pull
       // across the whole portfolio for the same number.
       arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
-      tier: c.properties.client_tier != null && c.properties.client_tier !== '' ? Number(c.properties.client_tier) : null,
+      tier: resolveTier(c.properties),
       lastActivityDate: c.properties.notes_last_updated || null,
     })));
     after = body.paging?.next?.after;
@@ -376,8 +479,10 @@ async function getAllHomeOfficeCompanies() {
       lifecycleStage: c.properties.lifecyclestage || null,
       createdAt: c.properties.createdate || null,
       arrCents: c.properties.arr != null ? Math.round(Number(c.properties.arr) * 100) : null,
-      tier: c.properties.client_tier != null && c.properties.client_tier !== '' ? Number(c.properties.client_tier) : null,
+      tier: resolveTier(c.properties),
       lastActivityDate: c.properties.notes_last_updated || null,
+      hubspotCapacity: c.properties.company_total_capacity != null && c.properties.company_total_capacity !== ''
+        ? Number(c.properties.company_total_capacity) : null,
     })));
     after = body.paging?.next?.after;
   } while (after);
@@ -385,4 +490,7 @@ async function getAllHomeOfficeCompanies() {
   return filterHomeOfficesWithActiveCommunity(companies);
 }
 
-module.exports = { getOwnerId, getOwnedCompanies, getAllHomeOfficeCompanies, getAccountManagerName };
+module.exports = {
+  getOwnerId, getOwnedCompanies, getAllHomeOfficeCompanies, getAccountManagerName,
+  getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS, shouldDropLifecycleFlaggedAccount,
+};

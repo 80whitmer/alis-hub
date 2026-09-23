@@ -1,7 +1,7 @@
 const {
   getCommunities, getIncidents, getEvaluations, getLeaves, getStaff, getResidents,
   getOrderAdministration, getStaffComplianceDetails, getObservations, getIncidentFormData, getIncidentsV2,
-  getOccupancy, getHistoricalMoveInMoveOuts,
+  getOccupancy, getHistoricalMoveInMoveOuts, getRecordedCare,
 } = require('../services/alisApiClient');
 const {
   normalizeFallsThisWeek, normalizeElopementThisWeek, normalizeBehavioralThisWeek,
@@ -11,15 +11,41 @@ const {
   normalizeMedicationExceptions, normalizeStaffTrainingGaps, normalizeCarePointsAverage,
   scopeIncidentsThisWeek, formDataIndicatesHospitalTransfer, normalizeFallsWithHospitalTransfer,
   normalizeSentinelIncidentsThisWeek, normalizeOccupancySnapshot, normalizeResidentAge,
+  computeActivityPatternRisk,
   withTrend, withCarePointsTrend,
 } = require('../services/wellnessNormalizer');
 const { shouldTrackSentinelIncidents } = require('../services/companyFeatures');
+const { computeCommunityHealthScore, computeRollup } = require('../services/wellnessHealthScoring');
 const { normalizeStaffActivity, diffMetric, estimateResidentDays, normalizeUpcomingBirthdays, addDays } = require('../services/kpiNormalizer');
 const { getLatestBenchmarks } = require('../services/alis500Benchmarks');
-const { setJobStatus, setItemStatus, syncJobItems, addWellnessSnapshot, getPriorWellnessSnapshot } = require('../db/database');
+const {
+  setJobStatus, setItemStatus, syncJobItems, addWellnessSnapshot, getPriorWellnessSnapshot,
+  replaceResidentActivityWeekly, getResidentActivityHistory, getJob,
+} = require('../db/database');
 const { broadcast } = require('../api/broadcaster');
 
 const asArray = (v) => (Array.isArray(v) ? v : v?.items || []);
+
+/**
+ * True once someone has cancelled this job out from under it (POST /api/jobs/:id/cancel
+ * — see database.js's cancelJob) — that call only ever flips the DB row's
+ * status to 'failed', it doesn't touch this function's own execution, so
+ * without this check a cancelled job just kept running in the background
+ * regardless (confirmed live, Sep 2026: a stuck per-community pull ran for
+ * 1.5+ hours with Cancel Job clicked and no effect). Safe to key off
+ * `status === 'failed'` specifically: this function is the only thing that
+ * ever sets that status for its own job, and always at a `return` point —
+ * so seeing 'failed' while still mid-loop can only mean an external
+ * cancelJob() call, never this same run's own error path. Checked between
+ * iterations, not mid-call — an already-in-flight ALIS pull still runs to
+ * its own hard deadline (see alisApiClient.js's REQUEST_TIMEOUT_MS) rather
+ * than being forcibly aborted, so cancellation takes effect within one
+ * community's worth of time, not instantly, but that's now bounded to
+ * well under two minutes instead of unbounded.
+ */
+function isCancelled(jobId) {
+  return getJob(jobId)?.status === 'failed';
+}
 
 /** Splits the (possibly comma-separated) companyHost field into a clean list of subdomains — same convention as kpiExport.js's parseHosts. */
 function parseHosts(companyHost) {
@@ -163,7 +189,21 @@ async function runWellnessScorecardJob(jobId, payload) {
   const EXCLUDED_STATUSES = ['canceled', 'cancelled', 'suspended'];
   let communities = payload.communities;
   if (communities && communities.length > 0) {
+    // Manually-typed communities don't carry `region` (the form only asks
+    // for name + ID) — same join-by-communityId backfill kpiExport.js does,
+    // so this job's region rollup (see wellnessHealthScoring.js) works
+    // regardless of which path a job took to get its community list.
     communities = communities.map((c) => ({ ...c, host: c.host || hosts[0] }));
+    const regionByHostAndCommunity = new Map();
+    for (const host of new Set(communities.map((c) => c.host))) {
+      try {
+        const all = await getCommunities(host);
+        for (const c of all) regionByHostAndCommunity.set(`${host}::${c.communityId}`, c.region || null);
+      } catch (err) {
+        console.error(`[wellness-scorecard:${jobId}] Failed to look up regions for host "${host}" (manually-specified communities will show no region):`, err);
+      }
+    }
+    communities = communities.map((c) => ({ ...c, region: regionByHostAndCommunity.get(`${c.host}::${c.communityId}`) ?? null }));
   } else {
     emit('progress', { message: `No communities specified — pulling the full community list for ${hosts.length > 1 ? `${hosts.length} hosts (${hosts.join(', ')})` : `host "${hosts[0]}"`}…` });
     communities = [];
@@ -174,7 +214,7 @@ async function runWellnessScorecardJob(jobId, payload) {
         const resolved = all
           .filter((c) => !(c.communityName || '').toLowerCase().includes('training'))
           .filter((c) => !EXCLUDED_STATUSES.includes((c.status || '').toLowerCase()))
-          .map((c) => ({ name: c.communityName, communityId: c.communityId, host }));
+          .map((c) => ({ name: c.communityName, communityId: c.communityId, host, region: c.region || null }));
         communities.push(...resolved);
         emit('progress', { message: `Auto-resolved ${resolved.length} of ${all.length} communities from host "${host}" (excluded Training and canceled/suspended communities).` });
       } catch (err) {
@@ -233,6 +273,10 @@ async function runWellnessScorecardJob(jobId, payload) {
   const pulled = { incidents: [], evaluations: [], leaves: [], staff: [], residents: [], staffComplianceDetails: [], observations: [], moveInMoveOuts: [] };
   const endpointErrors = [];
   for (const host of hosts) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     const settled = await Promise.allSettled(ACCOUNT_WIDE_ENDPOINTS.map((e) => e.fn(host)));
     settled.forEach((result, i) => {
       const { key } = ACCOUNT_WIDE_ENDPOINTS[i];
@@ -289,6 +333,13 @@ async function runWellnessScorecardJob(jobId, payload) {
   // job failure. ────────────────────────────────────────────────────────
   const orderAdministration = [];
   const staffNameByIncidentId = {};
+  // Activities-category recordedCare rows for this week only, per community
+  // — feeds the "activity-pattern risk" row below. A 7-day window per
+  // community is well within recordedCare's per-call cost (no month
+  // chunking needed, unlike the 90-day pulls in usageAudit.js that hit real
+  // volume limits) since this job already pulls a 7-day window for
+  // orderAdministration/incidentsV2 above.
+  const recordedCareActivityRows = [];
   // hqOccupancies only takes a whole-month `monthAndYear` and returns one
   // row per resident per calendar day across that month (confirmed live) —
   // pulling just weekEnding's month and filtering to that single date below
@@ -296,15 +347,20 @@ async function runWellnessScorecardJob(jobId, payload) {
   const occupancyMonthAndYear = `${weekEnding.slice(0, 7)}-01`;
   const occupancyRows = [];
   for (const community of communities) {
+    if (isCancelled(jobId)) {
+      emit('job_error', { error: 'Job was cancelled.' });
+      return;
+    }
     const { name, communityId, host } = community;
     const itemName = multiHost ? `${name} [${host}]` : name;
     setItemStatus(jobId, itemName, 'running');
     emit('item_start', { name: itemName });
 
-    const [orderResult, incidentsV2Result, occupancyResult] = await Promise.allSettled([
+    const [orderResult, incidentsV2Result, occupancyResult, recordedCareResult] = await Promise.allSettled([
       getOrderAdministration(host, { communityId, startDate: weekStart, endDate: weekEnding }),
       getIncidentsV2(host, { communityId, startDate: weekStart, endDate: weekEnding }),
       getOccupancy(host, { communityId, monthAndYear: occupancyMonthAndYear }),
+      getRecordedCare(host, { communityId, careStartDate: weekStart, careEndDate: weekEnding }),
     ]);
 
     let failed = false;
@@ -334,6 +390,17 @@ async function runWellnessScorecardJob(jobId, payload) {
       // whole job the way orderAdministration does.
       console.error(`[wellness-scorecard:${jobId}] "occupancy" pull failed for "${itemName}":`, occupancyResult.reason);
     }
+    if (recordedCareResult.status === 'fulfilled') {
+      for (const r of asArray(recordedCareResult.value)) {
+        if (r.careItemCategory === 'Activities') recordedCareActivityRows.push({ ...r, communityId });
+      }
+    } else {
+      // Same "best-effort, not a job failure" treatment as incidentsV2 —
+      // a missing week for this community just leaves a gap in that
+      // resident's rolling history, handled the same way as any other week
+      // with no data (see computeActivityPatternRisk's history gate).
+      console.error(`[wellness-scorecard:${jobId}] "recordedCare" (activity-pattern risk) pull failed for "${itemName}":`, recordedCareResult.reason);
+    }
 
     if (failed) {
       setItemStatus(jobId, itemName, 'failed', 'One or more per-community pulls failed for this community — see server logs.');
@@ -342,6 +409,15 @@ async function runWellnessScorecardJob(jobId, payload) {
       setItemStatus(jobId, itemName, 'success');
       emit('item_done', { name: itemName });
     }
+  }
+
+  // A cancel that lands mid-loop is caught between iterations above, but
+  // this function would otherwise carry on computing rows and writing a
+  // snapshot as if it had finished normally — overwriting cancelJob()'s
+  // own 'failed' status with 'done' at the very end. Bail out here too.
+  if (isCancelled(jobId)) {
+    emit('job_error', { error: 'Job was cancelled.' });
+    return;
   }
 
   const data = { incidents, evaluations, leaves, staff, residents, staffComplianceDetails, orderAdministration, observations, staffNameByIncidentId, moveInsById };
@@ -387,6 +463,42 @@ async function runWellnessScorecardJob(jobId, payload) {
     dataWarnings.push(`Falls with injury/hospital-transfer: ${formDataEmptyCount} of ${fallsWithForms.length} completed-form fall incident(s) returned no formData.`);
   }
   rows.fallsWithInjury = normalizeFallsWithHospitalTransfer(fallsThisWeek, hospitalTransferByIncidentId, communities.map((c) => c.communityId));
+
+  // ── Activity-pattern risk ────────────────────────────────────────────────
+  // Persist this week's per-resident Activities aggregate first (so the
+  // rolling history a re-run of THIS week reads back is this run's own
+  // numbers, not stale ones), then pull each seen resident's history back
+  // out to decide who's flagged. See computeActivityPatternRisk's doc
+  // comment and the project-wellness-scorecard memory for the investigation
+  // behind the thresholds.
+  emit('progress', { message: 'Checking resident activity-engagement trends…' });
+  const activityByResident = {};
+  for (const r of recordedCareActivityRows) {
+    if (r.residentId == null) continue;
+    const entry = activityByResident[r.residentId] || { communityId: r.communityId, activityCount: 0, activitySkippedCount: 0 };
+    entry.activityCount += 1;
+    if (r.isCareNotRecorded) entry.activitySkippedCount += 1;
+    activityByResident[r.residentId] = entry;
+  }
+  const residentMetaById = {};
+  for (const r of residents) {
+    residentMetaById[r.residentId] = { residentName: r.residentName, communityId: r.communityId, communityName: r.communityName, residentProductType: r.residentProductType };
+  }
+  replaceResidentActivityWeekly(
+    hosts[0],
+    weekEnding,
+    Object.entries(activityByResident).map(([residentId, a]) => ({
+      jobId, residentId, communityId: a.communityId,
+      residentName: residentMetaById[residentId]?.residentName,
+      residentProductType: residentMetaById[residentId]?.residentProductType,
+      activityCount: a.activityCount, activitySkippedCount: a.activitySkippedCount,
+    }))
+  );
+  const activityHistoryByResidentId = {};
+  for (const residentId of Object.keys(activityByResident)) {
+    activityHistoryByResidentId[residentId] = getResidentActivityHistory(hosts[0], residentId, weekEnding, 8);
+  }
+  rows.activityPatternRisk = computeActivityPatternRisk(activityHistoryByResidentId, residentMetaById, communities.map((c) => c.communityId));
 
   // Sentinel incidents — Leisure Care by name, OR any account whose own
   // incident-type config already tags "(Sentinel)" types (see
@@ -434,8 +546,13 @@ async function runWellnessScorecardJob(jobId, payload) {
   const isMedicationSecurityRole = (r) => (r.securityRoles || []).some((sr) => /medication|pharmac/i.test(sr) || isNurseOrHwdRole(sr));
   // "Caregiver inclusive" matches any role whose name contains
   // "Caregiver" (currently "Caregiver" and "Caregiver - plus eval"), plus
-  // Nurse/HWD per the same reasoning as the medication cut above.
-  const isCaregiverSecurityRole = (r) => (r.securityRoles || []).some((sr) => /caregiver/i.test(sr) || isNurseOrHwdRole(sr));
+  // Nurse/HWD per the same reasoning as the medication cut above, plus
+  // Medication Tech specifically (Diane Umayam/Leisure Care, Sep 2026 —
+  // med techs are floor caregiving staff and should count toward
+  // caregiver coverage). Matched narrowly on "medication tech" so it
+  // doesn't pull in Pharmacy Administrator/Pharmacy Tech, which are back-
+  // office roles, not caregiving staff.
+  const isCaregiverSecurityRole = (r) => (r.securityRoles || []).some((sr) => /caregiver/i.test(sr) || /medication\s*tech/i.test(sr) || isNurseOrHwdRole(sr));
 
   function staffActivityByRole(matchesRole) {
     const byCommunity = {};
@@ -465,6 +582,7 @@ async function runWellnessScorecardJob(jobId, payload) {
     rowsWithTrend[key] = withTrend(rows[key], prior?.summary?.rows?.[key]);
   }
   rowsWithTrend.fallsWithInjury = withTrend(rows.fallsWithInjury, prior?.summary?.rows?.fallsWithInjury);
+  rowsWithTrend.activityPatternRisk = withTrend(rows.activityPatternRisk, prior?.summary?.rows?.activityPatternRisk);
   if (sentinelIncidentTrackingEnabled) {
     rowsWithTrend.sentinelIncidents = withTrend(rows.sentinelIncidents, prior?.summary?.rows?.sentinelIncidents);
   }
@@ -502,6 +620,56 @@ async function runWellnessScorecardJob(jobId, payload) {
     ),
   };
 
+  // ── Community Health Score + region rollup (Sep 2026, Aaron) ────────────
+  // See wellnessHealthScoring.js for the scoring rationale. Built from `rows`
+  // (pre-trend — already carries each row's own `.openDocs` from its
+  // calculator, e.g. normalizeFallsThisWeek) rather than rowsWithTrend,
+  // since nothing here needs the trend wrapper. DOC_COMPLETION_ROW_KEYS
+  // mirrors wellnessRowDefinitions.js's `hasDocCompletion` rows exactly —
+  // update both if that list ever changes.
+  const DOC_COMPLETION_ROW_KEYS = ['falls', 'otherIncidents', 'behavioral', 'elopement'];
+  const communityHealth = communities.map((c) => {
+    const cid = String(c.communityId);
+    const census = censusByCommunity[cid] || 0;
+    const residentDays = estimateResidentDays({ avgCensus: census, periodStart: weekStart, periodEnd: weekEnding });
+
+    let incidentTotal = 0;
+    let openDocsTotal = 0;
+    for (const key of DOC_COMPLETION_ROW_KEYS) {
+      incidentTotal += rows[key]?.byCommunity?.[cid]?.total ?? 0;
+      openDocsTotal += rows[key]?.openDocs?.byCommunity?.[cid]?.total ?? 0;
+    }
+
+    const occByCommunity = occupancy.byCommunity?.[cid];
+    const occupancyPct = occByCommunity && occByCommunity.total ? occByCommunity.occupied / occByCommunity.total : null;
+
+    const { score, band, subScores } = computeCommunityHealthScore({
+      fallsTotal: rows.falls?.byCommunity?.[cid]?.total ?? 0,
+      hospitalTotal: rows.hospitalCurrent?.byCommunity?.[cid]?.total ?? 0,
+      residentDays,
+      fallsBenchmarkPer1000: benchmark.clinical.falls.per1000ResidentDays,
+      hospitalBenchmarkPer1000: benchmark.clinical.hospitalVisits.per1000ResidentDays,
+      openDocsTotal,
+      incidentTotal,
+      medExceptionsTotal: rows.medicationExceptions?.byCommunity?.[cid]?.total ?? 0,
+      evaluationsOverdueTotal: rows.evaluationsOverdue?.byCommunity?.[cid]?.total ?? 0,
+      census,
+      occupancyPct,
+      portfolioAvgOccupancyPct: occupancy.pct,
+    });
+
+    return {
+      communityId: c.communityId, name: c.name, host: c.host, region: c.region || null, census, occupancyPct, score, band, subScores,
+      // Raw counts alongside the score, purely for the rollup table display
+      // — so it doesn't need to re-derive them from `rows` client-side.
+      fallsTotal: rows.falls?.byCommunity?.[cid]?.total ?? 0,
+      hospitalTotal: rows.hospitalCurrent?.byCommunity?.[cid]?.total ?? 0,
+      medExceptionsTotal: rows.medicationExceptions?.byCommunity?.[cid]?.total ?? 0,
+      evaluationsOverdueTotal: rows.evaluationsOverdue?.byCommunity?.[cid]?.total ?? 0,
+    };
+  });
+  const communityHealthRollup = computeRollup(communityHealth);
+
   const manualRows = Object.fromEntries(MANUAL_ROW_KEYS.map((key) => [key, null]));
 
   // Forward-looking (next 14 days from weekEnding), not point-in-time like
@@ -523,11 +691,13 @@ async function runWellnessScorecardJob(jobId, payload) {
     companyName,
     companyHost: payload.companyHost,
     weekEnding,
-    communities: communities.map((c) => ({ name: c.name, communityId: c.communityId, host: c.host })),
+    communities: communities.map((c) => ({ name: c.name, communityId: c.communityId, host: c.host, region: c.region || null })),
     rows: rowsWithTrend,
     manualRows,
     upcomingBirthdays,
     residentAge,
+    communityHealth,
+    communityHealthRollup,
     benchmarkDiffs,
     benchmarkQuarter: benchmark.quarter,
     dataWarnings,

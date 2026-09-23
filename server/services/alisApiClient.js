@@ -38,6 +38,18 @@ function buildQuery(params = {}) {
 
 const REQUEST_TIMEOUT_MS = 90000;
 
+/**
+ * Hard wall-clock deadline, not Node's `timeout` request option — confirmed
+ * live (Sep 2026) that a stuck ALIS pull for one community ran well past
+ * 90s and eventually took the whole dev server down with it. `timeout` maps
+ * to a socket-IDLE timer (resets on every byte received), so a response
+ * that trickles data back slowly enough — even a handful of bytes every
+ * few seconds — can survive that "timeout" indefinitely; it only fires on
+ * a connection that goes fully silent. This timer instead fires on elapsed
+ * wall-clock time regardless of socket activity, and forcibly destroys the
+ * request when it does, so no single call can ever exceed
+ * REQUEST_TIMEOUT_MS no matter how the response behaves.
+ */
 function alisApiGetOnce(companyHost, path, params) {
   const query = buildQuery(params);
 
@@ -50,26 +62,38 @@ function alisApiGetOnce(companyHost, path, params) {
         Authorization: authHeader(companyHost),
         Accept: 'application/json',
       },
-      timeout: REQUEST_TIMEOUT_MS,
     };
+
+    let settled = false;
+    function settle(fn, arg) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardDeadline);
+      fn(arg);
+    }
+
+    const hardDeadline = setTimeout(() => {
+      req.destroy();
+      settle(reject, new Error(`ALIS API ${path} exceeded hard deadline of ${REQUEST_TIMEOUT_MS / 1000}s`));
+    }, REQUEST_TIMEOUT_MS);
 
     const req = https.request(options, (res) => {
       let raw = '';
       res.on('data', (chunk) => { raw += chunk; });
       res.on('end', () => {
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          return reject(new Error(`ALIS API ${path} returned ${res.statusCode}: ${raw.slice(0, 500)}`));
+          return settle(reject, new Error(`ALIS API ${path} returned ${res.statusCode}: ${raw.slice(0, 500)}`));
         }
         try {
-          resolve(raw ? JSON.parse(raw) : null);
+          settle(resolve, raw ? JSON.parse(raw) : null);
         } catch {
-          reject(new Error(`Non-JSON response from ALIS API ${path}`));
+          settle(reject, new Error(`Non-JSON response from ALIS API ${path}`));
         }
       });
+      res.on('error', (err) => settle(reject, err));
     });
 
-    req.on('timeout', () => req.destroy(new Error(`ALIS API ${path} timed out after ${REQUEST_TIMEOUT_MS / 1000}s`)));
-    req.on('error', reject);
+    req.on('error', (err) => settle(reject, err));
     req.end();
   });
 }
@@ -84,6 +108,16 @@ const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Raw socket-level failures, not HTTP responses — Node sets `err.code` for
+// these (no status line ever came back, so the `returned NNN` status check
+// below can't see them). Confirmed live (Sep 2026): a wellness-scorecard job
+// firing all 8 account-wide endpoints at once for one host got ECONNRESET on
+// 7 of 8, one host apparently not tolerating that much concurrency well —
+// the same class of "transient server hiccup" the 5xx retry was already
+// meant to cover, just surfacing as a connection reset instead of a status
+// code. ETIMEDOUT/ECONNREFUSED/EPIPE/socket hang up are the same story.
+const RETRYABLE_NETWORK_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN']);
+
 async function alisApiGet(companyHost, path, params) {
   let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -92,7 +126,8 @@ async function alisApiGet(companyHost, path, params) {
     } catch (err) {
       lastErr = err;
       const status = Number(err.message.match(/returned (\d+)/)?.[1]);
-      if (!(status >= 500) || attempt === MAX_RETRIES) throw err;
+      const retryable = status >= 500 || RETRYABLE_NETWORK_CODES.has(err.code);
+      if (!retryable || attempt === MAX_RETRIES) throw err;
       await sleep(RETRY_DELAY_MS * (attempt + 1));
     }
   }
