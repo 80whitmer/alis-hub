@@ -65,7 +65,7 @@ function mapLiveServiceHealth(ticketSummary) {
     avgTicketAgeDays,
     agedTickets: openTickets
       .filter((t) => (t.daysOpen || 0) > 45)
-      .map((t) => ({ ticketId: t.id, subject: t.subject, ageDays: t.daysOpen, stage: t.pipelineStageLabel, url: t.url })),
+      .map((t) => ({ ticketId: t.id, subject: t.subject, ageDays: t.daysOpen, stage: t.pipelineStageLabel, url: t.url, pinnedNoteId: t.pinnedNoteId })),
     escalationCount: null,
     ticketCategoryMix: ticketSummary.byCategory,
     repeatIssues: null,
@@ -87,12 +87,12 @@ function mapLiveServiceHealth(ticketSummary) {
     // both this dashboard and the new Team AM Dashboard) — the raw
     // ticket already carries these fields, just wasn't forwarding them.
     enhancementTopItems: ticketSummary.enhancementTickets.top.map((t) => ({
-      ticketId: t.id, subject: t.subject, rank: t.topThreeRank, stage: t.pipelineStageLabel, url: t.url,
+      ticketId: t.id, subject: t.subject, rank: t.topThreeRank, stage: t.pipelineStageLabel, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt || null, closedAt: t.closedAt || null, isOpen: t.isOpen ?? null,
     })),
     enhancementLesserCount: ticketSummary.enhancementTickets.lesser.length,
     enhancementLesserItems: ticketSummary.enhancementTickets.lesser.map((t) => ({
-      ticketId: t.id, subject: t.subject, stage: t.pipelineStageLabel, url: t.url,
+      ticketId: t.id, subject: t.subject, stage: t.pipelineStageLabel, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt || null, closedAt: t.closedAt || null, isOpen: t.isOpen ?? null,
     })),
     otherOpenCount: ticketSummary.otherOpenTickets.length,
@@ -101,7 +101,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // broader than enhancementTopItems above (see hubspotTickets.js's
     // isEnhancementRequest), open tickets only.
     enhancementRequests: ticketSummary.enhancementRequests.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, daysOpen: t.daysOpen,
       nextStep: t.nextStep, isTopThree: t.isTopThree,
     })),
@@ -111,7 +111,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // rides along so the Top-3-only view can filter closed items the same
     // way it filters open ones.
     enhancementClosedItems: ticketSummary.closedEnhancementRequests.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, closedAt: t.closedAt, isTopThree: t.isTopThree,
     })),
     // For the Cost to Serve by Tier chart's "open + closed this calendar
@@ -124,7 +124,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // deduction.
     alisPayOpenCount: ticketSummary.alisPayTickets.length,
     alisPayOpenItems: ticketSummary.alisPayTickets.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, daysOpen: t.daysOpen, stage: t.pipelineStageLabel,
     })),
     // Open "Escalation" tickets (Sep 2026) — category_2_0 === "ALIS
@@ -136,7 +136,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // that name here would collide two different meanings under one key.
     alisEscalationOpenCount: ticketSummary.escalationTickets.length,
     alisEscalationOpenItems: ticketSummary.escalationTickets.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, daysOpen: t.daysOpen, nextStep: t.nextStep,
     })),
     // Closed escalations (Sep 2026) — feeds EscalationRequestsSection.jsx's
@@ -145,7 +145,7 @@ function mapLiveServiceHealth(ticketSummary) {
     // closed, not just this pull's open queue).
     alisEscalationClosedCount: ticketSummary.closedEscalationTickets.length,
     alisEscalationClosedItems: ticketSummary.closedEscalationTickets.map((t) => ({
-      ticketId: t.id, subject: t.subject, url: t.url,
+      ticketId: t.id, subject: t.subject, url: t.url, pinnedNoteId: t.pinnedNoteId,
       createdAt: t.createdAt, closedAt: t.closedAt,
     })),
     // Slim per-ticket date list (Sep 2026) for the Ticket Activity heatmap
@@ -226,7 +226,7 @@ async function mapLiveFinancialHealth(dealSummary) {
         arrValueCents: Math.round((d.arrValue || 0) * 100),
         expectedCloseDate: d.closeDate,
         isOpen: d.isOpen, nextStep: d.nextStep, nextActivityDate: d.nextActivityDate,
-        tasks: d.tasks, url: d.url,
+        tasks: d.tasks, url: d.url, pinnedNoteId: d.pinnedNoteId,
       })),
     },
     // Extras for the drill-down UI, outside the scored shape:
@@ -279,7 +279,7 @@ async function mapLiveFinancialHealth(dealSummary) {
     // Dashboard's computeDealMetricsByOwner already draws.
     arrAddedThisYearDeals: arrAddedThisYearDeals.map((d) => ({
       name: d.name, arrValueCents: d.arrValueCents, closeDate: d.closeDate,
-      pipeline: d.pipeline, stage: d.stage, url: d.url, dealOwnerName: d.dealOwnerName,
+      pipeline: d.pipeline, stage: d.stage, url: d.url, pinnedNoteId: d.pinnedNoteId, dealOwnerName: d.dealOwnerName,
     })),
     // Onboarding/implementation tracking (Sep 2026, Aaron: "as long as the
     // tool pulls in any implementations with a project status -- if no
@@ -297,7 +297,7 @@ async function mapLiveFinancialHealth(dealSummary) {
       .map((d) => ({
         dealId: d.id, name: d.name, projectStatus: d.projectStatus, projectHealthRag: d.projectHealthRag,
         projectProgress: d.projectProgress, projectOwner: d.projectOwner, projectedGoLiveDate: d.projectedGoLiveDate,
-        createdAt: d.createdAt, url: d.url,
+        createdAt: d.createdAt, url: d.url, pinnedNoteId: d.pinnedNoteId,
       })),
   };
 }
@@ -398,6 +398,7 @@ router.post('/refresh', async (req, res) => {
           healthBand: band?.label || null,
           tier: company.tier,
           lastActivityDate: company.lastActivityDate,
+          pinnedNoteId: company.pinnedNoteId,
         });
       } catch (err) {
         errors.push({ company: company.name, error: err.message });
@@ -883,7 +884,17 @@ router.post('/refresh-occupancy', (req, res) => {
 // isn't folded into the health score itself).
 router.get('/', (req, res) => {
   try {
-    res.json({ accounts: getEnrichedAccounts() });
+    // Client-side "personally closed" filtering (ArrPersonallyClosedSection)
+    // needs the exact same ownerName the /refresh handler used to compute
+    // arr_personally_closed_this_year_cents (dealOwnerName === ownerName) —
+    // recomputing it independently risks drifting from that number. Read
+    // directly off HUBSPOT_OWNER_ID rather than the async getOwnerId(),
+    // keeping this route's existing "instant cached read" behavior; null
+    // if that env var isn't set (getOwnerId's owners-API fallback path),
+    // which just hides the personally-closed section rather than blocking
+    // the whole page.
+    const ownerName = process.env.HUBSPOT_OWNER_ID ? getAccountManagerName(process.env.HUBSPOT_OWNER_ID) : null;
+    res.json({ accounts: getEnrichedAccounts(), ownerName });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

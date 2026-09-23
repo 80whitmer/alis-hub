@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
-  LineChart, Line,
+  LineChart, Line, ComposedChart,
 } from 'recharts';
 import Drawer from '../components/Drawer';
 import BackToTopButton from '../components/BackToTopButton';
@@ -13,6 +13,7 @@ import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import CommunityRevenueSection from '../components/CommunityRevenueSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import TierKpiSection, { TIER_KPI_TITLE } from '../components/TierKpiSection';
+import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -23,6 +24,7 @@ import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnassignedTierAccounts } from '../utils/unassignedTierExport';
 import { exportAllDeals } from '../utils/allDealsExport';
 import { exportArrAddedDeals } from '../utils/arrAddedDealsExport';
+import { exportArrPersonallyClosedDeals } from '../utils/arrPersonallyClosedExport';
 
 function pctStr(p) {
   return p != null ? `${(p * 100).toFixed(1)}%` : '—';
@@ -233,18 +235,22 @@ function StatGroup({ title, children, columns = 4 }) {
   );
 }
 
-function CompanyLink({ account, children, className = 'font-medium text-cool-glacier hover:underline' }) {
-  if (!account.hubspotUrl) return <span>{children}</span>;
+function CompanyLink({ account, children, className = 'font-medium text-cool-glacier hover:underline', withNote = true }) {
+  const note = withNote ? <PinnedNoteButton noteId={account.pinned_note_id} title={account.company_name} /> : null;
+  if (!account.hubspotUrl) return <span>{children}{note}</span>;
   return (
-    <a
-      href={account.hubspotUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      className={className}
-    >
-      {children}
-    </a>
+    <>
+      <a
+        href={account.hubspotUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className={className}
+      >
+        {children}
+      </a>
+      {note}
+    </>
   );
 }
 
@@ -275,7 +281,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // order.
 const OVERVIEW_SECTIONS = [
   { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Recurring Calls', 'Tier KPIs'].sort((a, b) => a.localeCompare(b)) },
-  { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'Community Revenue & Occupancy', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR Personally Closed', 'Community Revenue & Occupancy', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by Client Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
 
@@ -873,7 +879,7 @@ function heatLevel(count, max) {
  * `createdAt` + blue, since Ticket Activity needs two instances (opened
  * via createdAt, closed via closedAt) with visually distinct colors.
  */
-function CalendarHeatmap({ items, dateField, colorScale, emptyLabel }) {
+function CalendarHeatmap({ items, dateField, colorScale, emptyLabel, noun = 'ticket' }) {
   const { cells, monthLabels } = useMemo(() => {
     const countByDate = {};
     for (const item of items) {
@@ -938,7 +944,7 @@ function CalendarHeatmap({ items, dateField, colorScale, emptyLabel }) {
           {cells.map((c) => (
             <div
               key={c.iso}
-              title={c.count == null ? '' : `${c.iso}: ${c.count} ticket${c.count === 1 ? '' : 's'}`}
+              title={c.count == null ? '' : `${c.iso}: ${c.count} ${noun}${c.count === 1 ? '' : 's'}`}
               style={{
                 width: 11, height: 11, borderRadius: 2,
                 background: c.level == null ? 'transparent' : colorScale[c.level],
@@ -2903,6 +2909,8 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
         />
       </div>
 
+      <PinnedNoteInline noteId={account.pinned_note_id} heading="Home Office pinned note" />
+
       <div className="grid grid-cols-2 gap-3 mb-6">
         <StatCard
           label="Account Health Score"
@@ -2985,7 +2993,10 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
         <ul className="text-sm mb-6 space-y-1">
           {svc.agedTickets.map((t) => (
             <li key={t.ticketId} className="flex justify-between gap-2">
-              <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">{t.subject}</a>
+              <span className="flex items-center min-w-0">
+                <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">{t.subject}</a>
+                <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
+              </span>
               <span className="text-neutral-400 shrink-0">{t.ageDays}d · {t.stage}</span>
             </li>
           ))}
@@ -2999,9 +3010,12 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
             <ul className="space-y-1 mb-2">
               {svc.enhancementTopItems.map((t) => (
                 <li key={t.ticketId} className="flex justify-between gap-2">
-                  <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">
-                    {t.rank ? `#${t.rank} · ` : ''}{t.subject}
-                  </a>
+                  <span className="flex items-center min-w-0">
+                    <a href={t.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">
+                      {t.rank ? `#${t.rank} · ` : ''}{t.subject}
+                    </a>
+                    <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
+                  </span>
                   <span className="text-neutral-400 shrink-0">{t.stage}</span>
                 </li>
               ))}
@@ -3013,9 +3027,12 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
               <ul className="space-y-1">
                 {(svc.enhancementLesserItems || []).map((t) => (
                   <li key={t.ticketId} className="flex justify-between gap-2">
-                    <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-neutral-500 hover:underline truncate">
-                      {t.subject}
-                    </a>
+                    <span className="flex items-center min-w-0">
+                      <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-neutral-500 hover:underline truncate">
+                        {t.subject}
+                      </a>
+                      <PinnedNoteButton noteId={t.pinnedNoteId} title={t.subject} />
+                    </span>
                     <span className="text-neutral-400 shrink-0">{t.stage}</span>
                   </li>
                 ))}
@@ -3034,9 +3051,12 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
           {openDeals.map((d, i) => (
             <li key={i}>
               <div className="flex justify-between gap-2">
-                {d.url ? (
-                  <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">{d.name}</a>
-                ) : <span className="text-neutral-700 truncate">{d.name}</span>}
+                <span className="flex items-center min-w-0">
+                  {d.url ? (
+                    <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline truncate">{d.name}</a>
+                  ) : <span className="text-neutral-700 truncate">{d.name}</span>}
+                  <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
+                </span>
                 <span className={`shrink-0 ${isPastDue(d) ? 'text-error font-medium' : 'text-neutral-400'}`}>
                   {d.stage} · {currencyStr(d.valueCents)}{d.expectedCloseDate ? ` · due ${d.expectedCloseDate.slice(0, 10)}${isPastDue(d) ? ' (past due)' : ''}` : ''}
                 </span>
@@ -3122,6 +3142,29 @@ function flattenArrAddedDeals(accounts) {
   const rows = [];
   for (const a of accounts) {
     for (const d of a.financialHealth?.arrAddedThisYearDeals || []) {
+      rows.push({ ...d, companyName: a.company_name, hubspotCompanyId: a.hubspot_company_id, tier: a.tier });
+    }
+  }
+  return rows;
+}
+
+/**
+ * Same source list as flattenArrAddedDeals, filtered to deals YOU (the
+ * Account Health page's single owner) closed yourself — the identical
+ * `dealOwnerName === ownerName` rule accountHealth.js's /refresh handler
+ * already uses to sum arr_personally_closed_this_year_cents. `ownerName`
+ * comes from GET /api/account-health's own response (see accountHealth.js)
+ * rather than being re-derived here, so this list can't drift from that
+ * stat tile's number. Account Health has no per-account `account_manager_name`
+ * field (every account here is already scoped to the one owner — see
+ * getOwnedCompanies) — Team AM would need a per-account comparison instead.
+ */
+function flattenPersonallyClosedDeals(accounts, ownerName) {
+  if (!ownerName) return [];
+  const rows = [];
+  for (const a of accounts) {
+    for (const d of a.financialHealth?.arrAddedThisYearDeals || []) {
+      if (d.dealOwnerName !== ownerName) continue;
       rows.push({ ...d, companyName: a.company_name, hubspotCompanyId: a.hubspot_company_id, tier: a.tier });
     }
   }
@@ -3216,6 +3259,7 @@ function OpenDealsTable({ accounts }) {
                   <td className="py-2 pr-4 text-neutral-500">{tierStr(d.tier)}</td>
                   <td className="py-2 pr-4">
                     {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
+                    <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
                   </td>
                   <td className="py-2 pr-4 text-neutral-500">{d.stage || '—'}</td>
                   <td className="py-2 pr-4 text-neutral-500">{currencyStr(d.arrValueCents)}</td>
@@ -3715,6 +3759,191 @@ function RecurringCallsSection({ accounts, onSelect, onImported }) {
  * switched from summing `amount` to `arr_value`, since a portfolio-wide
  * sum with no way to see what's in it isn't trustworthy on its own.
  */
+/**
+ * Monthly ARR closed (bars, left axis) + cumulative ARR closed YTD (line,
+ * right axis) across the current calendar year — Aaron, Sep 2026: "a
+ * timeline graph showing the arr closes and month to month growth over the
+ * course of the year." One chart carries both: the bars show the month-by-
+ * month figure, the cumulative line makes the running growth trend visible
+ * without needing a separate %-change chart.
+ */
+function MonthlyArrClosedChart({ deals }) {
+  const year = new Date().getFullYear();
+  const monthly = Array.from({ length: 12 }, (_, i) => ({
+    month: new Date(Date.UTC(year, i, 1)).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }),
+    cents: 0,
+  }));
+  for (const d of deals) {
+    if (!d.closeDate) continue;
+    const date = new Date(d.closeDate);
+    if (date.getUTCFullYear() !== year) continue;
+    monthly[date.getUTCMonth()].cents += d.arrValueCents || 0;
+  }
+  let running = 0;
+  const rows = monthly.map((m) => {
+    running += m.cents;
+    return { ...m, cumulativeCents: running };
+  });
+
+  if (rows.every((r) => r.cents === 0)) {
+    return <p className="text-sm text-neutral-500 italic">No closed-won deals with an ARR value this year yet.</p>;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={280}>
+      <ComposedChart data={rows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+        <YAxis yAxisId="left" tick={{ fontSize: 12 }} tickFormatter={(v) => currencyStr(v)} width={80} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} tickFormatter={(v) => currencyStr(v)} width={80} />
+        <Tooltip formatter={(v, name) => [currencyStr(v), name]} />
+        <Legend />
+        <Bar yAxisId="left" dataKey="cents" name="ARR closed that month" fill="#2563eb" radius={[4, 4, 0, 0]} />
+        <Line yAxisId="right" type="monotone" dataKey="cumulativeCents" name="Cumulative ARR closed (YTD)" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * "ARR Personally Closed" — same table/filter/export treatment as
+ * ArrAddedDealsSection, plus the heatmap+trend combo other sections
+ * (Escalations/Enhancements) already have, adapted for deals: one
+ * close-date heatmap (deals don't have a separate open/closed date pair
+ * the way tickets do — closed-won is terminal) instead of two, and a
+ * monthly-ARR trend instead of a weekly open-count replay.
+ */
+function ArrPersonallyClosedSection({ accounts, ownerName }) {
+  const deals = useMemo(() => flattenPersonallyClosedDeals(accounts, ownerName), [accounts, ownerName]);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState({ column: 'closeDate', direction: 'desc' });
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError('');
+    try {
+      await exportArrPersonallyClosedDeals(sorted);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function toggleSort(column) {
+    setSort((prev) => (prev.column === column
+      ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      : { column, direction: 'asc' }));
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? deals.filter((d) => d.companyName?.toLowerCase().includes(q)) : deals;
+  }, [deals, search]);
+
+  const sorted = useMemo(() => {
+    const { column, direction } = sort;
+    const dir = direction === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const av = a[column];
+      const bv = b[column];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return (av - bv) * dir;
+    });
+  }, [filtered, sort]);
+
+  const totalCents = deals.reduce((s, d) => s + d.arrValueCents, 0);
+  const filteredTotalCents = filtered.reduce((s, d) => s + d.arrValueCents, 0);
+
+  return (
+    <SectionCard
+      title="ARR Personally Closed"
+      description={
+        !ownerName
+          ? 'Set HUBSPOT_OWNER_ID in server/.env to enable this section.'
+          : search.trim()
+            ? `${filtered.length} of ${deals.length} deal(s) shown, matching "${search.trim()}" — totaling ${currencyStr(filteredTotalCents)}`
+            : `${deals.length} deal(s) you personally closed this year, totaling ${currencyStr(totalCents)}`
+      }
+      defaultExpanded={false}
+      action={
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder="Search accounts…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-56"
+          />
+          <button onClick={handleExport} disabled={exporting || deals.length === 0} className="btn btn-secondary btn-sm">
+            {exporting ? 'Exporting…' : '⬇ Export to Excel'}
+          </button>
+        </div>
+      }
+    >
+      {exportError && <p className="text-xs text-error mb-3">{exportError}</p>}
+      {deals.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">
+          {ownerName ? 'No deals you personally closed this year yet.' : 'No deals to show.'}
+        </p>
+      ) : (
+        <>
+          <h3 className="text-sm font-medium text-neutral-700 mb-2">Closes — Trailing 12 Months</h3>
+          <div className="mb-6">
+            <CalendarHeatmap items={deals} dateField="closeDate" colorScale={CLOSED_COLOR_SCALE} emptyLabel="No dated closes to show." noun="deal" />
+          </div>
+
+          <h3 className="text-sm font-medium text-neutral-700 mb-2">Monthly ARR Closed & Cumulative Growth ({new Date().getFullYear()})</h3>
+          <div className="mb-6">
+            <MonthlyArrClosedChart deals={deals} />
+          </div>
+
+          {sorted.length === 0 ? (
+            <p className="text-sm text-neutral-500 italic py-4">No deals match the current search.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                    <SortableHeader label="Account" column="companyName" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Tier" column="tier" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Deal" column="name" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Pipeline" column="pipeline" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Stage" column="stage" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="ARR Value" column="arrValueCents" sort={sort} onSort={toggleSort} className="pr-4" />
+                    <SortableHeader label="Close Date" column="closeDate" sort={sort} onSort={toggleSort} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map((d, i) => (
+                    <tr key={`${d.hubspotCompanyId}:${d.name}:${i}`} className="border-t border-neutral-100">
+                      <td className="py-2 pr-4 text-neutral-700">{d.companyName}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{tierStr(d.tier)}</td>
+                      <td className="py-2 pr-4">
+                        {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
+                        <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
+                      </td>
+                      <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{d.stage}</td>
+                      <td className="py-2 pr-4 text-neutral-500">{currencyStr(d.arrValueCents)}</td>
+                      <td className="py-2 text-neutral-500">{d.closeDate ? d.closeDate.slice(0, 10) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
 function ArrAddedDealsSection({ accounts }) {
   const deals = useMemo(() => flattenArrAddedDeals(accounts), [accounts]);
   const pipelines = useMemo(
@@ -3845,6 +4074,7 @@ function ArrAddedDealsSection({ accounts }) {
                   <td className="py-2 pr-4 text-neutral-500">{tierStr(d.tier)}</td>
                   <td className="py-2 pr-4">
                     {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a> : d.name}
+                    <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
                   </td>
                   <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
                   <td className="py-2 pr-4 text-neutral-500">{d.stage}</td>
@@ -4473,6 +4703,7 @@ function ImplementationProjectsSection({ accounts }) {
                     {p.url ? (
                       <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-neutral-700 hover:text-accent-600 hover:underline">{p.name}</a>
                     ) : p.name}
+                    <PinnedNoteButton noteId={p.pinnedNoteId} title={p.name} />
                   </td>
                   <td className="py-2 pr-4"><RagBadge rag={p.projectHealthRag} /></td>
                   <td className="py-2 pr-4 text-neutral-500">{p.projectProgress != null ? `${p.projectProgress}%` : '—'}</td>
@@ -4634,6 +4865,7 @@ function DealsSection({ accounts }) {
                           {d.url ? (
                             <a href={d.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">{d.name}</a>
                           ) : d.name}
+                          <PinnedNoteButton noteId={d.pinnedNoteId} title={d.name} />
                         </td>
                         <td className="py-2 pr-4 text-neutral-500">{d.pipeline}</td>
                         <td className="py-2 pr-4 text-neutral-500">{d.stage}{!d.isOpen && <span className="text-neutral-400"> (closed)</span>}</td>
@@ -4686,6 +4918,7 @@ function DealsSection({ accounts }) {
 
 export default function AccountHealthDashboard() {
   const [accounts, setAccounts] = useState([]);
+  const [ownerName, setOwnerName] = useState(null);
   const [companyHosts, setCompanyHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -4717,6 +4950,7 @@ export default function AccountHealthDashboard() {
       const data = await accountsRes.json();
       if (!accountsRes.ok) throw new Error(data.error || `Failed to load (${accountsRes.status})`);
       setAccounts(data.accounts || []);
+      setOwnerName(data.ownerName || null);
       setCompanyHosts(hostsRes.ok ? await hostsRes.json() : []);
     } catch (err) {
       setError(err.message);
@@ -5003,6 +5237,8 @@ export default function AccountHealthDashboard() {
               label={`ARR Personally Closed (${new Date().getFullYear()})`}
               value={currencyStr(rollup.arrPersonallyClosedThisYearCents)}
               tooltip="ARR added this year from deals you actually closed yourself, on any account — a productivity/growth signal, distinct from ARR Added to Book (which counts inherited deals too)."
+              jumpTo="arr-personally-closed"
+              jumpLabel="Jump to deals ↓"
             />
             <StatCard
               label={`Total Capacity${rollup.occupancyAsOfDate ? ` (as of ${rollup.occupancyAsOfDate})` : ''}`}
@@ -5173,7 +5409,7 @@ export default function AccountHealthDashboard() {
                       <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.current_census ?? '—'}</td>
                       <td className="py-2 text-neutral-500">
-                        <CompanyLink account={a} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
+                        <CompanyLink account={a} withNote={false} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
                       </td>
                     </tr>
                   ))}
@@ -5301,6 +5537,8 @@ export default function AccountHealthDashboard() {
           </SectionCard>
 
           <ArrAddedDealsSection accounts={accounts} />
+
+          <ArrPersonallyClosedSection accounts={accounts} ownerName={ownerName} />
 
           <DealsSection accounts={accounts} />
         </>
