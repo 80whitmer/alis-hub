@@ -6,7 +6,7 @@ const {
   getOwnerId, getOwnedCompanies, getAccountManagerName, getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS,
   shouldDropLifecycleFlaggedAccount,
 } = require('../services/hubspotAccounts');
-const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
+const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl, computeContractTruth } = require('../services/hubspotTickets');
 const { getKeyContactsForCompany } = require('../services/hubspotContacts');
 const { getNextOccurrenceFromLink } = require('../services/googleCalendar');
 const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
@@ -19,7 +19,7 @@ const {
   listCommunityRevenueSnapshots, getPriorCommunityRevenueSnapshot, listCommunityRevenueMonths,
   listCommunityRevenueLatestMonthByCompany,
   listKeyContacts, replaceKeyContactsForCompany, pruneKeyContacts,
-  listAlisAdminIds,
+  listAlisAdminIds, listCompanyHosts,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -300,6 +300,10 @@ async function mapLiveFinancialHealth(dealSummary) {
         projectProgress: d.projectProgress, projectOwner: d.projectOwner, projectedGoLiveDate: d.projectedGoLiveDate,
         createdAt: d.createdAt, url: d.url, pinnedNoteId: d.pinnedNoteId,
       })),
+    // "Contract Truth" data-completeness (Sep 2026, Aaron — moved here from
+    // alis-product-ops's Dashboard: "I don't think these really need to be
+    // on the product board"). See hubspotTickets.js's computeContractTruth.
+    contractTruth: computeContractTruth(dealSummary.deals),
   };
 }
 
@@ -402,6 +406,7 @@ router.post('/refresh', async (req, res) => {
           pinnedNoteId: company.pinnedNoteId,
           products: company.products,
           package: company.package,
+          hubspotCapacity: company.hubspotCapacity,
         });
       } catch (err) {
         errors.push({ company: company.name, error: err.message });
@@ -667,6 +672,19 @@ function getEnrichedAccounts() {
   // (see alis_admin_ids' own doc comment in database.js) — joined on here
   // so every account already carries it, same as products/package above.
   const alisAdminIdByCompanyId = new Map(listAlisAdminIds().map((r) => [r.hubspot_company_id, r.alis_admin_company_id]));
+  // ALIS subdomain (company_hosts, server/api/companyHosts.js) — joined on
+  // here too (Sep 2026, Aaron: quick links to ALIS Settings/App Store/
+  // Reports/etc. on the accounts table) so AlisQuickLinks can build
+  // https://{host}.alisonline.com/... links without every table needing
+  // its own companyHosts prop threaded in just for this. Most of this
+  // table's ~550 rows were bulk-imported by name only and were never
+  // matched back to a hubspot_company_id (only 2 of 550 have one as of
+  // Sep 2026) — same two-step lookup as getCompanyHost() in database.js
+  // (id first, name second) so this join actually finds the other ~548.
+  const companyHostRows = listCompanyHosts();
+  const companyHostById = new Map(companyHostRows.filter((r) => r.hubspot_company_id).map((r) => [r.hubspot_company_id, r.company_host]));
+  const companyHostByName = new Map(companyHostRows.map((r) => [r.name_key, r.company_host]));
+  const resolveCompanyHost = (a) => companyHostById.get(a.hubspot_company_id) || companyHostByName.get((a.company_name || '').trim().toLowerCase()) || null;
   return accounts.map((a) => {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
@@ -686,6 +704,7 @@ function getEnrichedAccounts() {
       health_band: band?.label || null,
       subScores,
       alis_admin_company_id: alisAdminIdByCompanyId.get(a.hubspot_company_id) || null,
+      company_host: resolveCompanyHost(a),
       dsoDays: computeDsoDays(a.aging, a.arr_cents),
       // See hubspotAccounts.js's getLifecycleDataQualityFlag — this Home
       // Office's own lifecycle stage isn't "Client - Home Office" (Sep

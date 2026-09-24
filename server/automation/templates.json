@@ -487,6 +487,54 @@
       }
     },
     {
+      "id": "crm-id-audit",
+      "name": "ALIS↔HubSpot CRM ID Audit",
+      "description": "Compares ALIS Admin's \"CRM ID\" field — company and every community (Onboarding included; only Training is skipped) — against the matching HubSpot Record ID. These two IDs are supposed to be identical (they're the core mapping key between the two systems, alongside the ALIS numeric company/community ID); this flags mismatches, blanks, and name-match misses before they cause downstream reporting errors.",
+      "category": "reporting",
+      "icon": "🔗",
+      "timeout": 300000,
+      "scriptPath": "./crmIdAudit.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "ALIS↔HubSpot CRM ID Audit",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Viva Senior Living"]
+          },
+          "alisAdminCompanyId": {
+            "type": "string",
+            "title": "ALIS Admin Company ID",
+            "description": "The numeric company ID from admin.alisonline.com/Customers/Companies/{id}.",
+            "examples": ["383"]
+          },
+          "hubspotCompanyId": {
+            "type": "string",
+            "title": "HubSpot Company ID (optional)",
+            "description": "Leave blank to look it up from the company_hosts mapping by company name.",
+            "examples": ["10519603819"]
+          }
+        },
+        "required": ["companyName", "alisAdminCompanyId"]
+      }
+    },
+    {
+      "id": "crm-id-audit-bulk",
+      "name": "ALIS↔HubSpot CRM ID Audit (Portfolio-Wide)",
+      "description": "Runs the CRM ID Audit across every active Home Office company in HubSpot (Client - Home Office lifecycle stage, Leads/Canceled excluded) — company CRM ID + every community's CRM ID (Onboarding included, only Training skipped) — and produces one downloadable Excel workbook with the full portfolio's findings. No inputs needed; this is a single big run.",
+      "category": "reporting",
+      "icon": "🌐",
+      "timeout": 10800000,
+      "scriptPath": "./crmIdAuditBulk.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "ALIS↔HubSpot CRM ID Audit (Portfolio-Wide)",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
       "id": "audit-history",
       "name": "ALIS Audit History",
       "description": "Pull ALIS's own Audit History log (who changed what, when) across a company, one or more communities, and/or one or more residents — unified into one filterable, timestamp-sorted feed instead of visiting each ALIS page by hand. Filters mirror ALIS's own (date range, Updated By, Type, Notes search).",

@@ -10,6 +10,8 @@ const { runKpiExportJob }                  = require('./kpiExport');
 const { runWellnessScorecardJob }          = require('./wellnessExport');
 const { runCommunityRevenueSnapshotJob }   = require('./communityRevenueSnapshot');
 const { runCompanyUsageAuditJob }          = require('./usageAudit');
+const { runCrmIdAuditJob }                 = require('./crmIdAudit');
+const { runCrmIdAuditBulkJob }             = require('./crmIdAuditBulk');
 const { runAuditHistoryJob }               = require('./auditHistoryJob');
 const { runAcuityHistoryJob }              = require('./acuityHistoryJob');
 
@@ -99,6 +101,12 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'company-usage-audit':
         return await runCompanyUsageAuditJob(jobId, payload);
+
+      case 'crm-id-audit':
+        return await runCrmIdAuditJob(jobId, payload);
+
+      case 'crm-id-audit-bulk':
+        return await runCrmIdAuditBulkJob(jobId);
 
       case 'audit-history':
         return await runAuditHistoryJob(jobId, payload);

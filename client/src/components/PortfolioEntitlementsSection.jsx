@@ -10,9 +10,15 @@ import { useEffect, useRef, useState } from 'react';
  * (the underlying alis_admin_ids table and entitlement_snapshots are
  * portfolio-wide, not per-page) — only covers accounts with an ALIS Admin
  * Company ID on file; see AlisAdminIdDiscovery to grow that coverage.
+ *
+ * Progress used to be pure polling (a GET every 3s) — replaced with a live
+ * SSE log (Sep 2026, Aaron, porting the idea from the ALIS Photo Migrator
+ * side project's own live-scrolling-log UX: "why don't we glean that idea
+ * for either dashboard") — one line per account as it's actually checked,
+ * server-pushed instead of the client re-asking on a timer. See
+ * server/api/accountTruth.js's /portfolio-entitlements/stream route and
+ * server/services/portfolioEntitlementsJob.js's broadcast() calls.
  */
-
-const POLL_MS = 3000;
 
 function StatusBanner({ job }) {
   if (job.status === 'idle' && job.snapshotCompanyCount === 0) {
@@ -35,6 +41,25 @@ function StatusBanner({ job }) {
       {job.finishedAt ? ` — finished ${new Date(job.finishedAt).toLocaleString()}` : ''}.
       {job.errors.length > 0 && ` ${job.errors.length} account(s) failed.`}
     </p>
+  );
+}
+
+/** Dark scrolling terminal-style log, same look as the Photo Migrator's own live log box — auto-scrolls to the newest line. */
+function LiveLog({ lines }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [lines]);
+  if (lines.length === 0) return null;
+  return (
+    <div
+      ref={ref}
+      className="bg-neutral-900 text-emerald-300 font-mono text-xs rounded-lg p-3 mb-3 max-h-56 overflow-y-auto whitespace-pre-wrap"
+    >
+      {lines.map((l, i) => (
+        <div key={i} className={l.level === 'error' ? 'text-red-400' : undefined}>{l.msg}</div>
+      ))}
+    </div>
   );
 }
 
@@ -83,22 +108,54 @@ export default function PortfolioEntitlementsSection({ accounts }) {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
-  const pollRef = useRef(null);
+  const [logLines, setLogLines] = useState([]);
+  const esRef = useRef(null);
 
-  async function poll() {
+  /** One-shot fetch of job + rollup — used for the initial hydrate and again once a run's `complete` event lands (the rollup itself isn't part of the log stream). */
+  async function fetchStatus() {
     try {
       const res = await fetch('/api/account-truth/portfolio-entitlements/status');
-      const s = await res.json();
-      setStatus(s);
-      if (s.job.status === 'running') pollRef.current = setTimeout(poll, POLL_MS);
+      setStatus(await res.json());
     } catch (err) {
       setError(err.message);
     }
   }
 
+  /** Opens the live SSE log — connects on mount if a run is already in progress (e.g. a reload mid-run), and again from handleRun() right after kicking one off. */
+  function connectStream() {
+    esRef.current?.close();
+    const es = new EventSource('/api/account-truth/portfolio-entitlements/stream');
+    esRef.current = es;
+    es.addEventListener('snapshot', (e) => {
+      setStatus((prev) => ({ ...prev, job: JSON.parse(e.data) }));
+    });
+    es.addEventListener('log', (e) => {
+      setLogLines((prev) => [...prev, JSON.parse(e.data)]);
+    });
+    es.addEventListener('complete', (e) => {
+      setStatus((prev) => ({ ...prev, job: JSON.parse(e.data) }));
+      es.close();
+      fetchStatus(); // picks up the finished rollup, which isn't broadcast over the stream
+    });
+    es.onerror = () => {
+      // A dropped connection while a run might still be finishing server-side
+      // (see DataCache.jsx's own "lost connection... may still be running
+      // server-side" wording, same idea) — close cleanly and fall back to
+      // one status fetch rather than looping reconnect attempts forever.
+      es.close();
+      fetchStatus();
+    };
+  }
+
   useEffect(() => {
-    poll();
-    return () => clearTimeout(pollRef.current);
+    fetchStatus().then(() => {
+      // Handled inside the .then via a follow-up read of `status` would be
+      // stale (closures) — instead just always try connecting; the server
+      // side closes the stream immediately (see accountTruth.js's route) if
+      // nothing is actually running, which is a no-op here.
+      connectStream();
+    });
+    return () => esRef.current?.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -107,6 +164,7 @@ export default function PortfolioEntitlementsSection({ accounts }) {
   async function handleRun() {
     setStarting(true);
     setError(null);
+    setLogLines([]);
     try {
       const slim = accounts.map((a) => ({ id: a.hubspot_company_id, name: a.company_name }));
       const res = await fetch('/api/account-truth/portfolio-entitlements/run', {
@@ -116,7 +174,7 @@ export default function PortfolioEntitlementsSection({ accounts }) {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      poll();
+      connectStream();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -138,6 +196,7 @@ export default function PortfolioEntitlementsSection({ accounts }) {
       </button>
       {error && <div className="text-xs text-error mb-3">{error}</div>}
       {job && <StatusBanner job={job} />}
+      <LiveLog lines={logLines} />
       {rollup && rollup.categories.length > 0 && (
         <div className="mt-2">
           {rollup.categories.map((c) => <CategoryBlock key={c.name} category={c} />)}

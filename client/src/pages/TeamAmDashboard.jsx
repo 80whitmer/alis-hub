@@ -16,6 +16,8 @@ import PinnedNoteButton from '../components/PinnedNote';
 import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
+import ContractTruthSection from '../components/ContractTruthSection';
+import AlisQuickLinks from '../components/AlisQuickLinks';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -174,8 +176,8 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // bucket's items are alphabetized here at build time (not hand-ordered) so
 // a newly added section can't silently drift out of order.
 const OVERVIEW_SECTIONS = [
-  { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding', 'Portfolio Entitlements', 'Tier KPIs', 'Tier KPIs by AM'].sort((a, b) => a.localeCompare(b)) },
-  { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR by Tier per AM', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding', 'Portfolio Entitlements', 'Tier Comparison', 'Tier KPIs', 'Tier KPIs by AM'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR by Tier per AM', 'Contract Truth', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by AM by Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets by Tier', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
 
@@ -1815,6 +1817,113 @@ function CompaniesByTierChart({ accounts, chartType, setChartType }) {
  * "which tiers have the most accounts" (a Tier 4 account with 40
  * communities weighs very differently than a Tier 1 account with 2).
  */
+/**
+ * "A graph comparing communities, companies, arr -- graph comparing % and
+ * volume in each tier" (Sep 2026, Aaron) — the three individual by-tier
+ * charts above each answer one metric at a time; this puts all three next
+ * to each other per tier so a tier's relative weight across headcount vs.
+ * footprint vs. revenue is visible in one view. % Share mode normalizes
+ * each metric to its own portfolio total (0-100%) so three very
+ * differently-scaled metrics (dozens of companies vs. thousands of ARR
+ * dollars) can share one axis; Volume mode shows the same three metrics as
+ * their real counts/dollars in a table underneath, since three raw scales
+ * on one bar chart would make the smallest one unreadable.
+ */
+function TierComparisonChart({ accounts }) {
+  const [mode, setMode] = useState('share');
+  const byTier = {};
+  for (const a of accounts) {
+    const key = tierLabel(a.tier);
+    if (!byTier[key]) byTier[key] = { name: key, companies: 0, communities: 0, arrCents: 0 };
+    byTier[key].companies += 1;
+    byTier[key].communities += a.active_community_count || 0;
+    byTier[key].arrCents += a.arr_cents || 0;
+  }
+  const rows = Object.values(byTier).sort(tierSort);
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">No account data yet — click Refresh to pull it.</p>;
+  }
+
+  const totals = rows.reduce((acc, r) => ({
+    companies: acc.companies + r.companies,
+    communities: acc.communities + r.communities,
+    arrCents: acc.arrCents + r.arrCents,
+  }), { companies: 0, communities: 0, arrCents: 0 });
+
+  const shareData = rows.map((r) => ({
+    name: r.name,
+    'Companies %': totals.companies > 0 ? Number(((r.companies / totals.companies) * 100).toFixed(1)) : 0,
+    'Communities %': totals.communities > 0 ? Number(((r.communities / totals.communities) * 100).toFixed(1)) : 0,
+    'ARR %': totals.arrCents > 0 ? Number(((r.arrCents / totals.arrCents) * 100).toFixed(1)) : 0,
+  }));
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm text-neutral-600">Companies, communities, and ARR grouped by Client Tier</p>
+        <div className="flex rounded-lg border border-neutral-200 overflow-hidden">
+          <button
+            onClick={() => setMode('share')}
+            className={`px-3 py-1 text-xs font-medium ${mode === 'share' ? 'bg-primary-900 text-white' : 'bg-white text-neutral-600'}`}
+          >
+            % Share
+          </button>
+          <button
+            onClick={() => setMode('volume')}
+            className={`px-3 py-1 text-xs font-medium ${mode === 'volume' ? 'bg-primary-900 text-white' : 'bg-white text-neutral-600'}`}
+          >
+            Volume
+          </button>
+        </div>
+      </div>
+      {mode === 'share' ? (
+        <ResponsiveContainer width="100%" height={340}>
+          <BarChart data={shareData} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+            <YAxis tick={{ fontSize: 12 }} unit="%" />
+            <Tooltip formatter={(v) => `${v}%`} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Bar dataKey="Companies %" fill="#2563eb" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Communities %" fill="#16a34a" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="ARR %" fill="#ea580c" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-neutral-500 text-xs uppercase tracking-wide">
+                <th className="pb-2 pr-4">Tier</th>
+                <th className="pb-2 pr-4">Companies</th>
+                <th className="pb-2 pr-4">Communities</th>
+                <th className="pb-2">ARR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.name} className="border-t border-neutral-100">
+                  <td className="py-2 pr-4 font-medium text-primary-900">{r.name}</td>
+                  <td className="py-2 pr-4 text-neutral-700">{r.companies.toLocaleString()}</td>
+                  <td className="py-2 pr-4 text-neutral-700">{r.communities.toLocaleString()}</td>
+                  <td className="py-2 text-neutral-700">{currencyStr(r.arrCents)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-neutral-200 font-semibold">
+                <td className="py-2 pr-4">Total</td>
+                <td className="py-2 pr-4">{totals.companies.toLocaleString()}</td>
+                <td className="py-2 pr-4">{totals.communities.toLocaleString()}</td>
+                <td className="py-2">{currencyStr(totals.arrCents)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 function CommunitiesByTierChart({ accounts, chartType, setChartType }) {
   const byTier = {};
   for (const a of accounts) {
@@ -3752,7 +3861,10 @@ export default function TeamAmDashboard() {
   const [error, setError] = useState('');
   useInternalDeepLink(!loading && accounts.length > 0, JUMP_EVENT);
   const [search, setSearch] = useState('');
-  const [tierFilter, setTierFilter] = useState(null);
+  // Multiselect (Sep 2026, Aaron: "would love this to be the standard
+  // around the apps... filter pills that can be multiselected") — a Set of
+  // active tier labels, any number active at once, empty means no filter.
+  const [tierFilter, setTierFilter] = useState(() => new Set());
   const [sort, setSort] = useState({ column: 'health_score', direction: 'asc' });
   const [metricKey, setMetricKey] = useState('avgScore');
   const [chartType, setChartType] = useState('bar');
@@ -3769,8 +3881,18 @@ export default function TeamAmDashboard() {
   const [truthAccount, setTruthAccount] = useState(null);
   const [unassignedTierOpen, setUnassignedTierOpen] = useState(false);
 
-  async function load() {
-    setLoading(true);
+  /**
+   * `silent` — same fix as Account Health Dashboard's own `load()` (Sep
+   * 2026, Aaron asked twice why Sync from Calendar's own result message
+   * never showed): `loading` gates a full swap of the whole dashboard body
+   * between a placeholder and the real content, so every small action
+   * button's `onImported={load}` call was unmounting-then-remounting its
+   * own success/error message right out from under itself. `silent: true`
+   * still refetches and replaces the data, just without the placeholder
+   * swap, so the calling button's own local state survives to be seen.
+   */
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
     setError('');
     try {
       // company_hosts is a single global table (server/db/database.js),
@@ -3789,9 +3911,10 @@ export default function TeamAmDashboard() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
+  const silentReload = () => load(true);
 
   useEffect(() => { load(); }, []);
 
@@ -3813,8 +3936,8 @@ export default function TeamAmDashboard() {
   }, [accounts, search]);
 
   const filtered = useMemo(() => {
-    const base = tierFilter
-      ? searchFilteredAccounts.filter((a) => ((a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`) === tierFilter)
+    const base = tierFilter.size > 0
+      ? searchFilteredAccounts.filter((a) => tierFilter.has((a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`))
       : searchFilteredAccounts;
     const { column, direction } = sort;
     const dir = direction === 'asc' ? 1 : -1;
@@ -3979,13 +4102,13 @@ export default function TeamAmDashboard() {
           <ExportPptButton />
         </div>
         <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
+          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={silentReload} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <AlisAdminIdDiscovery accounts={accounts} onImported={load} />
+          <AlisAdminIdDiscovery accounts={accounts} onImported={silentReload} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <ImportAgingReportButton onImported={load} />
+          <ImportAgingReportButton onImported={silentReload} />
           <p className="text-[11px] text-neutral-400 mt-1">
             {rollup.agingAsOfDate ? `Last updated: as of ${rollup.agingAsOfDate}` : 'Last updated: never'}
           </p>
@@ -4124,9 +4247,13 @@ export default function TeamAmDashboard() {
                 return (
                   <button
                     key={t}
-                    onClick={() => setTierFilter((prev) => (prev === t ? null : t))}
+                    onClick={() => setTierFilter((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(t)) next.delete(t); else next.add(t);
+                      return next;
+                    })}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      tierFilter === t
+                      tierFilter.has(t)
                         ? 'bg-accent-500 text-white border-accent-500'
                         : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
                     }`}
@@ -4135,8 +4262,8 @@ export default function TeamAmDashboard() {
                   </button>
                 );
               })}
-              {tierFilter && (
-                <button onClick={() => setTierFilter(null)} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
+              {tierFilter.size > 0 && (
+                <button onClick={() => setTierFilter(new Set())} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
                   Clear filter
                 </button>
               )}
@@ -4166,6 +4293,7 @@ export default function TeamAmDashboard() {
                     <tr key={a.hubspot_company_id} className="border-t border-neutral-100 hover:bg-neutral-50">
                       <td className="py-2 pr-4 font-medium">
                         <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                        <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} className="ml-1.5 align-middle" />
                         {a.lifecycle_flag_label && (
                           <span
                             title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}
@@ -4285,7 +4413,7 @@ export default function TeamAmDashboard() {
             <TeamAmAccountTruthDrawer
               account={accounts.find((a) => a.hubspot_company_id === truthAccount.hubspot_company_id) || truthAccount}
               onClose={() => setTruthAccount(null)}
-              onUpdated={load}
+              onUpdated={silentReload}
             />
           )}
 
@@ -4323,14 +4451,21 @@ export default function TeamAmDashboard() {
             <CommunitiesByTierChart accounts={accounts} chartType={communitiesByTierChartType} setChartType={setCommunitiesByTierChartType} />
           </SectionCard>
 
-          <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier — each with a daily trend" defaultExpanded={false}>
-            <TierKpiSection endpoint="/api/team-am/tier-kpis" scopeNote="Team-wide: every Home Office account (lifecycle-flagged accounts excluded). A trend point is captured on each Refresh." />
+          <SectionCard title="Tier Comparison" description="Companies, communities, and ARR grouped by Client Tier — compare each tier's share of the portfolio, or its raw volume" defaultExpanded={false}>
+            <TierComparisonChart accounts={accounts} />
           </SectionCard>
+
           <SectionCard title={AM_KPI_TITLE} description="Average ARR per company and capacity per community, by Account Manager — each with a daily trend" defaultExpanded={false}>
             <AmKpiSection endpoint="/api/team-am/tier-kpis" />
           </SectionCard>
+          <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier — each with a daily trend" defaultExpanded={false}>
+            <TierKpiSection endpoint="/api/team-am/tier-kpis" scopeNote="Team-wide: every Home Office account (lifecycle-flagged accounts excluded). A trend point is captured on each Refresh." />
+          </SectionCard>
           <SectionCard title="Portfolio Entitlements" description="What percentage of live ALIS environments have each entitlement turned on — a manual, on-demand check (not part of the regular Refresh) across every account with an ALIS Admin Company ID on file. Shared with the Account Health board." defaultExpanded={false}>
             <PortfolioEntitlementsSection accounts={accounts} />
+          </SectionCard>
+          <SectionCard title="Contract Truth" description="Portfolio-wide contract data completeness — which accounts have a closed-won deal with an ARR value and close date on file, and which have a gap. Moved here from the Product Hub (Sep 2026)." defaultExpanded={false}>
+            <ContractTruthSection accounts={accounts} />
           </SectionCard>
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
             <TierByArrChart

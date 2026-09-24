@@ -170,6 +170,19 @@ async function initDb() {
     );
   `);
 
+  // One row per crm-id-audit job — a point-in-time snapshot comparing ALIS
+  // Admin's "CRM ID" field (company + each community) against the matching
+  // HubSpot Record ID, same one-blob-per-job shape as usage_audit_snapshots.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS crm_id_audit_snapshots (
+      job_id                TEXT PRIMARY KEY,
+      company_name          TEXT,
+      alis_admin_company_id TEXT NOT NULL,
+      report_json           TEXT NOT NULL,
+      created_at            TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   // One row per (job, scope, scope_key) — 'company'/'region'/'community'
   // rollups of a kpi-export job's DSO figures (see normalizeDso in
   // kpiNormalizer.js). Unlike kpi_snapshots' one-blob-per-job model, this
@@ -727,6 +740,16 @@ async function initDb() {
         // Column already exists — fine.
       }
     }
+  }
+
+  // account_health_snapshots never had hubspot_capacity (team_am_snapshots
+  // already does, from its own OWN "Refresh Occupancy Data" retrofit
+  // above) — added so Account Health's Tier KPIs can fall back to it the
+  // same way Team AM's tierKpiRollup.js already does.
+  try {
+    db.run(`ALTER TABLE account_health_snapshots ADD COLUMN hubspot_capacity INTEGER;`);
+  } catch {
+    // Column already exists — fine.
   }
 
   // Clicks from the ALIS Internal section (ticket link or a resource link
@@ -1326,6 +1349,23 @@ function getUsageAuditSnapshot(jobId) {
   return row;
 }
 
+function addCrmIdAuditSnapshot(jobId, { companyName, alisAdminCompanyId, report }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT OR REPLACE INTO crm_id_audit_snapshots (job_id, company_name, alis_admin_company_id, report_json, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [jobId, companyName, alisAdminCompanyId, JSON.stringify(report), now]
+  );
+}
+
+function getCrmIdAuditSnapshot(jobId) {
+  const row = queryOne('SELECT * FROM crm_id_audit_snapshots WHERE job_id = ?', [jobId]);
+  if (!row) return null;
+  row.report = JSON.parse(row.report_json);
+  delete row.report_json;
+  return row;
+}
+
 /**
  * Upserts one evaluation config's XML into the historical cache —
  * INSERT OR IGNORE so an already-captured (host, config_id) is never
@@ -1400,7 +1440,7 @@ function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents, arrPersonallyClosedThisYearCents,
   enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
-  tier, lastActivityDate, pinnedNoteId, products, package: pkg,
+  tier, lastActivityDate, pinnedNoteId, products, package: pkg, hubspotCapacity,
 }) {
   const now = new Date().toISOString();
   run(
@@ -1408,8 +1448,8 @@ function upsertAccountHealthSnapshot({
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents, arr_personally_closed_this_year_cents,
        enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
-       health_score, health_band, tier, last_activity_date, pinned_note_id, products_json, package, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       health_score, health_band, tier, last_activity_date, pinned_note_id, products_json, package, hubspot_capacity, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        lifecycle_stage = excluded.lifecycle_stage,
@@ -1434,6 +1474,7 @@ function upsertAccountHealthSnapshot({
        pinned_note_id = excluded.pinned_note_id,
        products_json = excluded.products_json,
        package = excluded.package,
+       hubspot_capacity = excluded.hubspot_capacity,
        refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, lifecycleStage,
@@ -1441,7 +1482,7 @@ function upsertAccountHealthSnapshot({
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null, arrPersonallyClosedThisYearCents ?? null,
       enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
       healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, pinnedNoteId ?? null,
-      JSON.stringify(products || []), pkg || null, now,
+      JSON.stringify(products || []), pkg || null, hubspotCapacity ?? null, now,
     ]
   );
 }
@@ -1947,6 +1988,7 @@ module.exports = {
   listCommunityRevenueSnapshots, listCommunityRevenueMonths, listCommunityRevenueTrackedCompanies,
   listCommunityRevenueLatestMonthByCompany,
   addUsageAuditSnapshot, getUsageAuditSnapshot,
+  addCrmIdAuditSnapshot, getCrmIdAuditSnapshot,
   upsertEvaluationConfigVersion, getEvaluationConfigVersions,
   addAuditHistorySnapshot, getAuditHistorySnapshot,
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, getAccountHealthSnapshot,

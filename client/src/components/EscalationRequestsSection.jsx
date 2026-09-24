@@ -345,9 +345,33 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
   const [sort, setSort] = useState({ column: 'daysOpen', direction: 'desc' });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  // Company search + multiselect Tier filter pills (Sep 2026, Aaron: "put a
+  // company search in all the sections with 'Company' tables... filter
+  // pills that can be multiselected") — same pattern as
+  // EnhancementRequestsSection's own copy of this. `items` stays the full
+  // unfiltered set (drives the stat tiles/charts above); only the table
+  // narrows to `filteredItems`.
+  const [search, setSearch] = useState('');
+  const [tierFilter, setTierFilter] = useState(() => new Set());
 
   const items = useMemo(() => flattenEscalationTickets(accounts, includeAccountManager), [accounts, includeAccountManager]);
   const closedItems = useMemo(() => flattenClosedEscalationTickets(accounts), [accounts]);
+
+  const searchFilteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((t) =>
+      t.companyName?.toLowerCase().includes(q) ||
+      t.accountManagerName?.toLowerCase().includes(q) ||
+      t.subject?.toLowerCase().includes(q) ||
+      t.nextStep?.toLowerCase().includes(q)
+    );
+  }, [items, search]);
+
+  const filteredItems = useMemo(() => {
+    if (tierFilter.size === 0) return searchFilteredItems;
+    return searchFilteredItems.filter((t) => tierFilter.has(tierLabel(t.tier)));
+  }, [searchFilteredItems, tierFilter]);
 
   const avgAgeDays = items.length
     ? Math.round(items.reduce((sum, t) => sum + (t.daysOpen || 0), 0) / items.length)
@@ -362,7 +386,7 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
   const sorted = useMemo(() => {
     const { column, direction } = sort;
     const dir = direction === 'asc' ? 1 : -1;
-    return [...items].sort((a, b) => {
+    return [...filteredItems].sort((a, b) => {
       const av = a[column];
       const bv = b[column];
       if (av == null && bv == null) return 0;
@@ -371,13 +395,13 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
       if (typeof av === 'string') return av.localeCompare(bv) * dir;
       return (av - bv) * dir;
     });
-  }, [items, sort]);
+  }, [filteredItems, sort]);
 
   async function handleExport() {
     setExporting(true);
     setExportError('');
     try {
-      await exportEscalationTickets(items, includeAccountManager);
+      await exportEscalationTickets(filteredItems, includeAccountManager);
     } catch (err) {
       setExportError(err.message);
     } finally {
@@ -419,18 +443,58 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold text-primary-900 text-sm">Open Escalation Tickets</h3>
         <div className="flex items-center gap-3">
-          <button onClick={handleExport} disabled={exporting || items.length === 0} className="btn btn-secondary btn-sm">
+          <input
+            type="text"
+            placeholder="Search company, AM, subject, or next step…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-64"
+          />
+          <button onClick={handleExport} disabled={exporting || filteredItems.length === 0} className="btn btn-secondary btn-sm">
             {exporting ? 'Exporting…' : '⬇ Export to Excel'}
           </button>
           {exportError && <p className="text-xs text-error">{exportError}</p>}
         </div>
       </div>
 
+      {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {TIER_ORDER.filter((t) => t !== 'Tier 5').map((t) => {
+            const tCount = searchFilteredItems.filter((r) => tierLabel(r.tier) === t).length;
+            if (tCount === 0) return null;
+            return (
+              <button
+                key={t}
+                onClick={() => setTierFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(t)) next.delete(t); else next.add(t);
+                  return next;
+                })}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  tierFilter.has(t)
+                    ? 'bg-accent-500 text-white border-accent-500'
+                    : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                {t} ({tCount})
+              </button>
+            );
+          })}
+          {tierFilter.size > 0 && (
+            <button onClick={() => setTierFilter(new Set())} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
+              Clear filter
+            </button>
+          )}
+        </div>
+      )}
+
       {items.length === 0 ? (
         <p className="text-sm text-neutral-500 italic">No open escalation tickets found — click Refresh to pull the latest.</p>
+      ) : filteredItems.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No escalations match that search/filter.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

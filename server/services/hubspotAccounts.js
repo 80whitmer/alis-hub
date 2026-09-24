@@ -338,6 +338,16 @@ async function getOwnedCompanies(ownerId) {
       tier: resolveTier(c.properties),
       lastActivityDate: c.properties.notes_last_updated || null,
       pinnedNoteId: c.properties.hs_pinned_engagement_id || null,
+      // HubSpot's own "Total Beds on ALIS" property — real, hand-
+      // maintained, and always-free (no ALIS occupancy pull needed).
+      // Account Health never exposed this before (only Team AM did),
+      // starving the Tier KPIs "Average Capacity per Community by Tier"
+      // chart down to whatever handful of accounts happened to have a
+      // live ALIS occupancy pull — confirmed live (Sep 2026): only 1 of
+      // 93 owned accounts had that, so every tier but Tier 1 came back
+      // empty.
+      hubspotCapacity: c.properties.company_total_capacity != null && c.properties.company_total_capacity !== ''
+        ? Number(c.properties.company_total_capacity) : null,
       products: parseAlisProducts(c.properties.alis_products),
       package: c.properties.alis_package || null,
     })));
@@ -507,7 +517,40 @@ async function getAllHomeOfficeCompanies() {
   return filterHomeOfficesWithActiveCommunity(companies);
 }
 
+/**
+ * Every HubSpot company whose hs_parent_company_id is `parentId` — the
+ * "community" records under a Home Office (see filterHomeOfficesWithActiveCommunity's
+ * doc comment for the parent/child company shape this portal uses; a
+ * community is a plain child company, not a distinct custom object type,
+ * confirmed by that same live check). Used by the CRM ID audit (Sep 2026)
+ * to match each scraped ALIS community to its HubSpot record by name so the
+ * two systems' ID fields can be compared.
+ */
+async function getChildCompanies(parentId) {
+  const results = [];
+  let after;
+  do {
+    const { status, body } = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
+      filterGroups: [{ filters: [{ propertyName: 'hs_parent_company_id', operator: 'EQ', value: parentId }] }],
+      properties: ['name', 'lifecyclestage'],
+      limit: 100,
+      ...(after ? { after } : {}),
+    });
+    if (status !== 200) {
+      throw new Error(`HubSpot child-company lookup failed for parent ${parentId} (${status}): ${JSON.stringify(body)}`);
+    }
+    results.push(...(body.results || []).map((c) => ({
+      id: c.id,
+      name: c.properties.name,
+      lifecycleStage: c.properties.lifecyclestage || null,
+    })));
+    after = body.paging?.next?.after;
+  } while (after);
+  return results;
+}
+
 module.exports = {
   getOwnerId, getOwnedCompanies, getAllHomeOfficeCompanies, getAccountManagerName,
   getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS, shouldDropLifecycleFlaggedAccount,
+  getChildCompanies,
 };

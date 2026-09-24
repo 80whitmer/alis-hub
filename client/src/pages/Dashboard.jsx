@@ -120,6 +120,8 @@ function JobDrawer({ jobId, onClose }) {
             <AuditHistoryDetail job={job} pct={pct} />
           ) : job?.type === 'resident-acuity-history' ? (
             <AcuityHistoryDetail job={job} pct={pct} />
+          ) : job?.type === 'crm-id-audit-bulk' ? (
+            <CrmIdAuditBulkDetail job={job} pct={pct} />
           ) : (
             <p className="text-neutral-500 text-sm">No detail view for this job type.</p>
           )}
@@ -413,6 +415,38 @@ function UsageAuditDetail({ job, pct }) {
         <Link to={`/usage-audit/${job.id}`} className="btn btn-accent">🔍 Open Usage Audit →</Link>
       ) : (
         <p className="text-sm text-neutral-400">Usage audit will be available once the job completes.</p>
+      )}
+    </div>
+  );
+}
+
+// ─── ALIS↔HubSpot CRM ID Audit (Portfolio-Wide) detail view ──────────────────
+function CrmIdAuditBulkDetail({ job, pct }) {
+  return (
+    <div>
+      <div className="mb-5 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-neutral-600">
+            <strong className="text-primary-900">{job.completed || 0}</strong> of{' '}
+            <strong className="text-primary-900">{job.total}</strong> companies audited
+          </span>
+          <span className="font-semibold text-primary-900">{pct}%</span>
+        </div>
+        <div className="progress-bar">
+          <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+        {(job.failed || 0) > 0 && (
+          <p className="text-xs text-red-600 mt-2">{job.failed} failed</p>
+        )}
+      </div>
+
+      {job.status === 'done' ? (
+        <div className="flex flex-wrap gap-2">
+          <Link to={`/crm-id-audit-bulk/${job.id}`} className="btn btn-accent">🔍 Open Audit Report →</Link>
+          <a href={`/api/crm-id-audit-bulk/${job.id}/download`} className="btn btn-secondary">⬇ Download Excel</a>
+        </div>
+      ) : (
+        <p className="text-sm text-neutral-400">The audit report and Excel workbook will be available once the job completes.</p>
       )}
     </div>
   );

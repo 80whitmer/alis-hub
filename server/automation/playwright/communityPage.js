@@ -132,9 +132,35 @@ async function createCommunity(page, companyUrl, community) {
 
   await clickSave(modal, page);
 
-  await page.waitForSelector('#modalContainer input[type="text"]', {
-    state: 'hidden', timeout: 15_000,
-  });
+  // Confirm the save actually succeeded by checking for the real outcome —
+  // the new community's own name appearing on the page — rather than just
+  // assuming "modal closed" (Sep 2026, Aaron: a community WAS created live
+  // in ALIS but this step still threw and marked the whole item failed,
+  // including skipping the CRM ID step that should have run next).
+  // Confirmed via the job's own stored error: `#modalContainer input[type=
+  // "text"]` was STILL matching 6 elements 15s after Save, so the modal
+  // genuinely never reached Playwright's `hidden` state even though the
+  // save itself went through — likely a confirmation panel or a second
+  // form stacked in the same container, not a real failure. Racing both
+  // signals and accepting whichever resolves first means a slow-but-normal
+  // modal-close still works exactly as before, while an ALIS UI quirk that
+  // keeps the modal DOM around no longer fails a save that actually worked.
+  // Promise.any, not .race — succeed the moment EITHER signal confirms
+  // success; only actually throw if BOTH time out. .race would instead
+  // reject on whichever settles first, which could be the flakier
+  // modal-hidden check timing out a moment before the name-appears check
+  // would have resolved.
+  try {
+    await Promise.any([
+      page.waitForSelector('#modalContainer input[type="text"]', { state: 'hidden', timeout: 20_000 }),
+      page.waitForSelector(`a:has-text("${community.name}")`, { state: 'visible', timeout: 20_000 }),
+    ]);
+  } catch {
+    // Promise.any's own AggregateError has no useful .message (just "All
+    // promises were rejected") — a clear, specific message here is what
+    // setItemStatus/emit('item_fail') actually surface to the job UI.
+    throw new Error(`Could not confirm "${community.name}" was saved — neither the modal closed nor did its name appear on the page within 20s.`);
+  }
   await page.waitForTimeout(600);
 }
 

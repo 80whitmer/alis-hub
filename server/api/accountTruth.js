@@ -13,6 +13,7 @@ const router = express.Router();
 const { getLiveEntitlements } = require('../services/alisEntitlements');
 const { discoverAlisAdminIds } = require('../services/alisCompanyDiscovery');
 const { startPortfolioEntitlementsCheck, getStatus: getPortfolioEntitlementsStatus, getPortfolioEntitlementRollup } = require('../services/portfolioEntitlementsJob');
+const { subscribe, unsubscribe } = require('./broadcaster');
 const {
   getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId, listAlisAdminIds,
 } = require('../db/database');
@@ -117,6 +118,35 @@ router.post('/portfolio-entitlements/run', (req, res) => {
 // read from the DB, not job memory).
 router.get('/portfolio-entitlements/status', (req, res) => {
   res.json({ job: getPortfolioEntitlementsStatus(), rollup: getPortfolioEntitlementRollup() });
+});
+
+// GET /api/account-truth/portfolio-entitlements/stream — live log of a
+// running check (Sep 2026, Aaron: ported the idea from the ALIS Photo
+// Migrator side project's own live-scrolling-log UX). Uses the same
+// broadcaster.js SSE plumbing as this app's other long jobs, but a fixed
+// channel name instead of a per-run jobId (portfolioEntitlementsJob.js
+// only ever has one run active at a time — see its own doc comment).
+// Sends the current point-in-time job snapshot immediately on connect so a
+// client opening mid-run (or reloading) hydrates its progress bar/counts
+// right away, same convention as stream.js's generic job-stream route;
+// past individual log lines aren't replayable, only what's broadcast from
+// this point forward.
+router.get('/portfolio-entitlements/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const job = getPortfolioEntitlementsStatus();
+  res.write(`event: snapshot\ndata: ${JSON.stringify(job)}\n\n`);
+
+  if (job.status !== 'running') {
+    res.end();
+    return;
+  }
+
+  subscribe('portfolio-entitlements', res);
+  req.on('close', () => unsubscribe('portfolio-entitlements', res));
 });
 
 module.exports = router;

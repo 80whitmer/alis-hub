@@ -8,6 +8,8 @@ import FormMarkupApproval from './pages/FormMarkupApproval';
 import KpiDashboard from './pages/KpiDashboard';
 import WellnessScorecard from './pages/WellnessScorecard';
 import UsageAuditDashboard from './pages/UsageAuditDashboard';
+import CrmIdAuditDashboard from './pages/CrmIdAuditDashboard';
+import CrmIdAuditBulkReport from './pages/CrmIdAuditBulkReport';
 import AuditHistory from './pages/AuditHistory';
 import EvaluationDetail from './pages/EvaluationDetail';
 import { version } from '../package.json';
@@ -72,6 +74,8 @@ export default function App() {
             <Route path="/qbr/:jobId"          element={<KpiDashboard />} />
             <Route path="/wellness/:jobId"     element={<WellnessScorecard />} />
             <Route path="/usage-audit/:jobId"  element={<UsageAuditDashboard />} />
+            <Route path="/crm-id-audit/:jobId" element={<CrmIdAuditDashboard />} />
+            <Route path="/crm-id-audit-bulk/:jobId" element={<CrmIdAuditBulkReport />} />
             <Route path="/audit-history/:jobId" element={<AuditHistory />} />
             <Route path="/evaluation-detail" element={<EvaluationDetail />} />
           </Routes>

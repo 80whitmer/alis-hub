@@ -43,6 +43,10 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
   const [sort, setSort] = useState({ column: 'companyName', direction: 'asc' });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  // Company search (Sep 2026, Aaron: "put a company search in all the
+  // sections with 'Company' tables") — no tier pills here, this drawer's
+  // rows have no tier column at all.
+  const [search, setSearch] = useState('');
 
   function toggleSort(column) {
     setSort((prev) => prev.column === column
@@ -50,10 +54,20 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
       : { column, direction: 'asc' });
   }
 
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((t) =>
+      t.companyName?.toLowerCase().includes(q) ||
+      t.accountManagerName?.toLowerCase().includes(q) ||
+      t.subject?.toLowerCase().includes(q)
+    );
+  }, [items, search]);
+
   const sorted = useMemo(() => {
     const { column, direction } = sort;
     const dir = direction === 'asc' ? 1 : -1;
-    return [...items].sort((a, b) => {
+    return [...filteredItems].sort((a, b) => {
       const av = a[column];
       const bv = b[column];
       if (av == null && bv == null) return 0;
@@ -62,13 +76,13 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
       if (typeof av === 'string') return av.localeCompare(bv) * dir;
       return (av - bv) * dir;
     });
-  }, [items, sort]);
+  }, [filteredItems, sort]);
 
   async function handleExport() {
     setExporting(true);
     setExportError('');
     try {
-      await exportTopThreeEnhancements(items);
+      await exportTopThreeEnhancements(filteredItems);
     } catch (err) {
       setExportError(err.message);
     } finally {
@@ -83,15 +97,26 @@ function TopThreeDrawer({ items, includeAccountManager, onClose }) {
       onClose={onClose}
       footer={
         <div className="flex items-center justify-between gap-3">
-          <button onClick={handleExport} disabled={exporting} className="btn btn-secondary btn-sm">
+          <button onClick={handleExport} disabled={exporting || filteredItems.length === 0} className="btn btn-secondary btn-sm">
             {exporting ? 'Exporting…' : '⬇ Export to Excel'}
           </button>
           {exportError && <p className="text-xs text-error">{exportError}</p>}
         </div>
       }
     >
+      {items.length > 0 && (
+        <input
+          type="text"
+          placeholder="Search company, AM, or ticket…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-full mb-4"
+        />
+      )}
       {items.length === 0 ? (
         <p className="text-sm text-neutral-500 italic">No Top 3 enhancement tickets found — click Refresh to pull the latest.</p>
+      ) : filteredItems.length === 0 ? (
+        <p className="text-sm text-neutral-500 italic">No tickets match that search.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">

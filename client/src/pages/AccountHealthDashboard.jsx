@@ -17,6 +17,7 @@ import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
 import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
+import AlisQuickLinks from '../components/AlisQuickLinks';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -82,6 +83,28 @@ function ScoreBadge({ score, band }) {
       {score}
     </span>
   );
+}
+
+/**
+ * Per-account "Contract Truth" indicator — moved here from alis-product-ops's
+ * Dashboard (Sep 2026, Aaron: "I don't think these really need to be on the
+ * product board"). Reads `account.financialHealth.contractTruth`, computed
+ * server-side by hubspotTickets.js's computeContractTruth and attached in
+ * accountHealth.js's mapLiveFinancialHealth — no separate fetch. Absent
+ * until this account's next Refresh regenerates financial_health_json.
+ */
+function ContractTruthBadge({ account }) {
+  const ct = account.financialHealth?.contractTruth;
+  if (!ct) return <span className="badge badge-neutral">Not yet refreshed</span>;
+  if (ct.complete) return <span className="badge badge-success">Confirmed</span>;
+  const issue = !ct.hasClosedWonDeal
+    ? 'No closed-won deal on file'
+    : !ct.arrConfirmed && !ct.closeDateConfirmed
+      ? 'Missing ARR and close date'
+      : !ct.arrConfirmed
+        ? 'Missing ARR value'
+        : 'Missing close date';
+  return <span className="badge badge-warning" title={issue}>{issue}</span>;
 }
 
 function SortableHeader({ label, column, sort, onSort, className = '' }) {
@@ -2948,6 +2971,11 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
         <StatCard label="Current Census" value={numberStr(account.current_census)} sub={account.occupancy_pct != null ? `${pctStr(account.occupancy_pct)} occupied` : undefined} />
       </div>
 
+      <div className="flex items-center gap-2 mb-4 text-sm">
+        <span className="text-neutral-500 uppercase tracking-wide text-xs">Contract Truth</span>
+        <ContractTruthBadge account={account} />
+      </div>
+
       <AlisHostEditor account={account} companyHosts={companyHosts} onUpdated={onUpdated} />
       <RecurringCallEditor account={account} onUpdated={onUpdated} />
       <AccountTruthPanel account={account} onUpdated={onUpdated} />
@@ -3393,16 +3421,26 @@ function RecurringCallsExportButtons({ accounts, onImported }) {
       )}
       {syncError && <p className="text-xs text-error max-w-xs">{syncError}</p>}
       {syncResult && (
-        <p className="text-xs text-neutral-500 max-w-xs">
-          {syncResult.synced} synced from Calendar
-          {syncResult.skippedNoLink > 0 ? `, ${syncResult.skippedNoLink} skipped (no calendar link)` : ''}
-          {syncResult.failed > 0 && (
-            <>
-              {' — '}
-              <span className="text-warning">{syncResult.failed} failed: {syncResult.failures.map((f) => f.label || `Call #${f.id}`).join(', ')}</span>
-            </>
-          )}
-        </p>
+        syncResult.synced === 0 && syncResult.skippedNoLink === 0 && syncResult.failed === 0 ? (
+          // Sep 2026, Aaron: asked twice why this "fails" — it wasn't
+          // failing, there was just nothing to sync yet (no recurring
+          // calls have a pasted Calendar link on file), and a bare
+          // "0 synced from Calendar" read exactly like a silent failure.
+          <p className="text-xs text-neutral-500 max-w-xs italic">
+            Nothing to sync yet — no recurring call has a Calendar link on file. Add one from an account's drawer (＋ Add Recurring Call), then sync again.
+          </p>
+        ) : (
+          <p className="text-xs text-neutral-500 max-w-xs">
+            {syncResult.synced} synced from Calendar
+            {syncResult.skippedNoLink > 0 ? `, ${syncResult.skippedNoLink} skipped (no calendar link)` : ''}
+            {syncResult.failed > 0 && (
+              <>
+                {' — '}
+                <span className="text-warning">{syncResult.failed} failed: {syncResult.failures.map((f) => f.label || `Call #${f.id}`).join(', ')}</span>
+              </>
+            )}
+          </p>
+        )
       )}
     </div>
   );
@@ -4937,14 +4975,37 @@ export default function AccountHealthDashboard() {
   // "add the filter buttons to the account table a la the filter buttons
   // on the All Deals table") — same pill pattern as AllDealsSection's
   // pipeline-category filter, just keyed by tier instead of deal category.
-  const [tierFilter, setTierFilter] = useState(null);
+  // Multiselect (Sep 2026, Aaron: "would love this to be the standard
+  // around the apps... filter pills that can be multiselected to filter
+  // for specific combos of data") — a Set of active tier labels rather
+  // than a single value; any number can be active at once, empty means
+  // no filter.
+  const [tierFilter, setTierFilter] = useState(() => new Set());
   const [amKpiMetricKey, setAmKpiMetricKey] = useState('capacityCensus');
   const [amKpiChartType, setAmKpiChartType] = useState('bar');
   const [dealTypeChartType, setDealTypeChartType] = useState('bar');
   useInternalDeepLink(!loading && accounts.length > 0, JUMP_EVENT);
 
-  async function load() {
-    setLoading(true);
+  /**
+   * `silent` (Sep 2026, Aaron: asked twice why "Sync from Calendar"'s own
+   * result message never showed, even though the sync itself worked) —
+   * every one of this dashboard's small action buttons (Sync from
+   * Calendar, Update Company Hosts, Discover ALIS Admin IDs, Import Aging
+   * Report, Recurring Calls import) calls `onImported={load}` afterward to
+   * pick up whatever it just changed. `loading` gates a full swap of the
+   * entire dashboard body between a loading placeholder and the real
+   * content (see the `{loading ? ... : ...}` below) — every one of those
+   * buttons' own local success/error message (syncResult, result, etc.)
+   * lives in a child component UNDER that ternary, so toggling `loading`
+   * true-then-false around the refetch unmounts and remounts that whole
+   * subtree, wiping the very state the button just set to show its result.
+   * `silent: true` skips the loading-placeholder swap entirely — the
+   * refetched data still replaces `accounts`/`ownerName`/`companyHosts`
+   * once it arrives, but nothing above stays mounted through it, so a
+   * button's own "X synced" message survives to actually be seen.
+   */
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const [accountsRes, hostsRes] = await Promise.all([
@@ -4959,9 +5020,10 @@ export default function AccountHealthDashboard() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
+  const silentReload = () => load(true);
 
   useEffect(() => { load(); }, []);
 
@@ -4988,8 +5050,8 @@ export default function AccountHealthDashboard() {
   }, [accounts, search]);
 
   const filtered = useMemo(() => {
-    const base = tierFilter
-      ? searchFilteredAccounts.filter((a) => ((a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`) === tierFilter)
+    const base = tierFilter.size > 0
+      ? searchFilteredAccounts.filter((a) => tierFilter.has((a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`))
       : searchFilteredAccounts;
     const { column, direction } = sort;
     const dir = direction === 'asc' ? 1 : -1;
@@ -5161,13 +5223,13 @@ export default function AccountHealthDashboard() {
           />
         </div>
         <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
+          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={silentReload} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <AlisAdminIdDiscovery accounts={accounts} onImported={load} />
+          <AlisAdminIdDiscovery accounts={accounts} onImported={silentReload} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <ImportAgingReportButton onImported={load} />
+          <ImportAgingReportButton onImported={silentReload} />
           <p className="text-[11px] text-neutral-400 mt-1">
             {rollup.agingAsOfDate ? `Last updated: as of ${rollup.agingAsOfDate}` : 'Last updated: never'}
           </p>
@@ -5336,9 +5398,13 @@ export default function AccountHealthDashboard() {
                 return (
                   <button
                     key={t}
-                    onClick={() => setTierFilter((prev) => (prev === t ? null : t))}
+                    onClick={() => setTierFilter((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(t)) next.delete(t); else next.add(t);
+                      return next;
+                    })}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      tierFilter === t
+                      tierFilter.has(t)
                         ? 'bg-accent-500 text-white border-accent-500'
                         : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
                     }`}
@@ -5347,8 +5413,8 @@ export default function AccountHealthDashboard() {
                   </button>
                 );
               })}
-              {tierFilter && (
-                <button onClick={() => setTierFilter(null)} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
+              {tierFilter.size > 0 && (
+                <button onClick={() => setTierFilter(new Set())} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
                   Clear filter
                 </button>
               )}
@@ -5383,6 +5449,7 @@ export default function AccountHealthDashboard() {
                       <td className="py-2 pr-4 font-medium">
                         <div className="flex items-center gap-1.5">
                           <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                          <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
                           {a.occupancy_error && (
                             <span
                               title={`Occupancy refresh failed: ${a.occupancy_error}`}
@@ -5436,7 +5503,7 @@ export default function AccountHealthDashboard() {
 
           <KeyContactsSection accounts={accounts} onSelect={setSelected} />
 
-          <RecurringCallsSection accounts={accounts} onSelect={setSelected} onImported={load} />
+          <RecurringCallsSection accounts={accounts} onSelect={setSelected} onImported={silentReload} />
 
           <SectionCard title="Tickets: Escalation" description="Every open ticket categorized ALIS Escalation, portfolio-wide — keeps high-priority items top of mind" defaultExpanded={false}>
             <EscalationRequestsSection accounts={accounts} />
@@ -5461,6 +5528,20 @@ export default function AccountHealthDashboard() {
             <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
           </SectionCard>
 
+          <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
+            <TierByArrChart
+              accounts={accounts}
+              metricKey={arrByTierMetricKey}
+              setMetricKey={setArrByTierMetricKey}
+              chartType={arrByTierChartType}
+              setChartType={setArrByTierChartType}
+            />
+            <div className="mt-6 pt-6 border-t border-neutral-100">
+              <h3 className="text-sm font-medium text-neutral-700 mb-2">Trend</h3>
+              <ArrByTierTrendSection metricKey={arrByTierMetricKey} />
+            </div>
+          </SectionCard>
+
           <SectionCard title="AM KPI" description="Pick a metric to break down across your accounts by Client Tier" defaultExpanded={false}>
             <AmKpiChart accounts={accounts} metricKey={amKpiMetricKey} setMetricKey={setAmKpiMetricKey} chartType={amKpiChartType} setChartType={setAmKpiChartType} />
             <div className="mt-6 pt-6 border-t border-neutral-100">
@@ -5470,6 +5551,10 @@ export default function AccountHealthDashboard() {
             {(amKpiMetricKey === 'openDealCount' || amKpiMetricKey === 'openDealValueCents') && (
               <OpenDealsTable accounts={accounts} />
             )}
+          </SectionCard>
+
+          <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier for your accounts — each with a daily trend" defaultExpanded={false}>
+            <TierKpiSection endpoint="/api/account-health/tier-kpis" scopeNote="Your accounts only (lifecycle-flagged accounts excluded) — the Team AM board has the same KPIs team-wide. A trend point is captured on each Refresh." />
           </SectionCard>
 
           <SectionCard
@@ -5519,24 +5604,8 @@ export default function AccountHealthDashboard() {
             </div>
           </SectionCard>
           {unassignedTierOpen && <UnassignedTierDrawer accounts={unassignedTierAccounts} onClose={() => setUnassignedTierOpen(false)} />}
-          <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier for your accounts — each with a daily trend" defaultExpanded={false}>
-            <TierKpiSection endpoint="/api/account-health/tier-kpis" scopeNote="Your accounts only (lifecycle-flagged accounts excluded) — the Team AM board has the same KPIs team-wide. A trend point is captured on each Refresh." />
-          </SectionCard>
           <SectionCard title="Portfolio Entitlements" description="What percentage of live ALIS environments have each entitlement turned on — a manual, on-demand check (not part of the regular Refresh) across every account with an ALIS Admin Company ID on file. Shared with the Team AM board." defaultExpanded={false}>
             <PortfolioEntitlementsSection accounts={accounts} />
-          </SectionCard>
-          <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
-            <TierByArrChart
-              accounts={accounts}
-              metricKey={arrByTierMetricKey}
-              setMetricKey={setArrByTierMetricKey}
-              chartType={arrByTierChartType}
-              setChartType={setArrByTierChartType}
-            />
-            <div className="mt-6 pt-6 border-t border-neutral-100">
-              <h3 className="text-sm font-medium text-neutral-700 mb-2">Trend</h3>
-              <ArrByTierTrendSection metricKey={arrByTierMetricKey} />
-            </div>
           </SectionCard>
           <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR" defaultExpanded={false}>
             <DealTypeChart accounts={accounts} chartType={dealTypeChartType} setChartType={setDealTypeChartType} />
@@ -5559,7 +5628,7 @@ export default function AccountHealthDashboard() {
           account={accounts.find((a) => a.hubspot_company_id === selected.hubspot_company_id) || selected}
           onClose={() => setSelected(null)}
           companyHosts={companyHosts}
-          onUpdated={load}
+          onUpdated={silentReload}
         />
       )}
       <FloatingSectionNav

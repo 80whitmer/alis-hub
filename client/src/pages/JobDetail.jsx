@@ -57,6 +57,14 @@ export default function JobDetail() {
           navigate(`/usage-audit/${id}`, { replace: true });
           return;
         }
+        if (data.type === 'crm-id-audit' && data.status === 'done') {
+          navigate(`/crm-id-audit/${id}`, { replace: true });
+          return;
+        }
+        if (data.type === 'crm-id-audit-bulk' && data.status === 'done') {
+          navigate(`/crm-id-audit-bulk/${id}`, { replace: true });
+          return;
+        }
 
         setJob(data);
 
@@ -229,6 +237,16 @@ export default function JobDetail() {
         navigate(`/usage-audit/${id}`, { replace: true });
         return;
       }
+      if (jobType === 'crm-id-audit') {
+        es.close();
+        navigate(`/crm-id-audit/${id}`, { replace: true });
+        return;
+      }
+      if (jobType === 'crm-id-audit-bulk') {
+        es.close();
+        navigate(`/crm-id-audit-bulk/${id}`, { replace: true });
+        return;
+      }
 
       const newEntry = { ts: new Date().toISOString(), text: '══ Job complete ══' };
       addUniqueLogEntry(newEntry);
@@ -270,7 +288,21 @@ export default function JobDetail() {
 
   const pct = job.total > 0 ? Math.round(((job.completed || 0) / job.total) * 100) : 0;
   const isRunning = job.status === 'running' || job.status === 'queued' || job.status === 'paused';
-  const statusConfig = JOB_STATUS_CONFIG[job.status] || JOB_STATUS_CONFIG.queued;
+  // A job can reach status 'done' (every item was attempted, none still
+  // running) with every single item having failed — the runner always
+  // sets 'done' once its loop finishes, regardless of how many items
+  // actually succeeded (Sep 2026, Aaron: ran Create Communities, it failed
+  // at the CRM ID step, and the badge still read a flat "Completed" next
+  // to "0 of 1 completed, 1 failed, 0%" — same status text for a clean run
+  // and a total failure). Distinguish the two here rather than in the
+  // runner, since 'done' vs 'failed' already means something specific
+  // server-side (an unhandled exception vs. a normal per-item failure) —
+  // this is purely about which badge that maps to.
+  const statusConfig = (job.status === 'done' && (job.failed || 0) > 0 && (job.completed || 0) === 0)
+    ? { badge: 'badge-error', text: 'Failed' }
+    : (job.status === 'done' && (job.failed || 0) > 0)
+      ? { badge: 'badge-warning', text: 'Completed with errors' }
+      : JOB_STATUS_CONFIG[job.status] || JOB_STATUS_CONFIG.queued;
 
   return (
     <div>

@@ -631,6 +631,27 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
   };
 }
 
+/**
+ * "Contract Truth" data-completeness check (Sep 2026, Aaron — ported from
+ * alis-product-ops's server/services/hubspotDealsSummary.js, moved here
+ * since "these don't really need to be on the product board" but the
+ * underlying question is the same): does this account have a closed-won
+ * deal with both an ARR value and a close date on file. Deliberately
+ * data-completeness, not a check against what was actually purchased (that
+ * needs line-item detail this function doesn't fetch) — same v1 scope as
+ * the product-ops original. Takes the same `deals` array
+ * getDealSummaryForCompany already returns (full deal history, not just
+ * open ones), so both mapLiveFinancialHealth call sites (teamAm.js,
+ * accountHealth.js) can attach this with zero extra HubSpot calls.
+ */
+function computeContractTruth(deals) {
+  const wonDeals = deals.filter((d) => d.isWon);
+  const hasClosedWonDeal = wonDeals.length > 0;
+  const arrConfirmed = wonDeals.some((d) => d.arrValue != null);
+  const closeDateConfirmed = wonDeals.some((d) => !!d.closeDate);
+  return { hasClosedWonDeal, arrConfirmed, closeDateConfirmed, complete: hasClosedWonDeal && arrConfirmed && closeDateConfirmed };
+}
+
 const LINE_ITEM_PROPERTIES = ['name', 'quantity', 'price', 'recurringbillingfrequency', 'hs_product_id'];
 
 /** Line-item IDs associated with one deal, via the v4 associations API — a single page in practice (a deal has a handful of line items, not hundreds), but paginated the same way as getTicketIdsForCompany/getDealIdsForCompany for consistency and safety. */
@@ -908,5 +929,5 @@ function enrichOpenTickets(serviceHealth) {
 module.exports = {
   getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, getOpenTasksForDeal,
   enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets, hubspotRecordUrl,
-  hubspotRequest, chunk, getPipelineStageLabels,
+  hubspotRequest, chunk, getPipelineStageLabels, computeContractTruth,
 };

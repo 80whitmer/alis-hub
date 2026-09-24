@@ -6,7 +6,7 @@ const {
   getAllHomeOfficeCompanies, getAccountManagerName, getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS,
   shouldDropLifecycleFlaggedAccount,
 } = require('../services/hubspotAccounts');
-const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl } = require('../services/hubspotTickets');
+const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl, computeContractTruth } = require('../services/hubspotTickets');
 const { computeHealthScore, computeDsoDays, explainRisk } = require('../services/accountHealthScoring');
 const { getOccupancySnapshotForAccount } = require('../services/accountHealthOccupancy');
 const {
@@ -15,7 +15,7 @@ const {
   listAccountHealthSnapshots, createJob, setJobStatus, setItemStatus,
   recordHealthScoreSnapshots, getHealthScoreHistory,
   recordKpiMetricSnapshots, getKpiMetricHistory,
-  listAlisAdminIds,
+  listAlisAdminIds, listCompanyHosts,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -202,6 +202,10 @@ async function mapLiveFinancialHealth(dealSummary) {
         projectProgress: d.projectProgress, projectOwner: d.projectOwner, projectedGoLiveDate: d.projectedGoLiveDate,
         createdAt: d.createdAt, url: d.url, pinnedNoteId: d.pinnedNoteId,
       })),
+    // "Contract Truth" data-completeness (Sep 2026, Aaron — moved here from
+    // alis-product-ops's Dashboard: "I don't think these really need to be
+    // on the product board"). See hubspotTickets.js's computeContractTruth.
+    contractTruth: computeContractTruth(dealSummary.deals),
   };
 }
 
@@ -607,6 +611,14 @@ function getEnrichedTeamAmAccounts() {
     listAccountHealthSnapshots().map((a) => [a.hubspot_company_id, a])
   );
   const alisAdminIdByCompanyId = new Map(listAlisAdminIds().map((r) => [r.hubspot_company_id, r.alis_admin_company_id]));
+  // Most company_hosts rows were bulk-imported by name only and were never
+  // matched back to a hubspot_company_id — same two-step id-then-name
+  // lookup as getCompanyHost() in database.js (see accountHealth.js's own
+  // copy of this join for the full doc comment).
+  const companyHostRows = listCompanyHosts();
+  const companyHostById = new Map(companyHostRows.filter((r) => r.hubspot_company_id).map((r) => [r.hubspot_company_id, r.company_host]));
+  const companyHostByName = new Map(companyHostRows.map((r) => [r.name_key, r.company_host]));
+  const resolveCompanyHost = (a) => companyHostById.get(a.hubspot_company_id) || companyHostByName.get((a.company_name || '').trim().toLowerCase()) || null;
   return accounts.map((a) => {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
@@ -633,6 +645,7 @@ function getEnrichedTeamAmAccounts() {
       health_band: band?.label || null,
       subScores,
       alis_admin_company_id: alisAdminIdByCompanyId.get(a.hubspot_company_id) || null,
+      company_host: resolveCompanyHost(a),
       dsoDays,
       // Sep 2026 (Aaron): this Home Office's OWN lifecycle stage isn't
       // "Client - Home Office" — see getLifecycleDataQualityFlag's doc
