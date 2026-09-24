@@ -15,6 +15,7 @@ const {
   listAccountHealthSnapshots, createJob, setJobStatus, setItemStatus,
   recordHealthScoreSnapshots, getHealthScoreHistory,
   recordKpiMetricSnapshots, getKpiMetricHistory,
+  listAlisAdminIds,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -268,6 +269,8 @@ async function runTeamAmRefreshJob(jobId, companies) {
         lastActivityDate: company.lastActivityDate,
         hubspotCapacity: company.hubspotCapacity,
         pinnedNoteId: company.pinnedNoteId,
+        products: company.products,
+        package: company.package,
       });
       setItemStatus(jobId, company.name, 'success');
       emit('item_done', { name: company.name });
@@ -603,6 +606,7 @@ function getEnrichedTeamAmAccounts() {
   const occupancyByCompanyId = new Map(
     listAccountHealthSnapshots().map((a) => [a.hubspot_company_id, a])
   );
+  const alisAdminIdByCompanyId = new Map(listAlisAdminIds().map((r) => [r.hubspot_company_id, r.alis_admin_company_id]));
   return accounts.map((a) => {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
@@ -628,6 +632,7 @@ function getEnrichedTeamAmAccounts() {
       health_score: score,
       health_band: band?.label || null,
       subScores,
+      alis_admin_company_id: alisAdminIdByCompanyId.get(a.hubspot_company_id) || null,
       dsoDays,
       // Sep 2026 (Aaron): this Home Office's OWN lifecycle stage isn't
       // "Client - Home Office" — see getLifecycleDataQualityFlag's doc

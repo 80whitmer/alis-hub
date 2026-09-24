@@ -716,6 +716,19 @@ async function initDb() {
     }
   }
 
+  // HubSpot's alis_products/alis_package, for the ported Account Truth
+  // model's "Enabled — per HubSpot's alis_products field" comparison
+  // against the live entitlements check. Same retrofit pattern as above.
+  for (const table of ['account_health_snapshots', 'team_am_snapshots']) {
+    for (const col of ['products_json TEXT', 'package TEXT']) {
+      try {
+        db.run(`ALTER TABLE ${table} ADD COLUMN ${col};`);
+      } catch {
+        // Column already exists — fine.
+      }
+    }
+  }
+
   // Clicks from the ALIS Internal section (ticket link or a resource link
   // inside it). HubSpot's API doesn't expose record view counts, so "hot
   // topics" can only measure clicks made from this dashboard.
@@ -729,7 +742,102 @@ async function initDb() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_internal_ticket_clicks_ticket ON internal_ticket_clicks (ticket_id);`);
 
+  // Account Truth model, ported from alis-product-ops (Aaron, Sep 2026:
+  // "digging the account truth model -- could we bring it over and
+  // integrate it with the team am / account health dashboards"). The
+  // numeric ALIS Admin Company ID (the id in
+  // .../Customers/EntitlementSets/EditCompany/{id}) this app has no
+  // automated way to resolve on its own — entered by hand, via the bulk
+  // Excel template, or via alisCompanyDiscovery.js's directory scrape.
+  // Always keyed on hubspot_company_id (unlike company_hosts' fuzzy
+  // name_key scheme above) since every caller here already has it.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS alis_admin_ids (
+      hubspot_company_id    TEXT PRIMARY KEY,
+      company_name          TEXT,
+      alis_admin_company_id TEXT NOT NULL,
+      updated_at            TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Latest live ALIS admin entitlement flag state per account, from the
+  // portfolio-wide "Run portfolio entitlement check" job
+  // (server/services/portfolioEntitlementsJob.js). One row per
+  // {company, flag}, upserted (whole set replaced) each run — a snapshot,
+  // not a history, since "what % of live environments have X enabled" is
+  // a current-state question, not a trend. category rides along
+  // pre-computed (entitlementCategories.js) so the rollup query never
+  // needs to re-run the keyword matcher.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS entitlement_snapshots (
+      hubspot_company_id TEXT NOT NULL,
+      company_name        TEXT,
+      flag_id              TEXT NOT NULL,
+      label                 TEXT,
+      category              TEXT,
+      enabled               INTEGER NOT NULL,
+      captured_at           TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (hubspot_company_id, flag_id)
+    );
+  `);
+
   saveToDisk();
+}
+
+function listAlisAdminIds() {
+  return queryAll('SELECT hubspot_company_id, alis_admin_company_id FROM alis_admin_ids');
+}
+
+function getAlisAdminId(hubspotCompanyId) {
+  const rows = queryAll('SELECT alis_admin_company_id FROM alis_admin_ids WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  return rows[0]?.alis_admin_company_id ?? null;
+}
+
+function setAlisAdminId({ hubspotCompanyId, companyName, alisAdminCompanyId }) {
+  run(
+    `INSERT INTO alis_admin_ids (hubspot_company_id, company_name, alis_admin_company_id, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET company_name = excluded.company_name, alis_admin_company_id = excluded.alis_admin_company_id, updated_at = excluded.updated_at`,
+    [hubspotCompanyId, companyName || null, alisAdminCompanyId]
+  );
+}
+
+/** Bulk upsert for the Download/Upload template flow and alisCompanyDiscovery.js's reviewed results — skips any row with no ID or no HubSpot id to key on. */
+function bulkSetAlisAdminIds(rows) {
+  let imported = 0;
+  for (const r of rows) {
+    if (!r.alisAdminCompanyId || !r.hubspotCompanyId) continue;
+    setAlisAdminId(r);
+    imported += 1;
+  }
+  return imported;
+}
+
+function deleteAlisAdminId(hubspotCompanyId) {
+  run('DELETE FROM alis_admin_ids WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+}
+
+/** Replaces one company's whole flag set in one go — a portfolio check re-derives every flag each run, so a stale flag from a company's previous, differently-configured run should disappear rather than linger. */
+function replaceEntitlementSnapshot(hubspotCompanyId, companyName, flags) {
+  db.run('DELETE FROM entitlement_snapshots WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  for (const f of flags) {
+    db.run(
+      `INSERT INTO entitlement_snapshots (hubspot_company_id, company_name, flag_id, label, category, enabled, captured_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [hubspotCompanyId, companyName || null, f.id, f.label, f.category, f.enabled ? 1 : 0]
+    );
+  }
+  saveToDisk();
+}
+
+/** Every captured flag row, portfolio-wide — the portfolio-entitlements rollup groups/percentages this client-side (in the API route) rather than in SQL, same "shape it in JS" convention this codebase already uses for its other rollups. */
+function listEntitlementSnapshots() {
+  return queryAll('SELECT hubspot_company_id, company_name, flag_id, label, category, enabled, captured_at FROM entitlement_snapshots');
+}
+
+function countEntitlementSnapshotCompanies() {
+  const rows = queryAll('SELECT COUNT(DISTINCT hubspot_company_id) AS n FROM entitlement_snapshots');
+  return rows[0]?.n ?? 0;
 }
 
 function getDb() {
@@ -1292,7 +1400,7 @@ function upsertAccountHealthSnapshot({
   hubspotCompanyId, companyName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents, arrPersonallyClosedThisYearCents,
   enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
-  tier, lastActivityDate, pinnedNoteId,
+  tier, lastActivityDate, pinnedNoteId, products, package: pkg,
 }) {
   const now = new Date().toISOString();
   run(
@@ -1300,8 +1408,8 @@ function upsertAccountHealthSnapshot({
        hubspot_company_id, company_name, lifecycle_stage, service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents, arr_personally_closed_this_year_cents,
        enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
-       health_score, health_band, tier, last_activity_date, pinned_note_id, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       health_score, health_band, tier, last_activity_date, pinned_note_id, products_json, package, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        lifecycle_stage = excluded.lifecycle_stage,
@@ -1324,13 +1432,16 @@ function upsertAccountHealthSnapshot({
        tier = excluded.tier,
        last_activity_date = excluded.last_activity_date,
        pinned_note_id = excluded.pinned_note_id,
+       products_json = excluded.products_json,
+       package = excluded.package,
        refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null, arrPersonallyClosedThisYearCents ?? null,
       enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
-      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, pinnedNoteId ?? null, now,
+      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, pinnedNoteId ?? null,
+      JSON.stringify(products || []), pkg || null, now,
     ]
   );
 }
@@ -1343,6 +1454,7 @@ function listAccountHealthSnapshots() {
     aging: row.aging_json ? JSON.parse(row.aging_json) : null,
     occupancyByProductType: row.occupancy_by_product_type_json ? JSON.parse(row.occupancy_by_product_type_json) : null,
     occupancyByClassification: row.occupancy_by_classification_json ? JSON.parse(row.occupancy_by_classification_json) : null,
+    products: row.products_json ? JSON.parse(row.products_json) : [],
   }));
 }
 
@@ -1683,7 +1795,7 @@ function upsertTeamAmSnapshot({
   hubspotCompanyId, companyName, accountManagerId, accountManagerName, lifecycleStage, serviceHealth, financialHealth,
   openTicketCount, closedTicketCount, openDealCount, openDealValueCents, arrCents, arrAddedThisYearCents,
   enhancementTopCount, enhancementLesserCount, otherOpenTicketCount, alisEscalationOpenCount, activeCommunityCount, healthScore, healthBand,
-  tier, lastActivityDate, hubspotCapacity, pinnedNoteId,
+  tier, lastActivityDate, hubspotCapacity, pinnedNoteId, products, package: pkg,
 }) {
   const now = new Date().toISOString();
   run(
@@ -1692,8 +1804,8 @@ function upsertTeamAmSnapshot({
        service_health_json, financial_health_json,
        open_ticket_count, closed_ticket_count, open_deal_count, open_deal_value_cents, arr_cents, arr_added_this_year_cents,
        enhancement_top_count, enhancement_lesser_count, other_open_ticket_count, alis_escalation_open_count, active_community_count,
-       health_score, health_band, tier, last_activity_date, hubspot_capacity, pinned_note_id, refreshed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       health_score, health_band, tier, last_activity_date, hubspot_capacity, pinned_note_id, products_json, package, refreshed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(hubspot_company_id) DO UPDATE SET
        company_name = excluded.company_name,
        account_manager_id = excluded.account_manager_id,
@@ -1718,13 +1830,16 @@ function upsertTeamAmSnapshot({
        last_activity_date = excluded.last_activity_date,
        hubspot_capacity = excluded.hubspot_capacity,
        pinned_note_id = excluded.pinned_note_id,
+       products_json = excluded.products_json,
+       package = excluded.package,
        refreshed_at = excluded.refreshed_at`,
     [
       hubspotCompanyId, companyName, accountManagerId ?? null, accountManagerName ?? null, lifecycleStage,
       JSON.stringify(serviceHealth || null), JSON.stringify(financialHealth || null),
       openTicketCount || 0, closedTicketCount || 0, openDealCount || 0, openDealValueCents || 0, arrCents ?? null, arrAddedThisYearCents ?? null,
       enhancementTopCount || 0, enhancementLesserCount || 0, otherOpenTicketCount || 0, alisEscalationOpenCount || 0, activeCommunityCount ?? null,
-      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, hubspotCapacity ?? null, pinnedNoteId ?? null, now,
+      healthScore ?? null, healthBand || null, tier ?? null, lastActivityDate ?? null, hubspotCapacity ?? null, pinnedNoteId ?? null,
+      JSON.stringify(products || []), pkg || null, now,
     ]
   );
 }
@@ -1737,6 +1852,7 @@ function listTeamAmSnapshots() {
     aging: row.aging_json ? JSON.parse(row.aging_json) : null,
     occupancyByProductType: row.occupancy_by_product_type_json ? JSON.parse(row.occupancy_by_product_type_json) : null,
     occupancyByClassification: row.occupancy_by_classification_json ? JSON.parse(row.occupancy_by_classification_json) : null,
+    products: row.products_json ? JSON.parse(row.products_json) : [],
   }));
 }
 
@@ -1843,4 +1959,6 @@ module.exports = {
   updateTeamAmOccupancy, setTeamAmOccupancyError,
   findRecentKpiSnapshotsByHubspotCompanyId,
   recordInternalTicketClick, getInternalTicketClickStats,
+  listAlisAdminIds, getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId,
+  replaceEntitlementSnapshot, listEntitlementSnapshots, countEntitlementSnapshotCompanies,
 };

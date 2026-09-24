@@ -98,7 +98,18 @@ async function hubspotRequest(method, path, body, attempt = 1) {
 // "at signing" deal-time snapshots, not live occupancy (confirmed live via
 // HubSpot's own property search, Sep 2026). Free to pull here: same bulk
 // company-properties fetch, no extra API calls, no ALIS involved at all.
-const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'client_teir_2_0', 'notes_last_updated', 'company_total_capacity', 'hs_pinned_engagement_id'];
+const COMPANY_PROPERTIES = ['name', 'account_manager', 'hs_num_child_companies', 'lifecyclestage', 'createdate', 'arr', 'client_tier', 'client_teir_2_0', 'notes_last_updated', 'company_total_capacity', 'hs_pinned_engagement_id', 'alis_products', 'alis_package'];
+
+/**
+ * HubSpot's own multi-select "ALIS Products" checkbox property
+ * (semicolon-delimited stored value, AM-maintained — what was sold/
+ * configured), ported alongside the Account Truth model (Aaron, Sep
+ * 2026). Not a live ALIS check — that's alisEntitlements.js, compared
+ * against this list for mismatches.
+ */
+function parseAlisProducts(raw) {
+  return raw ? raw.split(';').map((p) => p.trim()).filter(Boolean) : [];
+}
 
 function resolveTier(properties) {
   const newTier = properties.client_teir_2_0;
@@ -327,6 +338,8 @@ async function getOwnedCompanies(ownerId) {
       tier: resolveTier(c.properties),
       lastActivityDate: c.properties.notes_last_updated || null,
       pinnedNoteId: c.properties.hs_pinned_engagement_id || null,
+      products: parseAlisProducts(c.properties.alis_products),
+      package: c.properties.alis_package || null,
     })));
     after = body.paging?.next?.after;
   } while (after);
@@ -485,6 +498,8 @@ async function getAllHomeOfficeCompanies() {
       hubspotCapacity: c.properties.company_total_capacity != null && c.properties.company_total_capacity !== ''
         ? Number(c.properties.company_total_capacity) : null,
       pinnedNoteId: c.properties.hs_pinned_engagement_id || null,
+      products: parseAlisProducts(c.properties.alis_products),
+      package: c.properties.alis_package || null,
     })));
     after = body.paging?.next?.after;
   } while (after);

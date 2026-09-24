@@ -13,6 +13,9 @@ import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import TierKpiSection, { AmKpiSection, TIER_KPI_TITLE, AM_KPI_TITLE } from '../components/TierKpiSection';
 import PinnedNoteButton from '../components/PinnedNote';
+import AccountTruthPanel from '../components/AccountTruthPanel';
+import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
+import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -171,7 +174,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // bucket's items are alphabetized here at build time (not hand-ordered) so
 // a newly added section can't silently drift out of order.
 const OVERVIEW_SECTIONS = [
-  { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding', 'Tier KPIs', 'Tier KPIs by AM'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Accounts', items: ['Accounts', 'Communities by AM by Tier', 'Communities by Tier', 'Companies by Tier', 'Companies by Tier by AM', 'Health Score Distribution', 'KPI by AM', 'Needs an AM', 'Onboarding', 'Portfolio Entitlements', 'Tier KPIs', 'Tier KPIs by AM'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR by Tier per AM', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by AM by Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets by Tier', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
@@ -3049,6 +3052,23 @@ function UnassignedTierDrawer({ accounts, onClose }) {
   );
 }
 
+/**
+ * Lightweight per-account drawer for just the Account Truth model (Aaron,
+ * Sep 2026: "digging the account truth model -- could we bring it over
+ * and integrate it with the team am / account health dashboards") — this
+ * dashboard has no full Service/Financial Health drawer the way Account
+ * Health does, so rather than building that whole thing just to host one
+ * new panel, this is a minimal drawer scoped to Account Truth alone,
+ * triggered per-row from the Accounts table below.
+ */
+function TeamAmAccountTruthDrawer({ account, onClose, onUpdated }) {
+  return (
+    <Drawer title={account.company_name} subtitle="Account Truth" onClose={onClose}>
+      <AccountTruthPanel account={account} onUpdated={onUpdated} />
+    </Drawer>
+  );
+}
+
 /** True for an account with no real Account Manager name attached — either no account_manager property at all ("Unassigned") or a real owner ID this app doesn't have a name mapped for ("Other AM (id)", see ACCOUNT_MANAGER_NAMES in hubspotAccounts.js). */
 function isUnmappedAm(account) {
   return account.account_manager_name === 'Unassigned' || account.account_manager_name?.startsWith('Other AM');
@@ -3746,6 +3766,7 @@ export default function TeamAmDashboard() {
   const [dealTypeChartType, setDealTypeChartType] = useState('bar');
   const [ticketsByAmByTierChartType, setTicketsByAmByTierChartType] = useState('bar');
   const [atRiskOpen, setAtRiskOpen] = useState(false);
+  const [truthAccount, setTruthAccount] = useState(null);
   const [unassignedTierOpen, setUnassignedTierOpen] = useState(false);
 
   async function load() {
@@ -3961,6 +3982,9 @@ export default function TeamAmDashboard() {
           <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <AlisAdminIdDiscovery accounts={accounts} onImported={load} />
+        </div>
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <ImportAgingReportButton onImported={load} />
           <p className="text-[11px] text-neutral-400 mt-1">
             {rollup.agingAsOfDate ? `Last updated: as of ${rollup.agingAsOfDate}` : 'Last updated: never'}
@@ -4134,6 +4158,7 @@ export default function TeamAmDashboard() {
                     <SortableHeader label="Total Capacity" column="total_capacity" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Current Census" column="current_census" sort={sort} onSort={toggleSort} className="pr-4" />
                     <SortableHeader label="Last Activity" column="last_activity_date" sort={sort} onSort={toggleSort} />
+                    <th className="pb-2">Account Truth</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4161,8 +4186,13 @@ export default function TeamAmDashboard() {
                       <td className="py-2 pr-4 text-neutral-500">{a.aging_total_cents != null ? currencyStr(a.aging_total_cents) : '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.total_capacity ?? '—'}</td>
                       <td className="py-2 pr-4 text-neutral-500">{a.current_census ?? '—'}</td>
-                      <td className="py-2 text-neutral-500">
+                      <td className="py-2 pr-4 text-neutral-500">
                         <CompanyLink account={a} withNote={false} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
+                      </td>
+                      <td className="py-2">
+                        <button type="button" className="text-xs text-cool-glacier hover:underline" onClick={() => setTruthAccount(a)}>
+                          {a.alis_admin_company_id ? 'View' : 'Set up'}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -4251,6 +4281,13 @@ export default function TeamAmDashboard() {
             <CostToServeByTierChart accounts={accounts} />
           </SectionCard>
           {unassignedTierOpen && <UnassignedTierDrawer accounts={unassignedTierAccounts} onClose={() => setUnassignedTierOpen(false)} />}
+          {truthAccount && (
+            <TeamAmAccountTruthDrawer
+              account={accounts.find((a) => a.hubspot_company_id === truthAccount.hubspot_company_id) || truthAccount}
+              onClose={() => setTruthAccount(null)}
+              onUpdated={load}
+            />
+          )}
 
           <SectionCard title="KPI by AM" description="Pick a metric to break down across the team" defaultExpanded={false}>
             <KpiByAmChart
@@ -4291,6 +4328,9 @@ export default function TeamAmDashboard() {
           </SectionCard>
           <SectionCard title={AM_KPI_TITLE} description="Average ARR per company and capacity per community, by Account Manager — each with a daily trend" defaultExpanded={false}>
             <AmKpiSection endpoint="/api/team-am/tier-kpis" />
+          </SectionCard>
+          <SectionCard title="Portfolio Entitlements" description="What percentage of live ALIS environments have each entitlement turned on — a manual, on-demand check (not part of the regular Refresh) across every account with an ALIS Admin Company ID on file. Shared with the Account Health board." defaultExpanded={false}>
+            <PortfolioEntitlementsSection accounts={accounts} />
           </SectionCard>
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
             <TierByArrChart

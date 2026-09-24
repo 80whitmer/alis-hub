@@ -19,6 +19,7 @@ const {
   listCommunityRevenueSnapshots, getPriorCommunityRevenueSnapshot, listCommunityRevenueMonths,
   listCommunityRevenueLatestMonthByCompany,
   listKeyContacts, replaceKeyContactsForCompany, pruneKeyContacts,
+  listAlisAdminIds,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -399,6 +400,8 @@ router.post('/refresh', async (req, res) => {
           tier: company.tier,
           lastActivityDate: company.lastActivityDate,
           pinnedNoteId: company.pinnedNoteId,
+          products: company.products,
+          package: company.package,
         });
       } catch (err) {
         errors.push({ company: company.name, error: err.message });
@@ -659,6 +662,11 @@ function getEnrichedAccounts() {
     keyContactsByCompanyId.set(c.hubspot_company_id, list);
     for (const label of c.labels) allKnownKeyContactLabels.add(label);
   }
+  // Account Truth model (ported from alis-product-ops): the numeric ALIS
+  // Admin Company ID this app has no automated way to resolve on its own
+  // (see alis_admin_ids' own doc comment in database.js) — joined on here
+  // so every account already carries it, same as products/package above.
+  const alisAdminIdByCompanyId = new Map(listAlisAdminIds().map((r) => [r.hubspot_company_id, r.alis_admin_company_id]));
   return accounts.map((a) => {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
@@ -677,6 +685,7 @@ function getEnrichedAccounts() {
       health_score: score,
       health_band: band?.label || null,
       subScores,
+      alis_admin_company_id: alisAdminIdByCompanyId.get(a.hubspot_company_id) || null,
       dsoDays: computeDsoDays(a.aging, a.arr_cents),
       // See hubspotAccounts.js's getLifecycleDataQualityFlag — this Home
       // Office's own lifecycle stage isn't "Client - Home Office" (Sep

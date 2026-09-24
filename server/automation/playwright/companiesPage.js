@@ -7,15 +7,16 @@
  * hosting it (BentonHouse/Prod/Prod2/AHT/Hearth/Ent1/...), not a subdomain
  * — confirmed by Aaron, Sep 2026.
  *
- * NOT YET CONFIRMED LIVE. This repo's other admin.alisonline.com scrapers
- * (entitlementsPage.js, auditHistoryPage.js) each document exact selectors
- * confirmed against a real page load; this one is written from a
- * screenshot of the columns only — actually logging in requires
- * ALIS_USERNAME/ALIS_PASSWORD, which this assistant doesn't do
- * interactively. Column matching is done by header TEXT rather than a
- * fixed selector so it survives most markup differences; pagination
- * handling below is a best-effort guess at common grid patterns and is the
- * most likely thing to need a live fix — see goToNextPageIfAny.
+ * Column matching is done by header TEXT rather than a fixed selector so
+ * it survives most markup differences; pagination handling below is a
+ * best-effort guess at common grid patterns — see goToNextPageIfAny.
+ *
+ * CONFIRMED LIVE (Sep 2026, via alis-product-ops's identical port of this
+ * file): 553 real companies read back correctly, including the numeric
+ * ALIS Admin Company ID extracted from each row's Company Name link
+ * (Aaron: "these are stored on the company urls in ALIS admin... where
+ * else" — the id is the trailing digits of that link's href, e.g.
+ * /Customers/EntitlementSets/EditCompany/288).
  */
 
 const COMPANIES_URL = 'https://admin.alisonline.com/Customers/Companies';
@@ -50,13 +51,18 @@ async function readCompanyRows(page) {
           // everywhere else in the app. The name is a link, so read just
           // the anchor's text; fall back to the whole cell for any row
           // that isn't linked.
-          const nameText = nameCell?.querySelector('a')?.textContent ?? nameCell?.textContent ?? '';
+          const nameLink = nameCell?.querySelector('a');
+          const nameText = nameLink?.textContent ?? nameCell?.textContent ?? '';
+          const href = nameLink?.getAttribute('href') || '';
+          const idMatch = href.match(/(\d+)\D*$/);
           return {
             companyName: nameText.replace(/\s+/g, ' ').trim(),
             companyHost: (cells[hostIdx]?.textContent || '').trim(),
+            alisAdminCompanyId: idMatch ? idMatch[1] : null,
+            sourceHref: href || null,
           };
         })
-        .filter((r) => r.companyName && r.companyHost);
+        .filter((r) => r.companyName);
     }
     return null;
   });
@@ -98,12 +104,12 @@ async function goToNextPageIfAny(page) {
 }
 
 /**
- * Captures { companyName, companyHost }[] for every company row in the
- * admin directory, paging through until no further page is found or
- * `maxPages` is hit (safety cap — mirrors auditHistoryPage.js's
- * convention). Stops early if a page produces no rows whose (name, host)
- * pair wasn't already seen, since some grids report a "next" control even
- * on their last page.
+ * Captures { companyName, companyHost, alisAdminCompanyId, sourceHref }[]
+ * for every company row in the admin directory, paging through until no
+ * further page is found or `maxPages` is hit (safety cap — mirrors
+ * auditHistoryPage.js's convention). Stops early if a page produces no
+ * rows whose (name, host) pair wasn't already seen, since some grids
+ * report a "next" control even on their last page.
  */
 async function captureCompanyDirectory(page, { maxPages = 50 } = {}) {
   await page.goto(COMPANIES_URL, { waitUntil: 'networkidle', timeout: 20000 });

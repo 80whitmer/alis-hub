@@ -14,6 +14,9 @@ import CommunityRevenueSection from '../components/CommunityRevenueSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import TierKpiSection, { TIER_KPI_TITLE } from '../components/TierKpiSection';
 import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
+import AccountTruthPanel from '../components/AccountTruthPanel';
+import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
+import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -280,7 +283,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // hand-ordered) so a newly added section can't silently drift out of
 // order.
 const OVERVIEW_SECTIONS = [
-  { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Recurring Calls', 'Tier KPIs'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Portfolio Entitlements', 'Recurring Calls', 'Tier KPIs'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR Personally Closed', 'Community Revenue & Occupancy', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by Client Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
@@ -2947,6 +2950,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
 
       <AlisHostEditor account={account} companyHosts={companyHosts} onUpdated={onUpdated} />
       <RecurringCallEditor account={account} onUpdated={onUpdated} />
+      <AccountTruthPanel account={account} onUpdated={onUpdated} />
 
       {account.priorQbr && (
         <div className="alert alert-info mb-6">
@@ -5160,6 +5164,9 @@ export default function AccountHealthDashboard() {
           <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={load} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <AlisAdminIdDiscovery accounts={accounts} onImported={load} />
+        </div>
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <ImportAgingReportButton onImported={load} />
           <p className="text-[11px] text-neutral-400 mt-1">
             {rollup.agingAsOfDate ? `Last updated: as of ${rollup.agingAsOfDate}` : 'Last updated: never'}
@@ -5514,6 +5521,9 @@ export default function AccountHealthDashboard() {
           {unassignedTierOpen && <UnassignedTierDrawer accounts={unassignedTierAccounts} onClose={() => setUnassignedTierOpen(false)} />}
           <SectionCard title={TIER_KPI_TITLE} description="Companies, communities, ARR bands, ARR contributors, and per-company/per-community averages by Client Tier for your accounts — each with a daily trend" defaultExpanded={false}>
             <TierKpiSection endpoint="/api/account-health/tier-kpis" scopeNote="Your accounts only (lifecycle-flagged accounts excluded) — the Team AM board has the same KPIs team-wide. A trend point is captured on each Refresh." />
+          </SectionCard>
+          <SectionCard title="Portfolio Entitlements" description="What percentage of live ALIS environments have each entitlement turned on — a manual, on-demand check (not part of the regular Refresh) across every account with an ALIS Admin Company ID on file. Shared with the Team AM board." defaultExpanded={false}>
+            <PortfolioEntitlementsSection accounts={accounts} />
           </SectionCard>
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
             <TierByArrChart
