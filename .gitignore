@@ -57,3 +57,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# OS
+desktop.ini
+.DS_Store

@@ -13,7 +13,7 @@
     "build": "npm run build --workspace=client && npm run build --workspace=server",
     "test": "npm run test --workspace=server && npm run test --workspace=client",
     "lint": "npm run lint --workspace=server && npm run lint --workspace=client",
-    "setup:env": "copy .env.example server/.env && echo '✅ Created server/.env (configure your credentials)'",
+    "setup:env": "node -e \"require('fs').copyFileSync('.env.example','server/.env')\" && echo Created server/.env (configure your credentials)",
     "setup:hooks": "node -e \"require('child_process').execSync('bash scripts/setup-git-hooks.sh', {stdio: 'inherit'})\"",
     "setup": "npm install && npm run setup:env && npm run setup:hooks",
     "deploy": "node scripts/deploy-to-hubspot.js",
