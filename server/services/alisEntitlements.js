@@ -77,12 +77,20 @@ async function getLiveEntitlements(alisAdminCompanyId, hubspotProducts) {
  * companyName, flags)` is called after each successful scrape so the
  * caller can persist incrementally rather than holding everything in
  * memory until the whole run finishes.
+ *
+ * `isCancelled()` (Sep 2026, Aaron: "add a cancel option") is checked
+ * between accounts, never mid-scrape — a check only at the loop boundary
+ * means a Cancel click always lands on a clean account boundary (whatever
+ * account is currently scraping still finishes and its result is still
+ * saved via onSnapshot), rather than tearing down the shared Playwright
+ * page mid-navigation.
  */
-async function getLiveEntitlementsBulk(accounts, { onProgress, onSnapshot } = {}) {
+async function getLiveEntitlementsBulk(accounts, { onProgress, onSnapshot, isCancelled } = {}) {
   const page = await newPage();
   try {
     await ensureLoggedIn(page);
     for (let i = 0; i < accounts.length; i++) {
+      if (isCancelled?.()) break;
       const a = accounts[i];
       onProgress?.({ index: i, total: accounts.length, companyName: a.companyName, status: 'running' });
       try {

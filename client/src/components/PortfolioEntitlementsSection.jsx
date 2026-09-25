@@ -35,6 +35,15 @@ function StatusBanner({ job }) {
       </div>
     );
   }
+  if (job.status === 'cancelled') {
+    return (
+      <p className="text-sm text-neutral-500 mb-3">
+        Cancelled — {job.processed} of {job.total} account(s) were checked before stopping
+        {job.finishedAt ? ` (${new Date(job.finishedAt).toLocaleString()})` : ''}. Results from those are still saved below.
+        {job.errors.length > 0 && ` ${job.errors.length} account(s) failed.`}
+      </p>
+    );
+  }
   return (
     <p className="text-sm text-neutral-500 mb-3">
       Last run covered {job.snapshotCompanyCount} account{job.snapshotCompanyCount === 1 ? '' : 's'}
@@ -108,6 +117,7 @@ export default function PortfolioEntitlementsSection({ accounts }) {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [logLines, setLogLines] = useState([]);
   const esRef = useRef(null);
 
@@ -182,6 +192,20 @@ export default function PortfolioEntitlementsSection({ accounts }) {
     }
   }
 
+  async function handleCancel() {
+    setCancelling(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/account-truth/portfolio-entitlements/cancel', { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   const job = status?.job;
   const rollup = status?.rollup;
   const running = job?.status === 'running';
@@ -191,9 +215,16 @@ export default function PortfolioEntitlementsSection({ accounts }) {
       <p className="text-xs text-neutral-500 mb-3">
         {alisAdminIdCount} account{alisAdminIdCount === 1 ? '' : 's'} currently have an ALIS Admin Company ID on file — only those are covered by this check.
       </p>
-      <button className="btn btn-secondary btn-sm mb-3" onClick={handleRun} disabled={running || starting || alisAdminIdCount === 0}>
-        {running ? 'Running…' : starting ? 'Starting…' : 'Run Portfolio Entitlement Check'}
-      </button>
+      <div className="flex items-center gap-2 mb-3">
+        <button className="btn btn-secondary btn-sm" onClick={handleRun} disabled={running || starting || alisAdminIdCount === 0}>
+          {running ? 'Running…' : starting ? 'Starting…' : 'Run Portfolio Entitlement Check'}
+        </button>
+        {running && (
+          <button className="btn btn-danger btn-sm" onClick={handleCancel} disabled={cancelling || job?.status !== 'running'} title="Stops after the account currently being checked finishes — results captured so far are kept">
+            {cancelling ? 'Cancelling…' : 'Cancel'}
+          </button>
+        )}
+      </div>
       {error && <div className="text-xs text-error mb-3">{error}</div>}
       {job && <StatusBanner job={job} />}
       <LiveLog lines={logLines} />

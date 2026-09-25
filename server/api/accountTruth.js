@@ -14,7 +14,10 @@ const { getLiveEntitlements } = require('../services/alisEntitlements');
 const { discoverAlisAdminIds } = require('../services/alisCompanyDiscovery');
 const { findExcludedPortfolioAccounts } = require('../services/hubspotAccounts');
 const { hubspotRecordUrl } = require('../services/hubspotTickets');
-const { startPortfolioEntitlementsCheck, getStatus: getPortfolioEntitlementsStatus, getPortfolioEntitlementRollup } = require('../services/portfolioEntitlementsJob');
+const {
+  startPortfolioEntitlementsCheck, cancelPortfolioEntitlementsCheck,
+  getStatus: getPortfolioEntitlementsStatus, getPortfolioEntitlementRollup,
+} = require('../services/portfolioEntitlementsJob');
 const { subscribe, unsubscribe } = require('./broadcaster');
 const {
   getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId, listAlisAdminIds,
@@ -126,6 +129,17 @@ router.post('/portfolio-entitlements/run', (req, res) => {
     return res.status(409).json({ error: 'A portfolio entitlement check is already running.' });
   }
   res.status(202).json({ started: true, total: accounts.length });
+});
+
+// POST /api/account-truth/portfolio-entitlements/cancel — stops a running
+// check after its current account finishes (see portfolioEntitlementsJob.js's
+// cancelPortfolioEntitlementsCheck doc comment). No-op if nothing's running.
+router.post('/portfolio-entitlements/cancel', (req, res) => {
+  const cancelled = cancelPortfolioEntitlementsCheck();
+  if (!cancelled) {
+    return res.status(409).json({ error: 'No portfolio entitlement check is currently running.' });
+  }
+  res.status(202).json({ cancelling: true });
 });
 
 // GET /api/account-truth/portfolio-entitlements/status — job progress plus

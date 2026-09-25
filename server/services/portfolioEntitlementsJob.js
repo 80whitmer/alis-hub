@@ -20,9 +20,26 @@ const { broadcast } = require('../api/broadcaster');
 const STREAM_CHANNEL = 'portfolio-entitlements';
 
 let state = { status: 'idle', total: 0, processed: 0, currentCompany: null, startedAt: null, finishedAt: null, errors: [] };
+// Separate from `state` itself (not part of what getStatus() returns) —
+// this is an in-flight request to stop, not a status the UI displays;
+// cleared the moment the run actually stops (see startPortfolioEntitlementsCheck's .then above cancelPortfolioEntitlementsCheck below).
+let cancelRequested = false;
 
 function getStatus() {
   return { ...state, snapshotCompanyCount: countEntitlementSnapshotCompanies() };
+}
+
+/**
+ * Requests that the currently-running check stop after its in-flight
+ * account finishes (see getLiveEntitlementsBulk's isCancelled doc comment
+ * for why it's a boundary check, not an abort mid-scrape). No-op if
+ * nothing is running.
+ */
+function cancelPortfolioEntitlementsCheck() {
+  if (state.status !== 'running') return false;
+  cancelRequested = true;
+  broadcast(STREAM_CHANNEL, 'log', { msg: 'Cancelling — finishing the current account, then stopping…' });
+  return true;
 }
 
 /**
@@ -39,10 +56,12 @@ function getStatus() {
  */
 function startPortfolioEntitlementsCheck(accounts) {
   if (state.status === 'running') return false;
+  cancelRequested = false;
   state = { status: 'running', total: accounts.length, processed: 0, currentCompany: null, startedAt: new Date().toISOString(), finishedAt: null, errors: [] };
   broadcast(STREAM_CHANNEL, 'log', { msg: `Starting portfolio entitlement check — ${accounts.length} account(s)...` });
 
   getLiveEntitlementsBulk(accounts, {
+    isCancelled: () => cancelRequested,
     onProgress: ({ index, total, companyName, status, error }) => {
       state.currentCompany = companyName;
       state.total = total;
@@ -61,14 +80,21 @@ function startPortfolioEntitlementsCheck(accounts) {
     },
   })
     .then(() => {
-      state.status = 'done';
+      const wasCancelled = cancelRequested;
+      state.status = wasCancelled ? 'cancelled' : 'done';
       state.finishedAt = new Date().toISOString();
-      broadcast(STREAM_CHANNEL, 'log', { msg: `Done. ${state.processed} of ${state.total} account(s) checked, ${state.errors.length} error(s).` });
+      cancelRequested = false;
+      broadcast(STREAM_CHANNEL, 'log', {
+        msg: wasCancelled
+          ? `Cancelled. ${state.processed} of ${state.total} account(s) checked before stopping, ${state.errors.length} error(s).`
+          : `Done. ${state.processed} of ${state.total} account(s) checked, ${state.errors.length} error(s).`,
+      });
       broadcast(STREAM_CHANNEL, 'complete', getStatus());
     })
     .catch((err) => {
       state.status = 'error';
       state.finishedAt = new Date().toISOString();
+      cancelRequested = false;
       state.errors.push({ companyName: null, error: err.message });
       broadcast(STREAM_CHANNEL, 'log', { msg: `FATAL ERROR: ${err.message}`, level: 'error' });
       broadcast(STREAM_CHANNEL, 'complete', getStatus());
@@ -120,4 +146,4 @@ function getPortfolioEntitlementRollup() {
   return { companiesChecked, categories };
 }
 
-module.exports = { startPortfolioEntitlementsCheck, getStatus, getPortfolioEntitlementRollup };
+module.exports = { startPortfolioEntitlementsCheck, cancelPortfolioEntitlementsCheck, getStatus, getPortfolioEntitlementRollup };
