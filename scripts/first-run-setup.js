@@ -11,8 +11,38 @@ const readline = require('readline');
 const envPath = path.join(__dirname, '..', 'server', '.env');
 const examplePath = path.join(__dirname, '..', '.env.example');
 
+// Same portal for everyone at ALIS — never asked.
+const HUBSPOT_PORTAL_ID = '5340932';
+
+// Snapshot of server/services/hubspotAccounts.js's ACCOUNT_MANAGER_NAMES —
+// no live sync, update both places when someone joins/leaves (same caveat
+// as that file's own comment).
+const OWNERS = [
+  { name: 'Aaron Whitmer', id: '280699315' },
+  { name: 'Taylor King', id: '474571664' },
+  { name: 'Patrick Noack', id: '2558500' },
+  { name: 'Owen Phoenix', id: '49052011' },
+  { name: 'Jeffery Brown', id: '77259229' },
+  { name: 'Jessica Crouse', id: '90345669' },
+  { name: 'Evan Kuo', id: '212010676' },
+  { name: 'Gary Jones', id: '1152655184' },
+];
+
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (question) => new Promise((resolve) => rl.question(question, (answer) => resolve(answer.trim())));
+
+async function askOwnerId() {
+  console.log('\nWhich of these is you? (scopes your dashboards to your own book of accounts)');
+  OWNERS.forEach((o, i) => console.log(`  ${i + 1}. ${o.name}`));
+  console.log(`  ${OWNERS.length + 1}. Not listed — I'll enter my HubSpot Owner ID myself`);
+
+  const choice = await ask('Enter a number: ');
+  const index = Number(choice) - 1;
+  if (index >= 0 && index < OWNERS.length) return OWNERS[index].id;
+
+  console.log('Find it in HubSpot under Settings > Account Management > Users & Teams — click your name, it\'s the number in the URL.');
+  return ask('Your HubSpot Owner ID: ');
+}
 
 async function main() {
   console.log('\n== ALIS Hub setup ==');
@@ -21,30 +51,21 @@ async function main() {
   const alisUsername = await ask('Your ALIS login email/username: ');
   const alisPassword = await ask('Your ALIS password: ');
 
-  console.log('\nALIS Export API username — if your ALIS login looks like "yourname@somecommunity",');
-  const exportUsername = await ask('type just the part before the @ (leave blank to reuse the part before @ in your ALIS login): ');
-  const exportUsernameFinal = exportUsername || alisUsername.split('@')[0];
-
   console.log('\nHubSpot Private App Token — get this from Aaron (Slack or in person, not email).');
   const hubspotToken = await ask('HubSpot Private App Token: ');
 
-  const hubspotPortal = await ask('HubSpot Portal ID (ask Aaron, or press Enter to skip): ');
-
-  console.log('\nYour HubSpot Owner ID — find it in HubSpot under Settings > Account Management >');
-  console.log('Users & Teams, click your name; it\'s the number in the page URL.');
-  const hubspotOwnerId = await ask('Your HubSpot Owner ID (press Enter to skip): ');
-
-  const hubspotOwnerEmail = await ask('Your HubSpot login email (press Enter to skip): ');
+  const hubspotOwnerId = await askOwnerId();
 
   const template = fs.readFileSync(examplePath, 'utf8');
   const values = {
     ALIS_USERNAME: alisUsername,
     ALIS_PASSWORD: alisPassword,
-    ALIS_EXPORT_API_USERNAME_BASE: exportUsernameFinal,
+    // ALIS Export API's Basic Auth username is always the same local part
+    // as the ALIS login itself (firstName.lastName) — no separate prompt.
+    ALIS_EXPORT_API_USERNAME_BASE: alisUsername.split('@')[0],
     HUBSPOT_PRIVATE_APP_TOKEN: hubspotToken,
-    HUBSPOT_PORTAL_ID: hubspotPortal,
+    HUBSPOT_PORTAL_ID: HUBSPOT_PORTAL_ID,
     HUBSPOT_OWNER_ID: hubspotOwnerId,
-    HUBSPOT_OWNER_EMAIL: hubspotOwnerEmail,
   };
 
   const filled = template.split('\n').map((line) => {
