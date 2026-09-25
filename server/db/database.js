@@ -1821,6 +1821,52 @@ function findRecentKpiSnapshotsByHubspotCompanyId() {
   return byCompanyId;
 }
 
+/**
+ * Same "most recent job per company, for a same-day link out" reduction as
+ * findRecentKpiSnapshotsByHubspotCompanyId above, generalized for the other
+ * per-company job types (wellness_snapshots, usage_audit_snapshots,
+ * crm_id_audit_snapshots) that also stamp their own hubspotCompanyId into
+ * their JSON blob — just nested differently per job, so the caller passes
+ * getHubspotCompanyId to pull it out of whatever shape that job's own
+ * normalizer produces. Returns the parsed JSON too (as `data`) so the
+ * caller can pull whatever job-specific headline figure it wants without
+ * this function needing to know each job's shape.
+ */
+function findRecentJobSnapshotsByHubspotCompanyId(table, jsonColumn, getHubspotCompanyId) {
+  const rows = queryAll(`SELECT job_id, company_name, ${jsonColumn} AS data_json, created_at FROM ${table} ORDER BY created_at DESC`);
+  const byCompanyId = new Map();
+  for (const row of rows) {
+    let data;
+    try {
+      data = JSON.parse(row.data_json);
+    } catch {
+      continue;
+    }
+    const hubspotCompanyId = getHubspotCompanyId(data);
+    if (!hubspotCompanyId || byCompanyId.has(hubspotCompanyId)) continue; // rows are DESC by created_at — first hit per id is the latest
+    byCompanyId.set(hubspotCompanyId, { jobId: row.job_id, companyName: row.company_name, createdAt: row.created_at, data });
+  }
+  return byCompanyId;
+}
+
+/**
+ * Most recent Audit History job per company_host. Audit History jobs don't
+ * stamp hubspotCompanyId into their own JSON (see auditHistoryJob.js — the
+ * payload only ever carries companyHost), so this is the one deliverable
+ * of these keyed by company_host instead of hubspotCompanyId — joined the
+ * same way getEnrichedAccounts (accountHealth.js) already resolves each
+ * account's company_host for AlisQuickLinks.
+ */
+function findRecentAuditHistorySnapshotsByCompanyHost() {
+  const rows = queryAll('SELECT job_id, company_host, company_name, created_at FROM audit_history_snapshots ORDER BY created_at DESC');
+  const byHost = new Map();
+  for (const row of rows) {
+    if (!row.company_host || byHost.has(row.company_host)) continue; // rows are DESC by created_at — first hit per host is the latest
+    byHost.set(row.company_host, { jobId: row.job_id, companyName: row.company_name, createdAt: row.created_at });
+  }
+  return byHost;
+}
+
 /** Same reasoning as pruneAccountHealthSnapshots — deleting rows for companies no longer in the fresh team-wide pull, without touching aging_json (its own independent upload cadence). This table has exactly one writer (the Team AM Dashboard's own refresh), so a full-list prune here is safe in a way it wouldn't be if this table were shared. */
 function pruneTeamAmSnapshots(currentIds) {
   if (currentIds.length === 0) {
@@ -2000,6 +2046,7 @@ module.exports = {
   pruneTeamAmSnapshots, upsertTeamAmSnapshot, listTeamAmSnapshots, updateTeamAmAging, getTeamAmSnapshot,
   updateTeamAmOccupancy, setTeamAmOccupancyError,
   findRecentKpiSnapshotsByHubspotCompanyId,
+  findRecentJobSnapshotsByHubspotCompanyId, findRecentAuditHistorySnapshotsByCompanyHost,
   recordInternalTicketClick, getInternalTicketClickStats,
   listAlisAdminIds, getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId,
   replaceEntitlementSnapshot, listEntitlementSnapshots, countEntitlementSnapshotCompanies,

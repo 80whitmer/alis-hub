@@ -12,6 +12,7 @@ const { getNextOccurrenceFromLink } = require('../services/googleCalendar');
 const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
+  findRecentJobSnapshotsByHubspotCompanyId, findRecentAuditHistorySnapshotsByCompanyHost,
   updateAccountHealthAging, updateAccountHealthOccupancy, setAccountHealthOccupancyError, createJob, setJobStatus, setItemStatus,
   recordHealthScoreSnapshots, getHealthScoreHistory,
   recordKpiMetricSnapshots, getKpiMetricHistory,
@@ -639,6 +640,42 @@ router.post('/import-aging-report', async (req, res) => {
 function getEnrichedAccounts() {
   const accounts = listAccountHealthSnapshots();
   const priorQbrByCompanyId = findRecentKpiSnapshotsByHubspotCompanyId();
+  // Same "most recent run, for a link-out" signal as priorQbr above, for
+  // every other per-company deliverable this app produces (Sep 2026, Aaron:
+  // "route [these] to the AH dashboard ... only need to save the most
+  // recent of each type"). Shaped down to just what the drill-down actually
+  // shows, right here rather than inline in the .map() below, so a job
+  // that's never been run for a given company (the common case for most
+  // accounts) is a cheap Map miss instead of re-deriving anything.
+  const priorWellnessByCompanyId = new Map(
+    [...findRecentJobSnapshotsByHubspotCompanyId('wellness_snapshots', 'summary_json', (d) => d?.hubspotCompanyId)]
+      .map(([id, w]) => [id, {
+        jobId: w.jobId,
+        createdAt: w.createdAt,
+        weekEnding: w.data.weekEnding || null,
+        dataWarningCount: Array.isArray(w.data.dataWarnings) ? w.data.dataWarnings.length : 0,
+      }]),
+  );
+  const priorUsageAuditByCompanyId = new Map(
+    [...findRecentJobSnapshotsByHubspotCompanyId('usage_audit_snapshots', 'summary_json', (d) => d?.hubspotCompanyId)]
+      .map(([id, u]) => [id, { jobId: u.jobId, createdAt: u.createdAt }]),
+  );
+  // report.company.hubspotRecordId (not a top-level hubspotCompanyId) —
+  // see crmIdAuditNormalizer.js's buildCrmIdAuditReport. mismatchCount
+  // counts every community status except MATCH (in sync) and
+  // SKIPPED_NOT_LIVE (excluded from the audit on purpose), same as this
+  // job's own report — see CrmIdAuditDashboard.jsx.
+  const priorCrmIdAuditByCompanyId = new Map(
+    [...findRecentJobSnapshotsByHubspotCompanyId('crm_id_audit_snapshots', 'report_json', (d) => d?.company?.hubspotRecordId)]
+      .map(([id, c]) => {
+        const communityStatusCounts = c.data.summary?.communities || {};
+        const mismatchCount = Object.entries(communityStatusCounts).reduce(
+          (sum, [status, count]) => (status === 'MATCH' || status === 'SKIPPED_NOT_LIVE' ? sum : sum + count), 0,
+        );
+        return [id, { jobId: c.jobId, createdAt: c.createdAt, mismatchCount }];
+      }),
+  );
+  const priorAuditHistoryByCompanyHost = findRecentAuditHistorySnapshotsByCompanyHost();
   // Manually-entered, never touched by a HubSpot refresh — see the
   // recurring_calls CREATE TABLE comment (database.js) for why this is
   // hand-maintained rather than calendar-synced. One account can now have
@@ -698,13 +735,14 @@ function getEnrichedAccounts() {
     // keeps around — called out in the badge label so it's obvious WHY a
     // "Canceled" account is still sitting in this table.
     const keptForAgingBalance = (lifecycleFlag === 'lead' || lifecycleFlag === 'canceled') && (a.aging_total_cents || 0) > 0;
+    const companyHost = resolveCompanyHost(a);
     return {
       ...a,
       health_score: score,
       health_band: band?.label || null,
       subScores,
       alis_admin_company_id: alisAdminIdByCompanyId.get(a.hubspot_company_id) || null,
-      company_host: resolveCompanyHost(a),
+      company_host: companyHost,
       dsoDays: computeDsoDays(a.aging, a.arr_cents),
       // See hubspotAccounts.js's getLifecycleDataQualityFlag — this Home
       // Office's own lifecycle stage isn't "Client - Home Office" (Sep
@@ -720,6 +758,10 @@ function getEnrichedAccounts() {
         : null,
       hubspotUrl: hubspotRecordUrl('company', a.hubspot_company_id),
       priorQbr: priorQbrByCompanyId.get(a.hubspot_company_id) || null,
+      priorWellness: priorWellnessByCompanyId.get(a.hubspot_company_id) || null,
+      priorUsageAudit: priorUsageAuditByCompanyId.get(a.hubspot_company_id) || null,
+      priorCrmIdAudit: priorCrmIdAuditByCompanyId.get(a.hubspot_company_id) || null,
+      priorAuditHistory: companyHost ? (priorAuditHistoryByCompanyHost.get(companyHost) || null) : null,
       recurringCalls: recurringCalls.map((rc) => ({
         id: rc.id,
         label: rc.label,

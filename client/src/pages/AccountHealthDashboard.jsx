@@ -197,6 +197,55 @@ function InfoIcon({ tooltip }) {
   );
 }
 
+// "Most recent run of X, done on this date — open it" links for every
+// per-company deliverable this app produces, not just QBR. Each account
+// only ever carries its single most recent snapshot of each type (see
+// getEnrichedAccounts / findRecentJobSnapshotsByHubspotCompanyId in
+// server/api/accountHealth.js) — this just renders whichever of those are
+// present, so an account with no CRM ID Audit run yet simply skips that row
+// instead of showing an empty state for every deliverable type that exists.
+function RecentDeliverables({ account }) {
+  const items = [
+    account.priorQbr && {
+      key: 'qbr', icon: '📊', href: `/qbr/${account.priorQbr.jobId}`, cta: 'open full dashboard',
+      label: `Most recent QBR (${account.priorQbr.createdAt?.slice(0, 10)}) has ${account.priorQbr.flagCount} flag(s)`,
+    },
+    account.priorWellness && {
+      key: 'wellness', icon: '🩺', href: `/wellness/${account.priorWellness.jobId}`, cta: 'open full report',
+      label: `Most recent Wellness Scorecard (week ending ${(account.priorWellness.weekEnding || account.priorWellness.createdAt)?.slice(0, 10)})`
+        + (account.priorWellness.dataWarningCount > 0 ? ` has ${account.priorWellness.dataWarningCount} data note(s)` : ''),
+    },
+    account.priorUsageAudit && {
+      key: 'usageAudit', icon: '🧭', href: `/usage-audit/${account.priorUsageAudit.jobId}`, cta: 'open full report',
+      label: `Most recent Usage Audit (${account.priorUsageAudit.createdAt?.slice(0, 10)})`,
+    },
+    account.priorCrmIdAudit && {
+      key: 'crmIdAudit', icon: '🔗', href: `/crm-id-audit/${account.priorCrmIdAudit.jobId}`, cta: 'open full report',
+      label: `Most recent CRM ID Audit (${account.priorCrmIdAudit.createdAt?.slice(0, 10)}) `
+        + (account.priorCrmIdAudit.mismatchCount > 0 ? `found ${account.priorCrmIdAudit.mismatchCount} mismatch(es)` : 'found no mismatches'),
+    },
+    account.priorAuditHistory && {
+      key: 'auditHistory', icon: '🕓', href: `/audit-history/${account.priorAuditHistory.jobId}`, cta: 'open full report',
+      label: `Most recent Audit History pull (${account.priorAuditHistory.createdAt?.slice(0, 10)})`,
+    },
+  ].filter(Boolean);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2 mb-6">
+      {items.map((item) => (
+        <div key={item.key} className="alert alert-info">
+          <span>{item.icon}</span>
+          <p className="text-sm">
+            {item.label} — <a href={item.href} className="underline font-medium">{item.cta}</a>.
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StatCard({ label, value, secondaryValue, sub, note, tooltip, jumpTo, jumpLabel = 'Jump to section ↓' }) {
   const valueBlock = secondaryValue != null ? (
     <p className="text-2xl group-hover:text-3xl font-bold text-primary-900 mt-1 transition-[font-size]">
@@ -2980,15 +3029,7 @@ function AccountDrawer({ account, onClose, companyHosts, onUpdated }) {
       <RecurringCallEditor account={account} onUpdated={onUpdated} />
       <AccountTruthPanel account={account} onUpdated={onUpdated} />
 
-      {account.priorQbr && (
-        <div className="alert alert-info mb-6">
-          <span>📊</span>
-          <p className="text-sm">
-            Most recent QBR ({account.priorQbr.createdAt?.slice(0, 10)}) has {account.priorQbr.flagCount} flag(s) —
-            {' '}<a href={`/qbr/${account.priorQbr.jobId}`} className="underline font-medium">open full dashboard</a>.
-          </p>
-        </div>
-      )}
+      <RecentDeliverables account={account} />
 
       <h3 className="font-semibold text-primary-900 text-sm mb-2">Key Contacts</h3>
       {account.keyContacts?.length > 0 ? (
