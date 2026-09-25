@@ -8,7 +8,7 @@ const {
   normalizeOtherIncidentsThisWeek, normalizeChangeInConditionThisWeek,
   normalizeCurrentlyHospitalized, normalizeEvaluationsOverdue, normalizeMoveInAssessmentsPending,
   normalizeEvaluationsNeedingAttention,
-  normalizeMedicationExceptions, normalizeStaffTrainingGaps, normalizeCarePointsAverage,
+  normalizeMedicationExceptions, normalizeMarCompliance, withMarComplianceTrend, normalizeStaffTrainingGaps, normalizeCarePointsAverage,
   scopeIncidentsThisWeek, formDataIndicatesHospitalTransfer, normalizeFallsWithHospitalTransfer,
   normalizeSentinelIncidentsThisWeek, normalizeOccupancySnapshot, normalizeResidentAge,
   computeActivityPatternRisk,
@@ -597,6 +597,15 @@ async function runWellnessScorecardJob(jobId, payload) {
   // trend calc (withCarePointsTrend) differ from every count-based row.
   const carePointsAvg = normalizeCarePointsAverage(evaluations, communities.map((c) => c.communityId));
   rowsWithTrend.carePointsAvg = withCarePointsTrend(carePointsAvg, prior?.summary?.rows?.carePointsAvg);
+
+  // MAR compliance (Sep 2026, Aaron) — sourced from the same
+  // `orderAdministration` pull as medicationExceptions above, no extra API
+  // call. Kept out of ROW_CALCULATORS/the uniform withTrend loop since it
+  // needs a second trend (on compliancePct, not just the not-recorded
+  // count) that withTrend alone doesn't compute — see
+  // wellnessNormalizer.js's withMarComplianceTrend.
+  const marCompliance = normalizeMarCompliance(orderAdministration, communities.map((c) => c.communityId));
+  rowsWithTrend.marCompliance = withMarComplianceTrend(marCompliance, prior?.summary?.rows?.marCompliance);
 
   // ── Benchmark diff — only falls and hospital/ER have a published ALIS
   // 500 figure to compare against; every other row is trend-only. Weekly

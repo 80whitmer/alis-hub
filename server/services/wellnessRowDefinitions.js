@@ -1,5 +1,5 @@
 /**
- * Server-side mirror of client/src/utils/wellnessRows.js — same 25-row /
+ * Server-side mirror of client/src/utils/wellnessRows.js — same 26-row /
  * 13-category list and resolution logic, duplicated here (rather than
  * shared) because the client and server are separate packages with no
  * shared-code setup in this project. Used by the PDF export route
@@ -22,6 +22,7 @@ const WELLNESS_ROWS = [
   { category: 'Incidents & Safety', label: 'Other major incidents or safety concerns', key: 'otherIncidents', source: 'rows', hasDocCompletion: true },
 
   { category: 'Medication Management', label: 'Medication exceptions / late or missed medications', key: 'medicationExceptions', source: 'rows' },
+  { category: 'Medication Management', label: 'MAR compliance (scheduled, non-PRN doses recorded)', key: 'marCompliance', source: 'rows', hasCompliancePct: true },
   { category: 'Medication Management', label: 'Pharmacy, MAR, narcotic, or reconciliation concerns', key: 'pharmacyNarcotic', source: 'manual' },
 
   { category: 'Skin / Nutrition', label: 'Skin, wound, pressure injury concerns', key: 'skinWound', source: 'manual' },
@@ -73,6 +74,27 @@ function resolveWellnessRow(row, snapshot, communityId) {
   if (row.noTrend) {
     const bucket = communityId ? data.byCommunity?.[communityId] : data.portfolio;
     return { al: '—', mc: '—', total: bucket?.pct != null ? `${Math.round(bucket.pct * 100)}% active` : '—', prior: '', trend: '' };
+  }
+
+  // MAR compliance — reported as a % (not a raw count like every other row
+  // here), with its own trend on compliancePct rather than the not-recorded
+  // count. See wellnessNormalizer.js's normalizeMarCompliance/
+  // withMarComplianceTrend for where scheduledTotal/compliancePct/the pct
+  // trend buckets come from.
+  if (row.hasCompliancePct) {
+    const bucket = communityId ? data.byCommunity?.[communityId] : data.portfolio;
+    const pctTrendBucket = communityId ? data.byCommunityCompliancePctTrend?.[communityId] : data.portfolioCompliancePctTrend;
+    const fmt = (b) => (b?.scheduledTotal ? `${Math.round(b.compliancePct * 100)}% (${b.total} not recorded / ${b.scheduledTotal} scheduled)` : '— No scheduled doses this week');
+    return {
+      al: '—',
+      mc: '—',
+      total: fmt(bucket),
+      prior: pctTrendBucket?.prior != null ? `${Math.round(pctTrendBucket.prior * 100)}%` : '—',
+      trend: pctTrendBucket?.trend ?? '—',
+      compliancePct: bucket?.compliancePct ?? null,
+      notRecordedTotal: bucket?.total ?? 0,
+      scheduledTotal: bucket?.scheduledTotal ?? 0,
+    };
   }
 
   const bucket = communityId ? data.byCommunity?.[communityId] : data.portfolio;

@@ -433,6 +433,67 @@ function normalizeMedicationExceptions(orderRows, allCommunityIds) {
   return groupByCommunityAndProductType(exceptions, allCommunityIds);
 }
 
+/**
+ * MAR compliance for the week: total scheduled (non-PRN) administration
+ * records vs. how many came back `isNotRecorded === true` — the same two
+ * numbers the end-of-report summary on ALIS's own "Resident Care Summary"
+ * shows, requested (Sep 2026) so compliance can be trended week over week
+ * without pulling a raw MAR export and hitting ALIS's own 3-month/row-cap
+ * limits by hand. Same `orderType !== 'PRN'` exclusion as
+ * normalizeMedicationExceptions above — there's no "missed" PRN, only "not
+ * needed", so counting an un-recorded PRN against compliance would
+ * understate it for no clinical reason.
+ *
+ * `total` on the returned buckets is the not-recorded count (same "count of
+ * the thing that needs attention" convention every other row here uses, so
+ * it flows through withTrend unchanged) — `scheduledTotal` and
+ * `compliancePct` are attached alongside it. `compliancePct` is null (not
+ * 0) when a scope had zero scheduled non-PRN orders, since 0/0 isn't 100%
+ * or 0% compliant, it's no data.
+ */
+function normalizeMarCompliance(orderRows, allCommunityIds) {
+  const scheduled = orderRows.filter((r) => r.orderType !== 'PRN');
+  const notRecorded = scheduled.filter((r) => r.isNotRecorded === true);
+
+  const scheduledBuckets = groupByCommunityAndProductType(scheduled, allCommunityIds);
+  const result = groupByCommunityAndProductType(notRecorded, allCommunityIds);
+
+  const attachCompliance = (bucket, scheduledBucket) => {
+    bucket.scheduledTotal = scheduledBucket.total;
+    bucket.compliancePct = scheduledBucket.total > 0 ? (scheduledBucket.total - bucket.total) / scheduledBucket.total : null;
+  };
+  attachCompliance(result.portfolio, scheduledBuckets.portfolio);
+  for (const cid of Object.keys(result.byCommunity)) {
+    attachCompliance(result.byCommunity[cid], scheduledBuckets.byCommunity[cid] || emptyBucket());
+  }
+
+  return result;
+}
+
+/**
+ * Same idea as withCarePointsTrend — wraps the standard withTrend (which
+ * only ever reads/trends `.total`, here the not-recorded count) with a
+ * second trend on `compliancePct`, since that's the number this row is
+ * actually about. Kept separate from the generic ROW_CALCULATORS loop in
+ * wellnessExport.js for the same reason carePointsAvg is: its trend shape
+ * doesn't match the plain count-trend every other row uses.
+ */
+function withMarComplianceTrend(current, priorRow) {
+  const result = withTrend(current, priorRow);
+  const pctTrend = (curr, prev) => ({
+    current: curr?.compliancePct ?? null,
+    prior: prev?.compliancePct ?? null,
+    trend: trendArrow(curr?.compliancePct ?? null, prev?.compliancePct ?? null),
+  });
+  result.portfolioCompliancePctTrend = pctTrend(current.portfolio, priorRow?.portfolio);
+  const byCommunity = {};
+  for (const cid of Object.keys(current.byCommunity)) {
+    byCommunity[cid] = pctTrend(current.byCommunity[cid], priorRow?.byCommunity?.[cid]);
+  }
+  result.byCommunityCompliancePctTrend = byCommunity;
+  return result;
+}
+
 // ── Staff training / competency gaps ─────────────────────────────────────
 
 /**
@@ -776,6 +837,8 @@ module.exports = {
   normalizeMoveInAssessmentsPending,
   normalizeEvaluationsNeedingAttention,
   normalizeMedicationExceptions,
+  normalizeMarCompliance,
+  withMarComplianceTrend,
   normalizeStaffTrainingGaps,
   normalizeCarePointsAverage,
   withCarePointsTrend,

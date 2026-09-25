@@ -1,5 +1,5 @@
 /**
- * The 25-row / 13-category structure of the Weekly Wellness Scorecard —
+ * The 26-row / 13-category structure of the Weekly Wellness Scorecard —
  * mirrors Imagine Senior Living's own "Weekly Wellness Report" sheet
  * exactly (same category/row order) so the exported workbook and on-screen
  * table both look like a digitized version of the document they already
@@ -29,6 +29,7 @@ export const WELLNESS_ROWS = [
   { category: 'Incidents & Safety', label: 'Sentinel-tagged incidents', key: 'sentinelIncidents', source: 'rows', hasDocCompletion: true, requiresFlag: 'sentinelIncidentTracking', note: 'Leisure Care only — matches ALIS incident types tagged "Sentinel" in their own incident-type configuration.' },
 
   { category: 'Medication Management', label: 'Medication exceptions / late or missed medications', key: 'medicationExceptions', source: 'rows' },
+  { category: 'Medication Management', label: 'MAR compliance (scheduled, non-PRN doses recorded)', key: 'marCompliance', source: 'rows', hasCompliancePct: true, note: 'Scheduled (non-PRN) medication administration records from ALIS’s MAR export. Compliance % = (scheduled − not recorded) ÷ scheduled. PRN orders are excluded — an un-recorded PRN just means it wasn’t needed, not a missed dose.' },
   { category: 'Medication Management', label: 'Pharmacy, MAR, narcotic, or reconciliation concerns', key: 'pharmacyNarcotic', source: 'manual' },
 
   { category: 'Skin / Nutrition', label: 'Skin, wound, pressure injury concerns', key: 'skinWound', source: 'manual' },
@@ -113,6 +114,24 @@ export function resolveWellnessRow(row, snapshot, communityId) {
       total: bucket?.pct != null ? `${Math.round(bucket.pct * 100)}% active` : '—',
       prior: '',
       trend: '',
+    };
+  }
+
+  // MAR compliance — a % (not a raw count like the rest of these rows),
+  // trended on compliancePct rather than the underlying not-recorded count.
+  // See server/services/wellnessNormalizer.js's normalizeMarCompliance /
+  // withMarComplianceTrend for where scheduledTotal/compliancePct and the
+  // pct trend buckets come from.
+  if (row.hasCompliancePct) {
+    const bucket = communityId ? data.byCommunity?.[communityId] : data.portfolio;
+    const pctTrendBucket = communityId ? data.byCommunityCompliancePctTrend?.[communityId] : data.portfolioCompliancePctTrend;
+    const fmt = (b) => (b?.scheduledTotal ? `${Math.round(b.compliancePct * 100)}% (${b.total} not recorded / ${b.scheduledTotal} scheduled)` : '— No scheduled doses this week');
+    return {
+      al: '—',
+      mc: '—',
+      total: fmt(bucket),
+      prior: pctTrendBucket?.prior != null ? `${Math.round(pctTrendBucket.prior * 100)}%` : '—',
+      trend: pctTrendBucket?.trend ?? '—',
     };
   }
 
