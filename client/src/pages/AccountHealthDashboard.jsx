@@ -16,6 +16,7 @@ import TierKpiSection, { TIER_KPI_TITLE } from '../components/TierKpiSection';
 import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
 import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
+import PortfolioExclusionsCheck from '../components/PortfolioExclusionsCheck';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import AlisQuickLinks from '../components/AlisQuickLinks';
 import {
@@ -5268,6 +5269,9 @@ export default function AccountHealthDashboard() {
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <AlisAdminIdDiscovery accounts={accounts} onImported={silentReload} />
+        </div>
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <PortfolioExclusionsCheck />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <ImportAgingReportButton onImported={silentReload} />

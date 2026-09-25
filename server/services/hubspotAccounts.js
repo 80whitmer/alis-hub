@@ -549,8 +549,122 @@ async function getChildCompanies(parentId) {
   return results;
 }
 
+/**
+ * HubSpot-defined company-to-company association typeId for "Child
+ * Company" — the one getOwnedCompanies'/getAllHomeOfficeCompanies'
+ * hs_num_child_companies filter and getChildCompanies'
+ * hs_parent_company_id lookup both actually rely on. Confirmed live (Sep
+ * 2026, via GET /crm/v4/associations/companies/companies/labels) alongside
+ * its reverse, typeId 14 ("Parent Company"), and one more HubSpot-defined
+ * type, typeId 450, which carries no label at all — HubSpot's generic
+ * "Associated Company" relationship, distinct from Child Company.
+ */
+const CHILD_COMPANY_ASSOC_TYPE_ID = 13;
+
+/**
+ * Surfaces accounts a known Account Manager owns that DON'T show up in
+ * getOwnedCompanies'/getAllHomeOfficeCompanies' normal pull, with why (Sep
+ * 2026, Aaron: investigating why two real Owen-owned enhancement tickets —
+ * Western States Lodging, Charter Senior Living — never appeared on either
+ * dashboard). Confirmed live: this is systemic, not a one-off — 15 owned
+ * Home Office companies across 5 different AMs have real communities
+ * linked via the generic typeId-450 association instead of the Child
+ * Company one (typeId 13), so hs_num_child_companies reads 0 and the
+ * hs_num_child_companies > 0 filter silently drops every one of them,
+ * along with everything downstream (health score, ARR, tickets, occupancy)
+ * — Western States Lodging alone has 19 communities linked this way.
+ *
+ * Scoped to account_manager IN (known AMs) — same limitation as
+ * getOwnedCompanies itself: an account with no account_manager set at all
+ * (e.g. Charter Senior Living, a Lead with account_manager null) can't be
+ * found this way, since there's no owner to search by. That case needs a
+ * HubSpot fix (set account_manager) before it can show up here at all —
+ * called out in the UI rather than silently missing.
+ *
+ * The typeId-450 check only runs for the "0 recognized children" subset
+ * (small — 45 of 553 Home Offices as of this writing), not the whole
+ * portfolio, to keep this a live, on-demand check rather than a slow
+ * per-company scan.
+ */
+async function findExcludedPortfolioAccounts() {
+  const knownAmIds = Object.keys(ACCOUNT_MANAGER_NAMES);
+  const companies = [];
+  let after;
+  do {
+    const { status, body } = await hubspotRequest('POST', '/crm/v3/objects/companies/search', {
+      filterGroups: [{ filters: [{ propertyName: 'account_manager', operator: 'IN', values: knownAmIds }] }],
+      properties: [...COMPANY_PROPERTIES, 'hs_parent_company_id'],
+      limit: 100,
+      ...(after ? { after } : {}),
+    });
+    if (status !== 200) {
+      throw new Error(`HubSpot owned-companies search failed (${status}): ${JSON.stringify(body)}`);
+    }
+    companies.push(...(body.results || []));
+    after = body.paging?.next?.after;
+  } while (after);
+
+  // Individual communities carry their parent Home Office's account_manager
+  // too (confirmed live: without this filter, "Client - Community" and
+  // "Canceled" both balloon into the thousands — every community under a
+  // canceled Home Office is itself stamped Canceled, and the account_manager
+  // IN filter above pulls every one of those in). hs_parent_company_id set
+  // is the one reliable "this is a child community, not a top-level
+  // account" signal (see getChildCompanies' own doc comment above) —
+  // filtering on it here, not just lifecycle stage, is what keeps this
+  // report to actual accounts worth a human's attention.
+  const topLevelCompanies = companies.filter((c) => !c.properties.hs_parent_company_id);
+
+  const excluded = [];
+  for (const c of topLevelCompanies) {
+    const lifecycleStage = c.properties.lifecyclestage || null;
+    const childCount = Number(c.properties.hs_num_child_companies || 0);
+    const lifecycleFlag = getLifecycleDataQualityFlag(lifecycleStage);
+
+    // Already in the normal pull — Client - Home Office lifecycle AND at
+    // least one Child-Company-type association. Nothing to report.
+    if (lifecycleFlag === null && childCount > 0) continue;
+
+    const base = {
+      hubspotCompanyId: c.id,
+      companyName: c.properties.name,
+      accountManagerName: getAccountManagerName(c.properties.account_manager),
+      lifecycleStage,
+    };
+
+    if (lifecycleFlag === 'lead' || lifecycleFlag === 'canceled') {
+      excluded.push({ ...base, reason: lifecycleFlag, detail: `${LIFECYCLE_FLAG_LABELS[lifecycleFlag]} — dropped unless it carries an aging balance` });
+      continue;
+    }
+    if (lifecycleFlag === 'client_community' || lifecycleFlag === 'other_stage' || lifecycleFlag === 'no_stage') {
+      excluded.push({ ...base, reason: lifecycleFlag, detail: LIFECYCLE_FLAG_LABELS[lifecycleFlag] });
+      continue;
+    }
+    // Correct lifecycle stage, but hs_num_child_companies reads 0 — check
+    // whether that's because nothing is linked at all, or because
+    // something IS linked, just via the wrong association type.
+    let wrongAssocTypeCount = 0;
+    try {
+      const assoc = await hubspotRequest('GET', `/crm/v4/objects/companies/${c.id}/associations/companies`);
+      wrongAssocTypeCount = (assoc.body.results || [])
+        .filter((r) => (r.associationTypes || []).every((t) => t.typeId !== CHILD_COMPANY_ASSOC_TYPE_ID)).length;
+    } catch {
+      // Best-effort — if this one lookup fails, still report the zero-children fact below.
+    }
+    excluded.push({
+      ...base,
+      reason: wrongAssocTypeCount > 0 ? 'wrong_association_type' : 'no_child_companies',
+      detail: wrongAssocTypeCount > 0
+        ? `0 companies linked via the "Child Company" association, but ${wrongAssocTypeCount} linked via a different HubSpot association type — likely needs its communities re-linked as Child Company in HubSpot`
+        : 'No child companies linked at all',
+    });
+  }
+
+  return excluded;
+}
+
 module.exports = {
   getOwnerId, getOwnedCompanies, getAllHomeOfficeCompanies, getAccountManagerName,
   getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS, shouldDropLifecycleFlaggedAccount,
-  getChildCompanies,
+  getChildCompanies, findExcludedPortfolioAccounts,
 };

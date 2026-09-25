@@ -12,6 +12,8 @@ const express = require('express');
 const router = express.Router();
 const { getLiveEntitlements } = require('../services/alisEntitlements');
 const { discoverAlisAdminIds } = require('../services/alisCompanyDiscovery');
+const { findExcludedPortfolioAccounts } = require('../services/hubspotAccounts');
+const { hubspotRecordUrl } = require('../services/hubspotTickets');
 const { startPortfolioEntitlementsCheck, getStatus: getPortfolioEntitlementsStatus, getPortfolioEntitlementRollup } = require('../services/portfolioEntitlementsJob');
 const { subscribe, unsubscribe } = require('./broadcaster');
 const {
@@ -58,6 +60,20 @@ router.post('/alis-admin-ids/discover', async (req, res, next) => {
     }
     const result = await discoverAlisAdminIds(companies);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/account-truth/excluded — accounts owned by a known AM that never
+// show up in the normal Account Health / Team AM pull, with why (Lead/
+// Canceled lifecycle, no lifecycle stage, or the wrong-association-type gap
+// — see findExcludedPortfolioAccounts' own doc comment). Live, on-demand
+// (no caching) — same reasoning as /alis-admin-ids/discover above.
+router.get('/excluded', async (req, res, next) => {
+  try {
+    const result = await findExcludedPortfolioAccounts();
+    res.json({ excluded: result.map((r) => ({ ...r, hubspotUrl: hubspotRecordUrl('company', r.hubspotCompanyId) })) });
   } catch (err) {
     next(err);
   }
