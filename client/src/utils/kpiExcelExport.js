@@ -27,6 +27,15 @@ function round1(n) {
   return n == null ? '' : Number(n.toFixed(1));
 }
 
+// Mirrors KpiDashboard.jsx's own EVAL_REASON_LABEL (not shared/exported —
+// duplicated here since this module has no access to that component file).
+const EVAL_REASON_LABEL = {
+  expired: 'Expired',
+  incomplete: 'Incomplete',
+  overdue: 'Not evaluated in 12+ months',
+  neverEvaluated: 'Never evaluated',
+};
+
 function download(workbook, filename) {
   return workbook.xlsx.writeBuffer().then((buffer) => {
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
