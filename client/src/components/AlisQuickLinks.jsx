@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * "Word in links to a few key sites" on the company tables (Sep 2026,
@@ -40,16 +41,46 @@ function parseHosts(companyHost) {
 
 export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspotUrl, className = '' }) {
   const [open, setOpen] = useState(false);
+  // Menu position in viewport coordinates, computed from the button's own
+  // rect right before opening — the menu is portaled to document.body (see
+  // below) so this is the only thing tying it back to the button's location.
+  const [menuPos, setMenuPos] = useState(null);
   const ref = useRef(null);
+  const btnRef = useRef(null);
 
   useEffect(() => {
     if (!open) return undefined;
     function onClickOutside(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target) && !e.target.closest('[data-alis-quick-links-menu]')) setOpen(false);
+    }
+    // Reposition on scroll/resize so the menu tracks its button instead of
+    // drifting once it's no longer parented under it in the DOM.
+    function reposition() {
+      if (btnRef.current) {
+        const r = btnRef.current.getBoundingClientRect();
+        setMenuPos({ top: r.bottom + 4, left: r.left });
+      }
     }
     document.addEventListener('mousedown', onClickOutside);
-    return () => document.removeEventListener('mousedown', onClickOutside);
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
   }, [open]);
+
+  function toggleOpen() {
+    setOpen((v) => {
+      const next = !v;
+      if (next && btnRef.current) {
+        const r = btnRef.current.getBoundingClientRect();
+        setMenuPos({ top: r.bottom + 4, left: r.left });
+      }
+      return next;
+    });
+  }
 
   const hosts = parseHosts(companyHost);
   const showHostLabel = hosts.length > 1;
@@ -74,14 +105,29 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
     <div className={`relative inline-block ${className}`} ref={ref} onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={toggleOpen}
         className="text-xs font-medium text-cool-glacier hover:underline shrink-0"
         title="Quick links — ALIS, ALIS Admin, HubSpot"
       >
-        🔗
+        回
       </button>
-      {open && (
-        <div className="absolute z-20 left-0 mt-1 w-56 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 max-h-80 overflow-y-auto">
+      {open && menuPos && createPortal(
+        // Portaled to document.body and positioned in viewport coordinates
+        // (fixed, not absolute) — a table row's ancestor is almost always an
+        // `overflow-x-auto` scroll container (see AccountHealthDashboard.jsx/
+        // TeamAmDashboard.jsx's Accounts tables), and per the CSS overflow
+        // spec setting overflow-x without overflow-y still makes the y-axis
+        // clip too. That silently truncated this menu whenever a search had
+        // narrowed the table to just a few rows, since the container itself
+        // was then too short to hold the menu's own height. Portaling out of
+        // that container sidesteps the clipping instead of trying to grow
+        // the container to fit.
+        <div
+          data-alis-quick-links-menu
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          className="z-50 w-56 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 max-h-80 overflow-y-auto"
+        >
           {groups.map((g, i) => (
             <div key={i} className={i > 0 ? 'border-t border-neutral-100 mt-1 pt-1' : ''}>
               {g.heading && <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{g.heading}</p>}
@@ -99,7 +145,8 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
               ))}
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

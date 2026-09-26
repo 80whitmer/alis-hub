@@ -5491,7 +5491,7 @@ export default function AccountHealthDashboard() {
                       className="border-t border-neutral-100 cursor-pointer hover:bg-neutral-50"
                       onClick={() => setSelected(a)}
                     >
-                      <td className="py-2 pr-4 font-medium">
+                      <td className="py-2 pr-4 font-medium text-base">
                         <div className="flex items-center gap-1.5">
                           <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
                           <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />

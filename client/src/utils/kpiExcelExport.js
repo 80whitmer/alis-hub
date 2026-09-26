@@ -81,8 +81,10 @@ function addTicketSheet(workbook, title, tickets, { showTopThree = false } = {})
 /**
  * Single-account workbook for one QBR/KPI snapshot — Overview, Alerts &
  * Flags, Escalation Tickets, Enhancement Requests: Top 3, Enhancement
- * Requests, HubSpot Deals, and (Sep 2026, Aaron: "much more depth...much
- * more of the detail contained in the report") a detail sheet per section
+ * Requests (HubSpot Deals deliberately dropped, Sep 2026, Aaron: deal data
+ * doesn't belong in a QBR handed to the client), and (Sep 2026, Aaron: "much
+ * more depth...much more of the detail contained in the report") a detail
+ * sheet per section
  * mirroring every on-screen breakdown — Occupancy Detail, Length of Stay
  * Detail, Admissions & Discharges Trend, Care Level Evaluations + Residents
  * Needing Attention + Revenue Leakage, Staffing Detail, Revenue Breakdown,
@@ -311,7 +313,7 @@ function addDetailSheets(workbook, { normalized, summary, keep, includeBilling }
 }
 
 export async function exportKpiOverviewExcel(summary, options = {}) {
-  const { normalized, ticketSummary, dealSummary, flags } = summary;
+  const { normalized, ticketSummary, flags } = summary;
   const includeBilling = options.includeBilling !== false;
   const includeHubspot = options.includeHubspot !== false;
   const truncate = options.truncateEmptySlides === true;
@@ -354,15 +356,15 @@ export async function exportKpiOverviewExcel(summary, options = {}) {
       ['Total Outstanding', money(normalized.outstandingInvoiceSummary?.total)],
     ] : []),
     // HubSpot-sourced counts — same split as qbrExport.js's `includeHubspot`
-    // gate on Support Review/Enhancement Requests/HubSpot Deals.
+    // gate on Support Review/Enhancement Requests (Sep 2026, Aaron: drop
+    // HubSpot Deals from this export entirely — deal data doesn't belong in
+    // a QBR handed to the client).
     ...(includeHubspot ? [
       ['Open Tickets', ticketSummary?.open ?? ''],
       ['Closed Tickets', ticketSummary?.closed ?? ''],
       ['Open Escalation Tickets', ticketSummary?.escalationTickets?.length ?? ''],
       ['Enhancement Requests: Top 3', ticketSummary?.topThreeEnhancements?.items?.length ?? ''],
       ['Open Enhancement Requests', ticketSummary?.enhancementRequests?.length ?? ''],
-      ['Open Deals', dealSummary?.open ?? ''],
-      ['Open Deal Value', dealSummary ? money(dealSummary.totalOpenValue) : ''],
     ] : []),
   ];
   for (const [metric, value] of overviewRows) overview.addRow({ metric, value });
@@ -403,34 +405,6 @@ export async function exportKpiOverviewExcel(summary, options = {}) {
     }
     if (keep(ticketSummary?.enhancementRequests?.length > 0)) {
       addTicketSheet(workbook, 'Enhancement Requests', ticketSummary?.enhancementRequests, { showTopThree: true });
-    }
-
-    if (keep(dealSummary?.deals?.length > 0)) {
-      const dealsSheet = workbook.addWorksheet('HubSpot Deals');
-      dealsSheet.columns = [
-        { header: 'Deal', key: 'name', width: 40 },
-        { header: 'Pipeline', key: 'pipeline', width: 22 },
-        { header: 'Stage', key: 'stage', width: 20 },
-        { header: 'Value', key: 'value', width: 12 },
-        { header: 'Close Date', key: 'closeDate', width: 14 },
-        { header: 'Open?', key: 'isOpen', width: 8 },
-        { header: 'Next Step', key: 'nextStep', width: 40 },
-        { header: 'Link', key: 'url', width: 40 },
-      ];
-      dealsSheet.getRow(1).font = { bold: true };
-      for (const d of dealSummary?.deals || []) {
-        dealsSheet.addRow({
-          name: d.name || '',
-          pipeline: d.pipeline || '',
-          stage: d.stage || '',
-          value: money(d.amount),
-          closeDate: d.closeDate ? d.closeDate.slice(0, 10) : '',
-          isOpen: d.isClosed ? 'Closed' : 'Open',
-          nextStep: d.nextStep || '',
-          url: d.url || '',
-        });
-      }
-      if (!dealSummary?.deals?.length) dealsSheet.addRow({ name: 'None' });
     }
   }
 
