@@ -110,11 +110,12 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
         type="button"
         ref={btnRef}
         onClick={toggleOpen}
-        // Sized to match PinnedNote.jsx's "NOTE" pill (same pill treatment,
-        // same px-[5px] py-[1px] footprint) so the two badges that commonly
-        // sit side by side on a company row read as one balanced set instead
-        // of a tiny bare-glyph link next to a full pill (Sep 2026, Aaron).
-        className="inline-flex items-center justify-center text-[11px] font-semibold leading-none px-[5px] py-[1px] rounded border border-neutral-300 text-neutral-500 bg-white hover:bg-neutral-50 hover:text-cool-glacier shrink-0"
+        // Sized to match PinnedNote.jsx's "NOTE" pill — same fixed h-4
+        // (rather than relying on padding+line-height to happen to agree
+        // with NOTE's own box model) so the two badges that commonly sit
+        // side by side on a company row are pixel-identical in height, not
+        // just close (Sep 2026, Aaron).
+        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-neutral-300 text-neutral-500 bg-white hover:bg-neutral-50 hover:text-cool-glacier shrink-0"
         title="Quick links — ALIS, ALIS Admin, HubSpot"
       >
         回
