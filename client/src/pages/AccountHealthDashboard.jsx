@@ -5388,7 +5388,12 @@ export default function AccountHealthDashboard() {
           </SectionCard>
 
           {/* Four labeled acts instead of one flat 18-tile grid — see
-              StatGroup's doc comment for the story each one is carrying. */}
+              StatGroup's doc comment for the story each one is carrying.
+              Wrapped in its own collapsible SectionCard (Sep 2026, Aaron:
+              "put the KPI cards in a collapsible section") — defaults open
+              since these are the first-glance numbers, unlike the deeper
+              analytical sections below which default closed. */}
+          <SectionCard title="Portfolio KPIs">
           <StatGroup title="Portfolio Health — proactive, not reactive">
             <StatCard label="Total Accounts" value={rollup.totalAccounts} jumpTo="accounts" jumpLabel="Jump to table ↓" />
             <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} jumpTo="health-score-trend" jumpLabel="Jump to trend ↓" />
@@ -5486,6 +5491,7 @@ export default function AccountHealthDashboard() {
               jumpLabel="Jump to list ↓"
             />
           </StatGroup>
+          </SectionCard>
 
           <SectionCard
             title="Accounts"

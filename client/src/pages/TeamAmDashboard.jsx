@@ -4643,7 +4643,11 @@ export default function TeamAmDashboard() {
 
           {/* Three labeled acts, same story/labels as Account Health
               Dashboard's StatGroup (no "Data You Can Trust" group here —
-              see StatGroup's doc comment for why). */}
+              see StatGroup's doc comment for why). Wrapped in its own
+              collapsible SectionCard (Sep 2026, Aaron: "put the KPI cards
+              in a collapsible section") — same as AccountHealthDashboard.jsx,
+              defaults open since these are the first-glance numbers. */}
+          <SectionCard title="Portfolio KPIs">
           <StatGroup title="Portfolio Health — proactive, not reactive">
             <StatCard label="AMs" value={rollup.totalAms} />
             <StatCard label="Total Accounts" value={rollup.totalAccounts} jumpTo="accounts" jumpLabel="Jump to table ↓" />
@@ -4705,6 +4709,7 @@ export default function TeamAmDashboard() {
               jumpLabel="Jump to list ↓"
             />
           </StatGroup>
+          </SectionCard>
 
           {/* Accounts, then Escalation Tickets, then Top 3 Enhancement
               Requests, then Enhancement Requests — directly under the KPI
