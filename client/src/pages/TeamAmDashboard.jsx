@@ -3717,6 +3717,30 @@ function flattenArrAddedDeals(accounts) {
   return rows;
 }
 
+/**
+ * Global search results (Aaron, Sep 2026: "update the global search at the
+ * top... to search all search bars and return the sections with a hit")
+ * — same idea as AccountHealthDashboard.jsx's identical helper, scoped to
+ * the sections this page actually has (no Recurring Calls/Key Contacts
+ * SectionCards here — those live inside TeamAmAccountDrawer instead).
+ * Matches company OR AM name, same as this page's own per-section search
+ * boxes ("Search accounts or AM…").
+ */
+function computeGlobalSearchHits(query, accounts) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const nameHit = (name) => (name || '').toLowerCase().includes(q);
+  const rowHit = (r) => nameHit(r.companyName) || nameHit(r.accountManagerName);
+  const hits = [];
+  const accountHits = accounts.filter((a) => nameHit(a.company_name) || nameHit(a.account_manager_name)).length;
+  if (accountHits > 0) hits.push({ title: 'Accounts', count: accountHits });
+  const openDealHits = flattenDeals(accounts).filter((d) => d.isOpen && rowHit(d)).length;
+  if (openDealHits > 0) hits.push({ title: 'All Deals', count: openDealHits });
+  const arrAddedHits = flattenArrAddedDeals(accounts).filter(rowHit).length;
+  if (arrAddedHits > 0) hits.push({ title: 'ARR Added This Year', count: arrAddedHits });
+  return hits;
+}
+
 function DealTypeTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -4207,6 +4231,7 @@ export default function TeamAmDashboard() {
   const [error, setError] = useState('');
   useInternalDeepLink(!loading && accounts.length > 0, JUMP_EVENT);
   const [search, setSearch] = useState('');
+  const globalSearchHits = useMemo(() => computeGlobalSearchHits(search, accounts), [search, accounts]);
   // Multiselect (Sep 2026, Aaron: "would love this to be the standard
   // around the apps... filter pills that can be multiselected") — a Set of
   // active tier labels, any number active at once, empty means no filter.
@@ -4422,7 +4447,7 @@ export default function TeamAmDashboard() {
               SectionCard below already filters on, so typing here doesn't
               move the page; Enter/the button dispatches JUMP_EVENT to
               expand-and-scroll to that table, already pre-filtered. */}
-          <div className="flex flex-col gap-2 shrink-0">
+          <div className="flex flex-col gap-2 shrink-0 relative">
             <form onSubmit={jumpToAccounts} className="flex items-center gap-2">
               <input
                 type="text"
@@ -4433,6 +4458,25 @@ export default function TeamAmDashboard() {
               />
               <button type="submit" className="btn btn-sm btn-secondary border border-accent-500/40 w-24 justify-center">Accounts</button>
             </form>
+            {/* Global search results (Sep 2026, Aaron: "search all search
+                bars and return the sections with a hit") — same mechanism
+                as AccountHealthDashboard.jsx's identical dropdown. */}
+            {globalSearchHits.length > 0 && (
+              <div className="absolute z-20 top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-lg shadow-lg py-1">
+                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Sections with a match</p>
+                {globalSearchHits.map((h) => (
+                  <button
+                    key={h.title}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(h.title) } }))}
+                    className="flex items-center justify-between w-full px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <span>{h.title}</span>
+                    <span className="text-neutral-400 text-xs">{h.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent(UTILITIES_TOGGLE_EVENT))}
@@ -4577,7 +4621,6 @@ export default function TeamAmDashboard() {
           <SectionCard
             title="Accounts"
             description="Sorted by Health Score by default — weakest accounts first"
-            defaultExpanded={false}
             action={
               <input
                 type="text"
@@ -4645,13 +4688,13 @@ export default function TeamAmDashboard() {
                     >
                       <td className="py-2 pr-4 font-medium">
                         <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
-                        <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} className="ml-1.5 align-middle" />
                         <KeyContactsToggle
                           account={a}
                           expanded={expandedContactsId === a.hubspot_company_id}
                           onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
                           className="ml-1.5 align-middle"
                         />
+                        <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} className="ml-1.5 align-middle" />
                         {a.lifecycle_flag_label && (
                           <span
                             title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}

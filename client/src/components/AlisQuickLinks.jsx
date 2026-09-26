@@ -120,14 +120,12 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
         // (rather than relying on padding+line-height to happen to agree
         // with NOTE's own box model) so the two badges that commonly sit
         // side by side on a company row are pixel-identical in height, not
-        // just close (Sep 2026, Aaron). Text/background colored off the
-        // cool-glacier token (ALIS_BrandGuide_2025.pdf's cool secondary
-        // accent, see tailwind.config.js) so the badge itself reads as an
-        // ALIS-branded control; border matches NOTE's own border-accent-300
-        // exactly (Sep 2026, Aaron: "match the outline color... with the
-        // note box") rather than a separate glacier-tinted border, so the
-        // two pills read as one consistent set.
-        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-accent-300 text-cool-glacier bg-cool-glacier/5 hover:bg-cool-glacier/15 shrink-0"
+        // just close (Sep 2026, Aaron). Border/text/background now copy
+        // NOTE's own accent-300/accent-700/accent-50 exactly (Sep 2026,
+        // Aaron: "make 回 the same color as the font in Note with the same
+        // shading in the padding") rather than a separate glacier tint, so
+        // the two pills read as one consistent set start to finish.
+        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 shrink-0"
         title="Quick links — ALIS, ALIS Admin, HubSpot"
       >
         回

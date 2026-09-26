@@ -3252,6 +3252,41 @@ function flattenPersonallyClosedDeals(accounts, ownerName) {
 }
 
 /**
+ * Global search results (Aaron, Sep 2026: "update the global search at the
+ * top... to search all search bars and return the sections with a hit")
+ * — the header's own "Search accounts…" box already shares `search` state
+ * with the Accounts table's own search box (see the header's doc comment),
+ * but previously only ever jumped to Accounts. This runs that same query
+ * against every OTHER section whose own search box filters by company
+ * name against these same page-local flatten* helpers, so a hit here
+ * means that section's own search box would show the same result if you
+ * typed the query there directly. Ticket-list sections (Enhancement
+ * Requests, Escalation, ALIS Internal, etc.) use separate shared
+ * components with their own independent search state, not these
+ * flatten helpers — not covered here, a scoping call given the size of
+ * wiring each of those up individually.
+ */
+function computeGlobalSearchHits(query, accounts, ownerName) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const nameHit = (name) => (name || '').toLowerCase().includes(q);
+  const hits = [];
+  const accountHits = accounts.filter((a) => nameHit(a.company_name)).length;
+  if (accountHits > 0) hits.push({ title: 'Accounts', count: accountHits });
+  const recurringHits = flattenRecurringCalls(accounts).filter((r) => nameHit(r.company_name)).length;
+  if (recurringHits > 0) hits.push({ title: 'Recurring Calls', count: recurringHits });
+  const contactHits = flattenKeyContacts(accounts).filter((c) => nameHit(c.companyName)).length;
+  if (contactHits > 0) hits.push({ title: 'Key Contacts', count: contactHits });
+  const openDealHits = flattenDeals(accounts).filter((d) => d.isOpen && nameHit(d.companyName)).length;
+  if (openDealHits > 0) hits.push({ title: 'All Deals', count: openDealHits });
+  const arrAddedHits = flattenArrAddedDeals(accounts).filter((d) => nameHit(d.companyName)).length;
+  if (arrAddedHits > 0) hits.push({ title: 'ARR Added This Year', count: arrAddedHits });
+  const personallyClosedHits = flattenPersonallyClosedDeals(accounts, ownerName).filter((d) => nameHit(d.companyName)).length;
+  if (personallyClosedHits > 0) hits.push({ title: 'ARR Personally Closed', count: personallyClosedHits });
+  return hits;
+}
+
+/**
  * Open-deals drill-down for the "AM KPI" section's Deals: Open (count) /
  * Deals: Open Value (ARR) metrics (Aaron, Sep 2026: "give access to a
  * scrolling table of the open deals in this section... tie these numbers
@@ -5013,6 +5048,7 @@ export default function AccountHealthDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const globalSearchHits = useMemo(() => computeGlobalSearchHits(search, accounts, ownerName), [search, accounts, ownerName]);
   const [selected, setSelected] = useState(null);
   const [expandedContactsId, setExpandedContactsId] = useState(null);
   const [refreshResult, setRefreshResult] = useState(null);
@@ -5223,13 +5259,17 @@ export default function AccountHealthDashboard() {
               </p>
             )}
           </div>
-          <div className="flex flex-col gap-2 shrink-0">
+          <div className="flex flex-col gap-2 shrink-0 relative">
             {/* Shares the same `search` state as the Accounts SectionCard's
                 own search box below (Sep 2026) — typing here doesn't move
                 the page (so it doesn't scroll itself out from under the
                 cursor while typing), Enter/the button dispatches
                 JUMP_EVENT to expand-and-scroll to that table, already
-                pre-filtered. */}
+                pre-filtered. Also the "global search" (Sep 2026, Aaron:
+                "search all search bars and return the sections with a
+                hit") — computeGlobalSearchHits runs the same query against
+                every other section's own underlying data, and the
+                dropdown below lists which ones have a match. */}
             <form onSubmit={jumpToAccounts} className="flex items-center gap-2">
               <input
                 type="text"
@@ -5240,6 +5280,22 @@ export default function AccountHealthDashboard() {
               />
               <button type="submit" className="btn btn-sm btn-secondary border border-accent-500/40 w-24 justify-center">Accounts</button>
             </form>
+            {globalSearchHits.length > 0 && (
+              <div className="absolute z-20 top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-lg shadow-lg py-1">
+                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Sections with a match</p>
+                {globalSearchHits.map((h) => (
+                  <button
+                    key={h.title}
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(h.title) } }))}
+                    className="flex items-center justify-between w-full px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <span>{h.title}</span>
+                    <span className="text-neutral-400 text-xs">{h.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Utilities toggle moved here from the main nav bar (Sep
                 2026, Aaron: "tucking it tidily under the newly named
                 Accounts button") — same UTILITIES_TOGGLE_EVENT UtilityPanel
@@ -5501,12 +5557,12 @@ export default function AccountHealthDashboard() {
                       <td className="py-2 pr-4 font-medium text-base">
                         <div className="flex items-center gap-1.5">
                           <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
-                          <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
                           <KeyContactsToggle
                             account={a}
                             expanded={expandedContactsId === a.hubspot_company_id}
                             onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
                           />
+                          <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
                           {a.occupancy_error && (
                             <span
                               title={`Occupancy refresh failed: ${a.occupancy_error}`}
