@@ -15,7 +15,7 @@ const {
   listAccountHealthSnapshots, createJob, setJobStatus, setItemStatus,
   recordHealthScoreSnapshots, getHealthScoreHistory,
   recordKpiMetricSnapshots, getKpiMetricHistory,
-  listAlisAdminIds, listCompanyHosts,
+  listAlisAdminIds, listCompanyHosts, listKeyContacts, listRecurringCalls,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -619,6 +619,29 @@ function getEnrichedTeamAmAccounts() {
   const companyHostById = new Map(companyHostRows.filter((r) => r.hubspot_company_id).map((r) => [r.hubspot_company_id, r.company_host]));
   const companyHostByName = new Map(companyHostRows.map((r) => [r.name_key, r.company_host]));
   const resolveCompanyHost = (a) => companyHostById.get(a.hubspot_company_id) || companyHostByName.get((a.company_name || '').trim().toLowerCase()) || null;
+  // Key Contacts and Recurring Calls (Sep 2026, Aaron: "add the side panel
+  // pop out functionality... a la the AH board") — both tables (key_contacts,
+  // recurring_calls) are portfolio-wide, keyed only by hubspot_company_id,
+  // not scoped to whichever dashboard populated them — same read-only
+  // cross-reference pattern as occupancyByCompanyId above, mirroring
+  // accountHealth.js's own copy of this join verbatim. An account only
+  // shows contacts/calls here once Account Health (the only page that
+  // currently captures either) has touched it at least once; nothing new
+  // is scraped or written from this page.
+  const keyContactsByCompanyId = new Map();
+  const allKnownKeyContactLabels = new Set();
+  for (const c of listKeyContacts()) {
+    const list = keyContactsByCompanyId.get(c.hubspot_company_id) || [];
+    list.push(c);
+    keyContactsByCompanyId.set(c.hubspot_company_id, list);
+    for (const label of c.labels) allKnownKeyContactLabels.add(label);
+  }
+  const recurringCallsByCompanyId = new Map();
+  for (const r of listRecurringCalls()) {
+    const list = recurringCallsByCompanyId.get(r.hubspot_company_id) || [];
+    list.push(r);
+    recurringCallsByCompanyId.set(r.hubspot_company_id, list);
+  }
   return accounts.map((a) => {
     const { score, band, subScores } = computeHealthScore({
       serviceHealth: a.serviceHealth, financialHealth: a.financialHealth, aging: a.aging, arrCents: a.arr_cents,
@@ -639,6 +662,9 @@ function getEnrichedTeamAmAccounts() {
     // account is still sitting in this table instead of just saying
     // "Canceled" and looking like a filtering bug.
     const keptForAgingBalance = (lifecycleFlag === 'lead' || lifecycleFlag === 'canceled') && (a.aging_total_cents || 0) > 0;
+    const keyContacts = keyContactsByCompanyId.get(a.hubspot_company_id) || [];
+    const coveredLabels = new Set(keyContacts.flatMap((c) => c.labels));
+    const recurringCalls = recurringCallsByCompanyId.get(a.hubspot_company_id) || [];
     return {
       ...a,
       health_score: score,
@@ -676,6 +702,30 @@ function getEnrichedTeamAmAccounts() {
       // always-free number (no ALIS call involved), never blended with the
       // ALIS-pull-derived total_capacity above.
       hubspot_capacity: a.hubspot_capacity ?? null,
+      recurringCalls: recurringCalls.map((rc) => ({
+        id: rc.id,
+        label: rc.label,
+        cadence: rc.cadence,
+        nextCallDate: rc.next_call_date,
+        calendarLink: rc.calendar_link,
+        notes: rc.notes,
+        dayOfWeek: rc.day_of_week,
+        time: rc.time,
+        updatedAt: rc.updated_at,
+      })),
+      keyContacts: keyContacts.map((c) => ({
+        contactId: c.hubspot_contact_id,
+        name: c.name,
+        title: c.title,
+        email: c.email,
+        phone: c.phone,
+        labels: c.labels,
+        funFacts: c.fun_facts,
+        notes: c.notes,
+        lastActivityDate: c.last_activity_date,
+        hubspotUrl: c.hubspot_url,
+      })),
+      missingKeyContactLabels: [...allKnownKeyContactLabels].filter((l) => !coveredLabels.has(l)).sort(),
     };
   }).filter((a) => !shouldDropLifecycleFlaggedAccount(a.lifecycle_flag, a.aging_total_cents));
 }

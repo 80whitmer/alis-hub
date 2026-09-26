@@ -19,6 +19,7 @@ import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
 import PortfolioExclusionsCheck from '../components/PortfolioExclusionsCheck';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import AlisQuickLinks from '../components/AlisQuickLinks';
+import { KeyContactsToggle, KeyContactsExpandPanel } from '../components/KeyContactsExpand';
 import {
   exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
   exportCompanyHostTemplate, parseCompanyHostTemplate,
@@ -30,6 +31,11 @@ import { exportUnassignedTierAccounts } from '../utils/unassignedTierExport';
 import { exportAllDeals } from '../utils/allDealsExport';
 import { exportArrAddedDeals } from '../utils/arrAddedDealsExport';
 import { exportArrPersonallyClosedDeals } from '../utils/arrPersonallyClosedExport';
+
+// 13 data columns on the Accounts table below — kept in sync with that
+// table's own <thead> by hand, used as the expanded Key Contacts row's
+// colSpan (same convention as alis-product-ops' ACCOUNT_COLUMNS).
+const ACCOUNT_TABLE_COLUMNS = 13;
 
 function pctStr(p) {
   return p != null ? `${(p * 100).toFixed(1)}%` : '—';
@@ -5008,6 +5014,7 @@ export default function AccountHealthDashboard() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
+  const [expandedContactsId, setExpandedContactsId] = useState(null);
   const [refreshResult, setRefreshResult] = useState(null);
   const [companiesByTierChartType, setCompaniesByTierChartType] = useState('bar');
   const [arrByTierMetricKey, setArrByTierMetricKey] = useState('arrCents');
@@ -5486,8 +5493,8 @@ export default function AccountHealthDashboard() {
                 </thead>
                 <tbody>
                   {filtered.map((a) => (
+                    <Fragment key={a.hubspot_company_id}>
                     <tr
-                      key={a.hubspot_company_id}
                       className="border-t border-neutral-100 cursor-pointer hover:bg-neutral-50"
                       onClick={() => setSelected(a)}
                     >
@@ -5495,6 +5502,11 @@ export default function AccountHealthDashboard() {
                         <div className="flex items-center gap-1.5">
                           <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
                           <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
+                          <KeyContactsToggle
+                            account={a}
+                            expanded={expandedContactsId === a.hubspot_company_id}
+                            onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
+                          />
                           {a.occupancy_error && (
                             <span
                               title={`Occupancy refresh failed: ${a.occupancy_error}`}
@@ -5531,6 +5543,14 @@ export default function AccountHealthDashboard() {
                         <CompanyLink account={a} withNote={false} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
                       </td>
                     </tr>
+                    {expandedContactsId === a.hubspot_company_id && (
+                      <tr onClick={(e) => e.stopPropagation()}>
+                        <td colSpan={ACCOUNT_TABLE_COLUMNS} className="bg-neutral-50">
+                          <KeyContactsExpandPanel account={a} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

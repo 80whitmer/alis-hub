@@ -12,12 +12,13 @@ import EnhancementRequestsSection from '../components/EnhancementRequestsSection
 import EscalationRequestsSection from '../components/EscalationRequestsSection';
 import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
 import TierKpiSection, { AmKpiSection, TIER_KPI_TITLE, AM_KPI_TITLE } from '../components/TierKpiSection';
-import PinnedNoteButton from '../components/PinnedNote';
+import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
 import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import ContractTruthSection from '../components/ContractTruthSection';
 import AlisQuickLinks from '../components/AlisQuickLinks';
+import { KeyContactsToggle, KeyContactsExpandPanel } from '../components/KeyContactsExpand';
 import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
@@ -26,6 +27,12 @@ import { exportCompanyHostTemplate, parseCompanyHostTemplate } from '../utils/ac
 import { exportTeamAmPortfolioExcel } from '../utils/teamAmExport';
 import { exportAllDeals } from '../utils/allDealsExport';
 import { exportArrAddedDeals } from '../utils/arrAddedDealsExport';
+
+// 13 data columns + the trailing Account Truth column, on the Accounts
+// table below — kept in sync with that table's own <thead> by hand (same
+// convention as alis-product-ops' ACCOUNT_COLUMNS), used as the expanded
+// Key Contacts row's colSpan.
+const ACCOUNT_TABLE_COLUMNS = 14;
 
 function currencyStr(cents) {
   return ((cents || 0) / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -81,6 +88,21 @@ function ScoreBadge({ score, band }) {
       {score}
     </span>
   );
+}
+
+/** Same as AccountHealthDashboard.jsx's identical component — duplicated, not shared, matching this codebase's per-page convention. computeContractTruth (server-side) already runs identically for this page's own financialHealth. */
+function ContractTruthBadge({ account }) {
+  const ct = account.financialHealth?.contractTruth;
+  if (!ct) return <span className="badge badge-neutral">Not yet refreshed</span>;
+  if (ct.complete) return <span className="badge badge-success">Confirmed</span>;
+  const issue = !ct.hasClosedWonDeal
+    ? 'No closed-won deal on file'
+    : !ct.arrConfirmed && !ct.closeDateConfirmed
+      ? 'Missing ARR and close date'
+      : !ct.arrConfirmed
+        ? 'Missing ARR value'
+        : 'Missing close date';
+  return <span className="badge badge-warning" title={issue}>{issue}</span>;
 }
 
 /**
@@ -3164,16 +3186,340 @@ function UnassignedTierDrawer({ accounts, onClose }) {
 /**
  * Lightweight per-account drawer for just the Account Truth model (Aaron,
  * Sep 2026: "digging the account truth model -- could we bring it over
- * and integrate it with the team am / account health dashboards") — this
- * dashboard has no full Service/Financial Health drawer the way Account
- * Health does, so rather than building that whole thing just to host one
- * new panel, this is a minimal drawer scoped to Account Truth alone,
- * triggered per-row from the Accounts table below.
+ * and integrate it with the team am / account health dashboards"). Kept
+ * around as its own quick "View/Set up" button in the Account Truth column
+ * (Sep 2026, Aaron: "add the side panel pop out functionality... a la the
+ * AH board" — the FULL drawer below now covers Account Truth too, as its
+ * own section, same as AccountHealthDashboard.jsx's AccountDrawer; this
+ * narrow one stays as a faster one-click path when Account Truth is all
+ * that's needed, rather than removing a working, already-wired button).
  */
 function TeamAmAccountTruthDrawer({ account, onClose, onUpdated }) {
   return (
     <Drawer title={account.company_name} subtitle="Account Truth" onClose={onClose}>
       <AccountTruthPanel account={account} onUpdated={onUpdated} />
+    </Drawer>
+  );
+}
+
+const CADENCE_OPTIONS = ['Weekly', 'Bi-Weekly', 'Monthly', 'Quarterly', 'Other'];
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+/** Same as AccountHealthDashboard.jsx's identical helper — duplicated, not shared, matching this codebase's per-page convention. */
+function formatTime(time) {
+  if (!time) return null;
+  const [h, m] = time.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Recurring-call editing, duplicated verbatim from AccountHealthDashboard.jsx
+ * (Sep 2026, Aaron: "add the side panel pop out functionality... a la the
+ * AH board"). Its API calls hit `/api/account-health/recurring-calls/...`
+ * even from this page — the underlying recurring_calls table is
+ * portfolio-wide, keyed only by hubspot_company_id, not scoped to whichever
+ * dashboard's router happens to host the route (same reasoning as
+ * getEnrichedTeamAmAccounts' own keyContacts/recurringCalls cross-reference
+ * above) — so this is safe to reuse unmodified rather than needing its own
+ * team-am-scoped copy of the routes themselves.
+ */
+function RecurringCallFormFields({ values, onChange }) {
+  const set = (key) => (e) => onChange({ ...values, [key]: e.target.value });
+  return (
+    <div className="space-y-2">
+      <input
+        type="text"
+        value={values.label}
+        onChange={set('label')}
+        placeholder="Label — e.g. 'Weekly Ops Sync' (optional, helps tell multiple calls apart)"
+        className="w-full text-sm border border-neutral-200 rounded-lg px-2 py-1"
+      />
+      <div className="flex gap-2">
+        <select value={values.cadence} onChange={set('cadence')} className="text-sm border border-neutral-200 rounded-lg px-2 py-1">
+          <option value="">No cadence</option>
+          {CADENCE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input type="date" value={values.nextCallDate} onChange={set('nextCallDate')} className="text-sm border border-neutral-200 rounded-lg px-2 py-1" />
+      </div>
+      <div className="flex gap-2">
+        <select value={values.dayOfWeek} onChange={set('dayOfWeek')} className="text-sm border border-neutral-200 rounded-lg px-2 py-1">
+          <option value="">No day set</option>
+          {DAY_ORDER.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <input type="time" value={values.time} onChange={set('time')} className="text-sm border border-neutral-200 rounded-lg px-2 py-1" />
+      </div>
+      <input
+        type="url"
+        value={values.calendarLink}
+        onChange={set('calendarLink')}
+        placeholder="Link to the recurring calendar event (optional)"
+        className="w-full text-sm border border-neutral-200 rounded-lg px-2 py-1"
+      />
+      <input
+        type="text"
+        value={values.notes}
+        onChange={set('notes')}
+        placeholder="Notes (optional)"
+        className="w-full text-sm border border-neutral-200 rounded-lg px-2 py-1"
+      />
+    </div>
+  );
+}
+
+const BLANK_RECURRING_CALL_FIELDS = { label: '', cadence: '', nextCallDate: '', calendarLink: '', notes: '', dayOfWeek: '', time: '' };
+
+function fieldsFromCall(call) {
+  return {
+    label: call?.label || '',
+    cadence: call?.cadence || '',
+    nextCallDate: call?.nextCallDate?.slice(0, 10) || '',
+    calendarLink: call?.calendarLink || '',
+    notes: call?.notes || '',
+    dayOfWeek: call?.dayOfWeek || '',
+    time: call?.time || '',
+  };
+}
+
+function RecurringCallCard({ call, onUpdated }) {
+  const [editing, setEditing] = useState(false);
+  const [fields, setFields] = useState(fieldsFromCall(call));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => { setFields(fieldsFromCall(call)); }, [call.label, call.cadence, call.nextCallDate, call.calendarLink, call.notes, call.dayOfWeek, call.time]);
+
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/account-health/recurring-calls/${call.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: fields.label || null, cadence: fields.cadence || null, nextCallDate: fields.nextCallDate || null,
+          calendarLink: fields.calendarLink || null, notes: fields.notes || null, dayOfWeek: fields.dayOfWeek || null, time: fields.time || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      setEditing(false);
+      await onUpdated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/account-health/recurring-calls/${call.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete');
+      await onUpdated();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-3 p-3 border border-neutral-200 rounded-lg">
+      {editing ? (
+        <div className="space-y-2">
+          <RecurringCallFormFields values={fields} onChange={setFields} />
+          <div className="flex items-center gap-2">
+            <button onClick={save} disabled={busy} className="btn btn-sm btn-secondary">{busy ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => { setEditing(false); setFields(fieldsFromCall(call)); }} disabled={busy} className="btn btn-sm btn-secondary">Cancel</button>
+            <button onClick={remove} disabled={busy} className="text-xs text-error hover:underline ml-auto">Delete</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-sm text-neutral-700">
+            {call.label && <span className="font-medium">{call.label}</span>}
+            {call.cadence && <span className={call.label ? 'text-neutral-500' : 'font-medium'}>{call.label ? ` · ${call.cadence}` : call.cadence}</span>}
+            {call.dayOfWeek && <span className="text-neutral-500"> · {call.dayOfWeek}s{call.time ? ` at ${formatTime(call.time)}` : ''}</span>}
+            {call.nextCallDate && <span className="text-neutral-500"> · next {call.nextCallDate.slice(0, 10)}</span>}
+            {call.calendarLink && (
+              <>
+                {' · '}
+                <a href={call.calendarLink} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">Open Calendar Event ↗</a>
+              </>
+            )}
+            {call.notes && <p className="text-neutral-500 text-xs mt-1">{call.notes}</p>}
+          </div>
+          <button onClick={() => setEditing(true)} className="text-xs font-medium text-cool-glacier hover:underline shrink-0">Edit</button>
+        </div>
+      )}
+      {error && <p className="text-xs text-error mt-1">{error}</p>}
+    </div>
+  );
+}
+
+function NewRecurringCallForm({ hubspotCompanyId, onUpdated, onDone }) {
+  const [fields, setFields] = useState(BLANK_RECURRING_CALL_FIELDS);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/account-health/${hubspotCompanyId}/recurring-calls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: fields.label || null, cadence: fields.cadence || null, nextCallDate: fields.nextCallDate || null,
+          calendarLink: fields.calendarLink || null, notes: fields.notes || null, dayOfWeek: fields.dayOfWeek || null, time: fields.time || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save');
+      await onUpdated();
+      onDone();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-3 p-3 border border-dashed border-neutral-300 rounded-lg">
+      <RecurringCallFormFields values={fields} onChange={setFields} />
+      <div className="flex items-center gap-2 mt-2">
+        <button onClick={save} disabled={busy} className="btn btn-sm btn-secondary">{busy ? 'Saving…' : 'Save'}</button>
+        <button onClick={onDone} disabled={busy} className="btn btn-sm btn-secondary">Cancel</button>
+      </div>
+      {error && <p className="text-xs text-error mt-1">{error}</p>}
+    </div>
+  );
+}
+
+function RecurringCallEditor({ account, onUpdated }) {
+  const calls = account.recurringCalls || [];
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <div className="mb-6">
+      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">Recurring Calls</p>
+      {calls.length === 0 && !adding && <p className="text-sm italic text-neutral-400 mb-2">no recurring calls set</p>}
+      {calls.map((call) => <RecurringCallCard key={call.id} call={call} onUpdated={onUpdated} />)}
+      {adding ? (
+        <NewRecurringCallForm hubspotCompanyId={account.hubspot_company_id} onUpdated={onUpdated} onDone={() => setAdding(false)} />
+      ) : (
+        <button onClick={() => setAdding(true)} className="text-xs font-medium text-cool-glacier hover:underline">+ Add Recurring Call</button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Full per-account detail side panel (Aaron, Sep 2026: "add the side panel
+ * pop out functionality with all of the captured detail a la the AH
+ * board") — mirrors AccountHealthDashboard.jsx's AccountDrawer, scoped to
+ * the fields this dashboard's account objects actually carry. Two things
+ * are deliberately left out rather than faked: ALIS subdomain editing
+ * (AlisHostEditor's "Save & Refresh" calls Account Health's own
+ * single-account /refresh-occupancy endpoint, which writes into
+ * account_health_snapshots — reusing it here would silently refresh the
+ * wrong dashboard's cache; this page only has a portfolio-wide occupancy
+ * job, not a per-account one) and the QBR-style Excel/PDF export buttons
+ * (this dashboard has no equivalent single-account export routes). Opened
+ * from a row click on the Accounts table below; the existing "Account
+ * Truth" column button/drawer stays as its own faster shortcut (see
+ * TeamAmAccountTruthDrawer's doc comment) rather than being removed.
+ */
+function TeamAmAccountDrawer({ account, onClose, onUpdated }) {
+  const fin = account.financialHealth;
+  const openDeals = (fin?.expansionPipeline?.deals || []).filter((d) => d.isOpen);
+  const closedDealCount = fin?.totalDeals != null
+    ? Math.max(0, fin.totalDeals - (fin.expansionPipeline?.openDealsCount || 0))
+    : null;
+
+  return (
+    <Drawer
+      title={account.company_name}
+      subtitle={
+        <>
+          {account.hubspotUrl ? (
+            <a href={account.hubspotUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-cool-glacier hover:underline">
+              Open in HubSpot
+            </a>
+          ) : `HubSpot company ${account.hubspot_company_id}`}
+          {account.account_manager_name ? ` · ${account.account_manager_name}` : ''}
+          {account.lifecycle_flag_label ? ` · ⚠️ ${account.lifecycle_flag_label}` : ''}
+        </>
+      }
+      badge={<ScoreBadge score={account.health_score} band={account.health_band} />}
+      onClose={onClose}
+    >
+      <PinnedNoteInline noteId={account.pinned_note_id} heading="Home Office pinned note" />
+
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <StatCard label="Health Score" value={account.health_score ?? '—'} sub={account.health_band || undefined} />
+        <div className="card">
+          <p className="text-xs text-neutral-500 uppercase tracking-wide min-h-8">Sub-scores</p>
+          <div className="mt-1 space-y-1">
+            {Object.entries(account.subScores || {}).map(([k, v]) => (
+              <div key={k} className="flex justify-between text-xs">
+                <span className="text-neutral-600 capitalize">{k}</span>
+                <span className="font-semibold text-primary-900">{v == null ? '—' : v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <StatCard label="Open Tickets" value={account.open_ticket_count ?? 0} />
+        <StatCard label="Closed Tickets" value={account.closed_ticket_count ?? 0} />
+        <StatCard label="Open Deals" value={account.open_deal_count ?? openDeals.length} sub={closedDealCount != null ? `${closedDealCount} closed (all-time)` : undefined} />
+        <StatCard label="Open Deal Value" value={currencyStr(account.open_deal_value_cents)} />
+        <StatCard label="ARR" value={account.arr_cents != null ? currencyStr(account.arr_cents) : '—'} />
+        <StatCard label={`ARR Added (${new Date().getFullYear()})`} value={currencyStr(account.arr_added_this_year_cents)} />
+        <StatCard label="Aging Balance" value={account.aging_total_cents != null ? currencyStr(account.aging_total_cents) : '—'} />
+        <StatCard label="DSO" value={account.dsoDays != null ? `${account.dsoDays}d` : '—'} />
+        <StatCard label="Total Capacity" value={account.total_capacity ?? '—'} sub={account.occupancy_as_of_date ? `As of ${account.occupancy_as_of_date}` : 'No ALIS subdomain mapped'} />
+        <StatCard label="Current Census" value={account.current_census ?? '—'} sub={account.occupancy_pct != null ? `${(account.occupancy_pct * 100).toFixed(1)}% occupied` : undefined} />
+      </div>
+
+      <div className="flex items-center gap-2 mb-4 text-sm">
+        <span className="text-neutral-500 uppercase tracking-wide text-xs">Contract Truth</span>
+        <ContractTruthBadge account={account} />
+      </div>
+
+      <RecurringCallEditor account={account} onUpdated={onUpdated} />
+      <AccountTruthPanel account={account} onUpdated={onUpdated} />
+
+      <h3 className="font-semibold text-primary-900 text-sm mb-2">Key Contacts</h3>
+      {account.keyContacts?.length > 0 ? (
+        <ul className="text-sm mb-3">
+          {account.keyContacts.map((c) => (
+            <li key={c.contactId} className="flex flex-col gap-0.5 py-1.5 border-b border-neutral-100 last:border-b-0">
+              <div className="flex justify-between gap-2">
+                <span className="truncate font-medium text-neutral-700">
+                  {c.hubspotUrl ? (
+                    <a href={c.hubspotUrl} target="_blank" rel="noopener noreferrer" className="text-cool-glacier hover:underline">{c.name || 'Unnamed contact'}</a>
+                  ) : (c.name || 'Unnamed contact')}
+                  {c.title && <span className="text-neutral-400 font-normal"> — {c.title}</span>}
+                </span>
+                <span className="text-neutral-400 shrink-0 text-xs">{(c.labels || []).join(', ')}</span>
+              </div>
+              {(c.email || c.phone) && <p className="text-xs text-neutral-400">{[c.email, c.phone].filter(Boolean).join(' · ')}</p>}
+              {c.funFacts && <p className="text-xs text-neutral-400 italic">{c.funFacts}</p>}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-neutral-500 italic mb-3">No Key Contacts tagged for this account yet — tag contacts via HubSpot's Company↔Contact association labels.</p>}
+      {account.missingKeyContactLabels?.length > 0 && (
+        <div className="alert alert-warning mb-6">
+          <span>⚠️</span>
+          <p className="text-sm">No contact tagged as: {account.missingKeyContactLabels.join(', ')}.</p>
+        </div>
+      )}
     </Drawer>
   );
 }
@@ -3879,6 +4225,8 @@ export default function TeamAmDashboard() {
   const [ticketsByAmByTierChartType, setTicketsByAmByTierChartType] = useState('bar');
   const [atRiskOpen, setAtRiskOpen] = useState(false);
   const [truthAccount, setTruthAccount] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [expandedContactsId, setExpandedContactsId] = useState(null);
   const [unassignedTierOpen, setUnassignedTierOpen] = useState(false);
 
   /**
@@ -4290,10 +4638,20 @@ export default function TeamAmDashboard() {
                 </thead>
                 <tbody>
                   {filtered.map((a) => (
-                    <tr key={a.hubspot_company_id} className="border-t border-neutral-100 hover:bg-neutral-50">
+                    <Fragment key={a.hubspot_company_id}>
+                    <tr
+                      className="border-t border-neutral-100 cursor-pointer hover:bg-neutral-50"
+                      onClick={() => setSelected(a)}
+                    >
                       <td className="py-2 pr-4 font-medium">
                         <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
                         <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} className="ml-1.5 align-middle" />
+                        <KeyContactsToggle
+                          account={a}
+                          expanded={expandedContactsId === a.hubspot_company_id}
+                          onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
+                          className="ml-1.5 align-middle"
+                        />
                         {a.lifecycle_flag_label && (
                           <span
                             title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}
@@ -4318,11 +4676,19 @@ export default function TeamAmDashboard() {
                         <CompanyLink account={a} withNote={false} className="hover:text-accent-600 hover:underline">{lastActivityStr(a.last_activity_date)}</CompanyLink>
                       </td>
                       <td className="py-2">
-                        <button type="button" className="text-xs text-cool-glacier hover:underline" onClick={() => setTruthAccount(a)}>
+                        <button type="button" className="text-xs text-cool-glacier hover:underline" onClick={(e) => { e.stopPropagation(); setTruthAccount(a); }}>
                           {a.alis_admin_company_id ? 'View' : 'Set up'}
                         </button>
                       </td>
                     </tr>
+                    {expandedContactsId === a.hubspot_company_id && (
+                      <tr onClick={(e) => e.stopPropagation()}>
+                        <td colSpan={ACCOUNT_TABLE_COLUMNS} className="bg-neutral-50">
+                          <KeyContactsExpandPanel account={a} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -4413,6 +4779,13 @@ export default function TeamAmDashboard() {
             <TeamAmAccountTruthDrawer
               account={accounts.find((a) => a.hubspot_company_id === truthAccount.hubspot_company_id) || truthAccount}
               onClose={() => setTruthAccount(null)}
+              onUpdated={silentReload}
+            />
+          )}
+          {selected && (
+            <TeamAmAccountDrawer
+              account={accounts.find((a) => a.hubspot_company_id === selected.hubspot_company_id) || selected}
+              onClose={() => setSelected(null)}
               onUpdated={silentReload}
             />
           )}
