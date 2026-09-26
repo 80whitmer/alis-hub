@@ -120,8 +120,11 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
         // (rather than relying on padding+line-height to happen to agree
         // with NOTE's own box model) so the two badges that commonly sit
         // side by side on a company row are pixel-identical in height, not
-        // just close (Sep 2026, Aaron).
-        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-neutral-400 text-neutral-700 bg-white hover:bg-neutral-50 hover:text-cool-glacier shrink-0"
+        // just close (Sep 2026, Aaron). Colored off the cool-glacier token
+        // (ALIS_BrandGuide_2025.pdf's cool secondary accent, see
+        // tailwind.config.js) rather than plain neutral gray, so the badge
+        // itself reads as an ALIS-branded control.
+        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-cool-glacier/40 text-cool-glacier bg-cool-glacier/5 hover:bg-cool-glacier/15 hover:border-cool-glacier shrink-0"
         title="Quick links — ALIS, ALIS Admin, HubSpot"
       >
         回
