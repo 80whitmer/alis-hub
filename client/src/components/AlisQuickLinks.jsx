@@ -20,19 +20,22 @@ import { createPortal } from 'react-dom';
  * labeled with the host when there's more than one so it's clear which
  * community's ALIS instance a link opens.
  */
+// Alphabetized within each group (Sep 2026, Aaron) — the menu itself
+// doesn't sort at render time, so keep these arrays in the order they
+// should display.
 const HOST_LINKS = [
-  { label: 'Company Settings', path: (host) => `https://${host}.alisonline.com/Settings/Company` },
+  { label: 'All Communities', path: (host) => `https://${host}.alisonline.com/Communities?tab=Communities` },
   { label: 'App Store', path: (host) => `https://${host}.alisonline.com/AppStore/Apps` },
-  { label: 'Reports', path: (host) => `https://${host}.alisonline.com/Reports?tab=ALISReports` },
+  { label: 'Company Settings', path: (host) => `https://${host}.alisonline.com/Settings/Company` },
   { label: 'Imports', path: (host) => `https://${host}.alisonline.com/Imports` },
   { label: 'Print Center', path: (host) => `https://${host}.alisonline.com/Documents/Print/Index?tab=Print` },
-  { label: 'All Communities', path: (host) => `https://${host}.alisonline.com/Communities?tab=Communities` },
+  { label: 'Reports', path: (host) => `https://${host}.alisonline.com/Reports?tab=ALISReports` },
 ];
 
 const ADMIN_ID_LINKS = [
+  { label: 'Admin: API Access', path: (id) => `https://admin.alisonline.com/Customers/ApiUsers/${id}` },
   { label: 'Admin: Company Page', path: (id) => `https://admin.alisonline.com/Customers/Companies/${id}` },
   { label: 'Admin: Security Roles', path: (id) => `https://admin.alisonline.com/Customers/Roles/${id}` },
-  { label: 'Admin: API Access', path: (id) => `https://admin.alisonline.com/Customers/ApiUsers/${id}` },
 ];
 
 function parseHosts(companyHost) {
