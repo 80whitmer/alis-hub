@@ -13,11 +13,54 @@ import { useState } from 'react';
  * would go on to trigger a live ALIS admin login for the wrong company —
  * a materially higher-stakes mistake than a wrong subdomain link.
  */
+/**
+ * Freeform fallback for an ambiguous row (Sep 2026, Aaron: "what are we
+ * matching here???" — the row's own top-3 candidates can all be wrong when
+ * the actual correct company got excluded from the whole candidate pool for
+ * an unrelated reason, e.g. alisCompanyDiscovery.js's "already mapped
+ * elsewhere" exclusion). Plain substring search over every account already
+ * loaded on this page — no separate API call — since the portfolio here
+ * (dozens to a few hundred) is small enough to filter client-side.
+ */
+function CustomCompanyPicker({ accounts, onPick }) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const matches = q.length >= 2
+    ? accounts.filter((a) => a.company_name?.toLowerCase().includes(q)).slice(0, 8)
+    : [];
+  return (
+    <div className="inline-flex flex-col gap-0.5">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search company name…"
+        className="text-xs border border-neutral-200 rounded px-1 py-0.5 w-48"
+      />
+      {matches.length > 0 && (
+        <div className="border border-neutral-200 rounded bg-white shadow-sm max-h-32 overflow-y-auto w-48">
+          {matches.map((a) => (
+            <button
+              key={a.hubspot_company_id}
+              type="button"
+              onClick={() => { onPick(a); setQuery(''); }}
+              className="block w-full text-left text-xs px-1.5 py-1 hover:bg-neutral-50"
+            >
+              {a.company_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AlisAdminIdDiscovery({ accounts, onImported }) {
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState(null);
   const [discoverError, setDiscoverError] = useState(null);
   const [selections, setSelections] = useState({});
+  const [customRows, setCustomRows] = useState({});
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
 
@@ -26,6 +69,7 @@ export default function AlisAdminIdDiscovery({ accounts, onImported }) {
     setDiscoverError(null);
     setDiscoverResult(null);
     setSelections({});
+    setCustomRows({});
     setApplyResult(null);
     try {
       const slim = accounts.map((a) => ({ id: a.hubspot_company_id, name: a.company_name, alisAdminCompanyId: a.alis_admin_company_id }));
@@ -107,6 +151,7 @@ export default function AlisAdminIdDiscovery({ accounts, onImported }) {
             {discoverResult.autoMatched.length} confident match{discoverResult.autoMatched.length === 1 ? '' : 'es'},{' '}
             {discoverResult.ambiguous.length} need review,{' '}
             {discoverResult.noCandidate.length} no name match found
+            {discoverResult.alreadyMapped?.length > 0 && <>, {discoverResult.alreadyMapped.length} already mapped</>}
             {discoverResult.noAlisId.length > 0 && <>, {discoverResult.noAlisId.length} row(s) had no id in the link</>}.
           </p>
           {discoverResult.autoMatched.length > 0 && (
@@ -133,25 +178,60 @@ export default function AlisAdminIdDiscovery({ accounts, onImported }) {
                 {discoverResult.ambiguous.map((row, i) => {
                   const key = `amb:${i}`;
                   const chosen = selections[key];
+                  const isCustom = customRows[key];
                   return (
                     <div key={key} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
                       <span><strong>{row.alisCompanyName}</strong> (id {row.alisAdminCompanyId})</span>
                       <span>→</span>
-                      <select
-                        value={chosen ? chosen.hubspotCompanyId : ''}
-                        onChange={(e) => {
-                          const candidate = row.candidates.find((c) => c.hubspotCompanyId === e.target.value);
-                          setAmbiguousSelection(key, candidate
-                            ? { hubspotCompanyId: candidate.hubspotCompanyId, companyName: candidate.companyName, alisAdminCompanyId: row.alisAdminCompanyId }
-                            : null);
-                        }}
-                        className="text-xs border border-neutral-200 rounded px-1 py-0.5"
-                      >
-                        <option value="">Skip</option>
-                        {row.candidates.map((c) => (
-                          <option key={c.hubspotCompanyId} value={c.hubspotCompanyId}>{c.companyName} ({Math.round(c.score * 100)}%)</option>
-                        ))}
-                      </select>
+                      {isCustom ? (
+                        <>
+                          {chosen ? (
+                            <span className="font-medium">{chosen.companyName}</span>
+                          ) : (
+                            <CustomCompanyPicker
+                              accounts={accounts}
+                              onPick={(a) => setAmbiguousSelection(key, {
+                                hubspotCompanyId: a.hubspot_company_id, companyName: a.company_name, alisAdminCompanyId: row.alisAdminCompanyId,
+                              })}
+                            />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => { setCustomRows((prev) => ({ ...prev, [key]: false })); setAmbiguousSelection(key, null); }}
+                            className="text-neutral-400 hover:text-neutral-600 underline"
+                          >
+                            back to suggestions
+                          </button>
+                        </>
+                      ) : (
+                        <select
+                          value={chosen ? chosen.hubspotCompanyId : ''}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setCustomRows((prev) => ({ ...prev, [key]: true }));
+                              setAmbiguousSelection(key, null);
+                              return;
+                            }
+                            const candidate = row.candidates.find((c) => c.hubspotCompanyId === e.target.value);
+                            setAmbiguousSelection(key, candidate
+                              ? { hubspotCompanyId: candidate.hubspotCompanyId, companyName: candidate.companyName, alisAdminCompanyId: row.alisAdminCompanyId }
+                              : null);
+                          }}
+                          className="text-xs border border-neutral-200 rounded px-1 py-0.5"
+                        >
+                          <option value="">Skip</option>
+                          {row.candidates.map((c) => (
+                            <option key={c.hubspotCompanyId} value={c.hubspotCompanyId}>{c.companyName} ({Math.round(c.score * 100)}%)</option>
+                          ))}
+                          {/* Escape hatch for exactly this bug (Sep 2026, Aaron: "what
+                              are we matching here???") — the top-3 suggested candidates
+                              can all be wrong (e.g. the actual right company got excluded
+                              from the whole candidate pool for an unrelated reason), so
+                              this lets a human search the full portfolio instead of being
+                              limited to what the fuzzy matcher surfaced. */}
+                          <option value="__custom__">Other company… (search)</option>
+                        </select>
+                      )}
                     </div>
                   );
                 })}

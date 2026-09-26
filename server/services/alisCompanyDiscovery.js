@@ -73,15 +73,31 @@ async function discoverAlisAdminIds(companies) {
 
   const unmapped = companies.filter((c) => !c.alisAdminCompanyId);
   const indexed = unmapped.map((c) => ({ company: c, normalized: normalizeName(c.name) }));
+  // Every ALIS admin company id that's ALREADY correctly on file somewhere
+  // (Sep 2026, Aaron: "what are we matching here???" — a directory row for
+  // a company that's already mapped was landing in "needs review" with only
+  // WRONG candidates to pick from, because `unmapped` above had already
+  // removed the one correct match from the candidate pool entirely, for
+  // every row, not just this company's own row. Skipping the row itself
+  // up front instead — once its own id is already assigned to anyone — means
+  // it never gets a chance to be scored against the wrong leftover pool.
+  const alreadyAssignedIds = new Set(
+    companies.filter((c) => c.alisAdminCompanyId).map((c) => String(c.alisAdminCompanyId))
+  );
 
   const autoMatched = [];
   const ambiguous = [];
   const noAlisId = [];
   const noCandidate = [];
+  const alreadyMapped = [];
 
   for (const row of directory) {
     if (!row.alisAdminCompanyId) {
       noAlisId.push(row);
+      continue;
+    }
+    if (alreadyAssignedIds.has(String(row.alisAdminCompanyId))) {
+      alreadyMapped.push(row);
       continue;
     }
     const normalizedRow = normalizeName(row.companyName);
@@ -124,6 +140,9 @@ async function discoverAlisAdminIds(companies) {
     // close enough to propose — both need a human, not silently dropped.
     noAlisId,
     noCandidate,
+    // Already correctly mapped elsewhere — nothing to review, just a count
+    // so the summary line still accounts for every directory row.
+    alreadyMapped,
   };
 }
 
