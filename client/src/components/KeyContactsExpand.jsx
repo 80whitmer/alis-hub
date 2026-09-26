@@ -21,7 +21,11 @@ export function KeyContactsToggle({ account, expanded, onToggle, className = '' 
       type="button"
       onClick={(e) => { e.stopPropagation(); onToggle(); }}
       title={`${expanded ? 'Hide' : 'Show'} Key Contacts${count > 0 ? ` (${count})` : ''}`}
-      className={`inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-accent-300 text-neutral-600 bg-white hover:bg-neutral-50 shrink-0 ${className}`}
+      // Same accent-300/accent-700/accent-50 treatment as NOTE and the
+      // quick-links icon (Sep 2026, Aaron: "make the shade fill of the
+      // buttons consistent per account line") — was bg-white/text-neutral-600,
+      // a visibly different fill from its two row-mates.
+      className={`inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 shrink-0 ${className}`}
     >
       👥{count > 0 ? ` ${count}` : ''}
     </button>
