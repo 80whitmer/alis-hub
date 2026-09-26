@@ -4637,7 +4637,7 @@ export default function TeamAmDashboard() {
         </div>
       ) : (
         <>
-          <SectionCard title="Account & Operations Overview">
+          <SectionCard title="Account & Operations Overview" defaultExpanded={false}>
             <QuickJumpNav sections={OVERVIEW_SECTIONS} />
           </SectionCard>
 
@@ -4647,7 +4647,7 @@ export default function TeamAmDashboard() {
               collapsible SectionCard (Sep 2026, Aaron: "put the KPI cards
               in a collapsible section") — same as AccountHealthDashboard.jsx,
               defaults open since these are the first-glance numbers. */}
-          <SectionCard title="Portfolio KPIs">
+          <SectionCard title="Portfolio KPIs" defaultExpanded={false}>
           <StatGroup title="Portfolio Health — proactive, not reactive">
             <StatCard label="AMs" value={rollup.totalAms} />
             <StatCard label="Total Accounts" value={rollup.totalAccounts} jumpTo="accounts" jumpLabel="Jump to table ↓" />
