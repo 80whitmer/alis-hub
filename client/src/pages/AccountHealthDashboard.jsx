@@ -5558,10 +5558,14 @@ export default function AccountHealthDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((a) => (
+                  {filtered.map((a, i) => (
                     <Fragment key={a.hubspot_company_id}>
+                    {/* Zebra striping (Sep 2026, Aaron: "add a slight
+                        bi-coloration to subsequent rows") — odd rows get a
+                        faint tint, hover goes one shade darker than either
+                        so it still reads on both. */}
                     <tr
-                      className="border-t border-neutral-100 cursor-pointer hover:bg-neutral-50"
+                      className={`border-t border-neutral-100 cursor-pointer hover:bg-neutral-100 ${i % 2 === 1 ? 'bg-neutral-50' : 'bg-white'}`}
                       onClick={() => setSelected(a)}
                     >
                       <td className="py-2 pr-4 font-medium text-base">
