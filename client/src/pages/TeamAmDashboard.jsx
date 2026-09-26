@@ -3423,19 +3423,111 @@ function RecurringCallEditor({ account, onUpdated }) {
  * Full per-account detail side panel (Aaron, Sep 2026: "add the side panel
  * pop out functionality with all of the captured detail a la the AH
  * board") — mirrors AccountHealthDashboard.jsx's AccountDrawer, scoped to
- * the fields this dashboard's account objects actually carry. Two things
- * are deliberately left out rather than faked: ALIS subdomain editing
- * (AlisHostEditor's "Save & Refresh" calls Account Health's own
- * single-account /refresh-occupancy endpoint, which writes into
- * account_health_snapshots — reusing it here would silently refresh the
- * wrong dashboard's cache; this page only has a portfolio-wide occupancy
- * job, not a per-account one) and the QBR-style Excel/PDF export buttons
- * (this dashboard has no equivalent single-account export routes). Opened
- * from a row click on the Accounts table below; the existing "Account
- * Truth" column button/drawer stays as its own faster shortcut (see
+ * the fields this dashboard's account objects actually carry. ALIS
+ * subdomain editing (Sep 2026, Aaron: "add the add subdomain feature to
+ * the Team AM side panel... on par with the AH dashboard") uses its own
+ * page-local AlisHostEditor above, hitting `/api/team-am/:id/refresh-
+ * occupancy` (server/api/teamAm.js) rather than Account Health's route, so
+ * "Save & Refresh" updates this dashboard's own team_am_snapshots cache.
+ * The QBR-style Excel/PDF export buttons are still left out — this
+ * dashboard has no equivalent single-account export routes. Opened from a
+ * row click on the Accounts table below; the existing "Account Truth"
+ * column button/drawer stays as its own faster shortcut (see
  * TeamAmAccountTruthDrawer's doc comment) rather than being removed.
  */
-function TeamAmAccountDrawer({ account, onClose, onUpdated }) {
+/**
+ * Duplicated from AccountHealthDashboard.jsx's identical AlisHostEditor —
+ * one line different: the single-account refresh hits
+ * `/api/team-am/:id/refresh-occupancy` instead of
+ * `/api/account-health/:id/refresh-occupancy`, so "Save & Refresh" updates
+ * THIS dashboard's own team_am_snapshots cache rather than Account
+ * Health's (Sep 2026, Aaron: "add the add subdomain feature to the Team AM
+ * side panel... on par with the AH dashboard"). The subdomain mapping
+ * itself (`/api/company-hosts/import`) is unchanged — company_hosts is a
+ * single portfolio-wide table both dashboards already read from.
+ */
+function AlisHostEditor({ account, companyHosts, onUpdated }) {
+  const currentHost = companyHosts.find((h) => h.hubspot_company_id === account.hubspot_company_id)?.company_host || '';
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(currentHost);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => { setValue(currentHost); }, [currentHost]);
+
+  async function saveAndRefresh(hostValue) {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const importRes = await fetch('/api/company-hosts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: [{ companyName: account.company_name, hubspotCompanyId: account.hubspot_company_id, companyHost: hostValue }] }),
+      });
+      const importData = await importRes.json();
+      if (!importRes.ok) throw new Error(importData.error || 'Failed to save subdomain');
+
+      const refreshRes = await fetch(`/api/team-am/${account.hubspot_company_id}/refresh-occupancy`, { method: 'POST' });
+      const refreshData = await refreshRes.json();
+      if (!refreshRes.ok) throw new Error(refreshData.error || 'Saved, but occupancy refresh failed');
+
+      setMessage(refreshData.occupancy?.hasOccupancyData
+        ? `Refreshed — ${refreshData.occupancy.occupiedRoomDays} / ${refreshData.occupancy.totalRoomDays} occupied as of ${refreshData.occupancy.asOfDate}`
+        : 'Saved — but no occupancy data came back for this host (wrong subdomain, or this account may not have ALIS floor-plan data set up).');
+      setEditing(false);
+      await onUpdated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 p-3 border border-neutral-200 rounded-lg">
+      <p className="text-xs text-neutral-500 uppercase tracking-wide mb-1">ALIS Subdomain(s)</p>
+      {editing ? (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="e.g. viva or viva1,viva2"
+            className="flex-1 text-sm border border-neutral-200 rounded-lg px-2 py-1"
+            autoFocus
+          />
+          <button onClick={() => saveAndRefresh(value)} disabled={busy} className="btn btn-sm btn-secondary">
+            {busy ? 'Saving…' : 'Save & Refresh'}
+          </button>
+          <button onClick={() => { setEditing(false); setValue(currentHost); }} disabled={busy} className="btn btn-sm btn-secondary">Cancel</button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-neutral-700">{currentHost || <span className="italic text-neutral-400">not mapped</span>}</span>
+          <div className="flex gap-3 shrink-0">
+            <button onClick={() => setEditing(true)} className="text-xs font-medium text-cool-glacier hover:underline">Edit</button>
+            {currentHost && (
+              <button onClick={() => saveAndRefresh(currentHost)} disabled={busy} className="text-xs font-medium text-cool-glacier hover:underline">
+                {busy ? 'Refreshing…' : 'Refresh Now'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {error && <p className="text-xs text-error mt-1">{error}</p>}
+      {message && <p className="text-xs text-neutral-500 mt-1">{message}</p>}
+      {!editing && !message && !error && account.occupancy_error && (
+        <p className="text-xs text-error mt-1">
+          Last refresh failed{account.occupancy_error_at ? ` (${account.occupancy_error_at.slice(0, 10)})` : ''}: {account.occupancy_error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TeamAmAccountDrawer({ account, onClose, companyHosts, onUpdated }) {
   const fin = account.financialHealth;
   const openDeals = (fin?.expansionPipeline?.deals || []).filter((d) => d.isOpen);
   const closedDealCount = fin?.totalDeals != null
@@ -3491,6 +3583,7 @@ function TeamAmAccountDrawer({ account, onClose, onUpdated }) {
         <ContractTruthBadge account={account} />
       </div>
 
+      <AlisHostEditor account={account} companyHosts={companyHosts} onUpdated={onUpdated} />
       <RecurringCallEditor account={account} onUpdated={onUpdated} />
       <AccountTruthPanel account={account} onUpdated={onUpdated} />
 
@@ -4829,6 +4922,7 @@ export default function TeamAmDashboard() {
             <TeamAmAccountDrawer
               account={accounts.find((a) => a.hubspot_company_id === selected.hubspot_company_id) || selected}
               onClose={() => setSelected(null)}
+              companyHosts={companyHosts}
               onUpdated={silentReload}
             />
           )}

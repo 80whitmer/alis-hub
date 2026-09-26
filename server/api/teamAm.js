@@ -507,6 +507,30 @@ router.post('/refresh-occupancy', (req, res) => {
   }
 });
 
+// POST /api/team-am/:hubspotCompanyId/refresh-occupancy — a single-account
+// version of the portfolio-wide job above, mirroring accountHealth.js's own
+// equivalent route verbatim, just reading/writing team_am_snapshots instead
+// of account_health_snapshots (Sep 2026, Aaron: "add the add subdomain
+// feature to the Team AM side panel... on par with the AH dashboard" — the
+// drawer's ALIS Subdomain editor's "Save & Refresh" needs this so it
+// refreshes THIS dashboard's own cache, not Account Health's).
+router.post('/:hubspotCompanyId/refresh-occupancy', async (req, res) => {
+  try {
+    const account = listTeamAmSnapshots().find((a) => a.hubspot_company_id === req.params.hubspotCompanyId);
+    if (!account) return res.status(404).json({ error: 'No cached Team AM data for this company — try Refresh first.' });
+
+    const occupancy = await getOccupancySnapshotForAccount(account.company_name, account.hubspot_company_id);
+    if (!occupancy) return res.status(400).json({ error: 'No ALIS subdomain mapped for this account.' });
+
+    updateTeamAmOccupancy(account.hubspot_company_id, occupancy);
+    res.json({ occupancy });
+  } catch (err) {
+    setTeamAmOccupancyError(req.params.hubspotCompanyId, err.message);
+    console.error(`[teamAm] Single-account occupancy refresh failed for ${req.params.hubspotCompanyId}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /** Same reasoning/aggregation as accountHealth.js's aggregateAgingByAccount — several aging rows commonly roll up to the same Home Office. */
 function aggregateAgingByAccount(matched, asOfDate) {
   const byAccountId = new Map();
