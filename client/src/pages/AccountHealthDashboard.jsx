@@ -5383,7 +5383,7 @@ export default function AccountHealthDashboard() {
         </div>
       ) : (
         <>
-          <SectionCard title="Account & Operations Overview" defaultExpanded={false}>
+          <SectionCard title="Account & Operations Overview" description="Jump-to links for every section on this page, grouped by Accounts, Financials, and Tickets" defaultExpanded={false}>
             <QuickJumpNav sections={OVERVIEW_SECTIONS} />
           </SectionCard>
 
@@ -5393,7 +5393,11 @@ export default function AccountHealthDashboard() {
               "put the KPI cards in a collapsible section") — defaults open
               since these are the first-glance numbers, unlike the deeper
               analytical sections below which default closed. */}
-          <SectionCard title="Portfolio KPIs" defaultExpanded={false}>
+          <SectionCard
+            title="Portfolio KPIs"
+            description={`${rollup.totalAccounts} accounts · ${currencyStr(rollup.arrCents)} ARR · avg health score ${rollup.avgScore ?? '—'} · ${rollup.openTickets} open tickets`}
+            defaultExpanded={false}
+          >
           <StatGroup title="Portfolio Health — proactive, not reactive">
             <StatCard label="Total Accounts" value={rollup.totalAccounts} jumpTo="accounts" jumpLabel="Jump to table ↓" />
             <StatCard label="Avg Health Score" value={rollup.avgScore ?? '—'} jumpTo="health-score-trend" jumpLabel="Jump to trend ↓" />
