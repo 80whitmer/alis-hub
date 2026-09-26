@@ -105,7 +105,13 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
   if (groups.length === 0) return null;
 
   return (
-    <div className={`relative inline-block ${className}`} ref={ref} onClick={(e) => e.stopPropagation()}>
+    // inline-FLEX (not inline-block) on the wrapper itself — an inline-block
+    // wrapper sizes to its button child's normal line box, which (being
+    // taller than the button's own h-4) baseline-aligns the button off
+    // center inside it, a 1-2px sub-pixel offset from NOTE's own pill right
+    // next to it (Sep 2026, Aaron: "should not be slightly lower"). Making
+    // the wrapper itself a flex container centers the button exactly.
+    <div className={`relative inline-flex items-center ${className}`} ref={ref} onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         ref={btnRef}
@@ -115,7 +121,7 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
         // with NOTE's own box model) so the two badges that commonly sit
         // side by side on a company row are pixel-identical in height, not
         // just close (Sep 2026, Aaron).
-        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-neutral-300 text-neutral-500 bg-white hover:bg-neutral-50 hover:text-cool-glacier shrink-0"
+        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-neutral-400 text-neutral-700 bg-white hover:bg-neutral-50 hover:text-cool-glacier shrink-0"
         title="Quick links — ALIS, ALIS Admin, HubSpot"
       >
         回
