@@ -132,7 +132,7 @@ export default function PinnedNoteButton({ noteId, title, className = '' }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         title="Show HubSpot pinned note"
-        className={`inline-flex items-center align-middle text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 ml-1.5 shrink-0 ${className}`}
+        className={`inline-flex items-center align-middle text-[9px] font-semibold tracking-wide px-[5px] py-[1px] rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 ml-1.5 shrink-0 ${className}`}
       >
         NOTE
       </button>
