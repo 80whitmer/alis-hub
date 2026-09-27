@@ -804,6 +804,27 @@ async function initDb() {
     );
   `);
 
+  // Latest per-account usage-audit summary from the portfolio-wide "Run
+  // portfolio usage audit" job (server/services/portfolioUsageAuditJob.js)
+  // — one row per company, replaced wholesale each run, same "snapshot not
+  // history" reasoning as entitlement_snapshots above. enabled_pct/used_pct/
+  // combined_score are pre-computed (usageAuditScore.js) and stored as real
+  // columns so the roll-up table can sort/filter without re-parsing every
+  // summary_json blob; summary_json itself is kept in full for the
+  // per-company expand-to-communities detail.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS portfolio_usage_snapshots (
+      hubspot_company_id TEXT PRIMARY KEY,
+      company_name        TEXT,
+      company_host         TEXT,
+      enabled_pct           REAL,
+      used_pct              REAL,
+      combined_score        REAL,
+      summary_json          TEXT NOT NULL,
+      captured_at           TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -860,6 +881,35 @@ function listEntitlementSnapshots() {
 
 function countEntitlementSnapshotCompanies() {
   const rows = queryAll('SELECT COUNT(DISTINCT hubspot_company_id) AS n FROM entitlement_snapshots');
+  return rows[0]?.n ?? 0;
+}
+
+/** Upserts one company's whole usage-audit snapshot — replaces its prior row entirely (see table's own doc comment for why this is a snapshot, not a history). */
+function replacePortfolioUsageSnapshot(hubspotCompanyId, { companyName, companyHost, enabledPct, usedPct, combinedScore, summary }) {
+  run(
+    `INSERT INTO portfolio_usage_snapshots (hubspot_company_id, company_name, company_host, enabled_pct, used_pct, combined_score, summary_json, captured_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET
+       company_name = excluded.company_name, company_host = excluded.company_host,
+       enabled_pct = excluded.enabled_pct, used_pct = excluded.used_pct, combined_score = excluded.combined_score,
+       summary_json = excluded.summary_json, captured_at = excluded.captured_at`,
+    [hubspotCompanyId, companyName || null, companyHost || null, enabledPct, usedPct, combinedScore, JSON.stringify(summary)]
+  );
+}
+
+/** Portfolio roll-up rows, best score first — summary_json parsed back out so the client can expand a row into its per-community detail without a second round trip. */
+function listPortfolioUsageSnapshots() {
+  return queryAll(
+    'SELECT hubspot_company_id, company_name, company_host, enabled_pct, used_pct, combined_score, summary_json, captured_at FROM portfolio_usage_snapshots ORDER BY combined_score DESC'
+  ).map((row) => {
+    const summary = JSON.parse(row.summary_json);
+    delete row.summary_json;
+    return { ...row, summary };
+  });
+}
+
+function countPortfolioUsageSnapshotCompanies() {
+  const rows = queryAll('SELECT COUNT(*) AS n FROM portfolio_usage_snapshots');
   return rows[0]?.n ?? 0;
 }
 
@@ -2050,4 +2100,5 @@ module.exports = {
   recordInternalTicketClick, getInternalTicketClickStats,
   listAlisAdminIds, getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId,
   replaceEntitlementSnapshot, listEntitlementSnapshots, countEntitlementSnapshotCompanies,
+  replacePortfolioUsageSnapshot, listPortfolioUsageSnapshots, countPortfolioUsageSnapshotCompanies,
 };

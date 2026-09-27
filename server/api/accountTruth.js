@@ -18,9 +18,15 @@ const {
   startPortfolioEntitlementsCheck, cancelPortfolioEntitlementsCheck,
   getStatus: getPortfolioEntitlementsStatus, getPortfolioEntitlementRollup,
 } = require('../services/portfolioEntitlementsJob');
+const {
+  startPortfolioUsageAuditCheck, cancelPortfolioUsageAuditCheck,
+  getStatus: getPortfolioUsageAuditStatus,
+} = require('../services/portfolioUsageAuditJob');
+const { getScoreBand, computeCommunityScores } = require('../services/usageAuditScore');
 const { subscribe, unsubscribe } = require('./broadcaster');
 const {
   getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId, listAlisAdminIds,
+  listCompanyHosts, listPortfolioUsageSnapshots,
 } = require('../db/database');
 
 // PUT /api/account-truth/:id/alis-admin-id
@@ -177,6 +183,81 @@ router.get('/portfolio-entitlements/stream', (req, res) => {
 
   subscribe('portfolio-entitlements', res);
   req.on('close', () => unsubscribe('portfolio-entitlements', res));
+});
+
+// POST /api/account-truth/portfolio-usage-audit/run — kicks off a
+// portfolio-wide usage audit, one account at a time, over every account
+// with a known ALIS Company Host on file (server/db/database.js's
+// company_hosts table, auto-learned from prior single-company usage-audit
+// runs — no client-supplied account list needed, unlike
+// /portfolio-entitlements/run). Deliberately manual, same reasoning as that
+// route. 202 + poll /status rather than blocking the request.
+router.post('/portfolio-usage-audit/run', (req, res) => {
+  const adminIdByCompany = new Map(listAlisAdminIds().map((r) => [r.hubspot_company_id, r.alis_admin_company_id]));
+  const accounts = listCompanyHosts()
+    .filter((r) => r.hubspot_company_id && r.company_host)
+    .map((r) => ({
+      hubspotCompanyId: r.hubspot_company_id,
+      companyName: r.company_name,
+      companyHost: r.company_host,
+      alisAdminCompanyIds: adminIdByCompany.get(r.hubspot_company_id) || '',
+    }));
+  if (accounts.length === 0) {
+    return res.status(400).json({ error: 'No accounts have a known ALIS Company Host on file yet.' });
+  }
+  const started = startPortfolioUsageAuditCheck(accounts);
+  if (!started) {
+    return res.status(409).json({ error: 'A portfolio usage audit is already running.' });
+  }
+  res.status(202).json({ started: true, total: accounts.length });
+});
+
+// POST /api/account-truth/portfolio-usage-audit/cancel
+router.post('/portfolio-usage-audit/cancel', (req, res) => {
+  const cancelled = cancelPortfolioUsageAuditCheck();
+  if (!cancelled) {
+    return res.status(409).json({ error: 'No portfolio usage audit is currently running.' });
+  }
+  res.status(202).json({ cancelling: true });
+});
+
+// GET /api/account-truth/portfolio-usage-audit/status — job progress plus
+// the current per-company roll-up (combined score, enabled/used %,
+// per-community breakdown), computed from whatever's been captured so far.
+router.get('/portfolio-usage-audit/status', (req, res) => {
+  const rows = listPortfolioUsageSnapshots();
+  const companies = rows.map((r) => ({
+    hubspotCompanyId: r.hubspot_company_id,
+    companyName: r.company_name,
+    companyHost: r.company_host,
+    enabledPct: r.enabled_pct,
+    usedPct: r.used_pct,
+    combinedScore: r.combined_score,
+    band: getScoreBand(r.combined_score),
+    capturedAt: r.captured_at,
+    communities: computeCommunityScores(r.summary),
+  }));
+  res.json({ job: getPortfolioUsageAuditStatus(), rollup: { companies } });
+});
+
+// GET /api/account-truth/portfolio-usage-audit/stream — live log of a
+// running check, same SSE convention as /portfolio-entitlements/stream.
+router.get('/portfolio-usage-audit/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const job = getPortfolioUsageAuditStatus();
+  res.write(`event: snapshot\ndata: ${JSON.stringify(job)}\n\n`);
+
+  if (job.status !== 'running') {
+    res.end();
+    return;
+  }
+
+  subscribe('portfolio-usage-audit', res);
+  req.on('close', () => unsubscribe('portfolio-usage-audit', res));
 });
 
 module.exports = router;

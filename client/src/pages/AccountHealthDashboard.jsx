@@ -18,6 +18,7 @@ import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
 import PortfolioExclusionsCheck from '../components/PortfolioExclusionsCheck';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
+import PortfolioUsageAuditSection from '../components/PortfolioUsageAuditSection';
 import AlisQuickLinks from '../components/AlisQuickLinks';
 import { KeyContactsToggle, KeyContactsExpandPanel } from '../components/KeyContactsExpand';
 import {
@@ -3940,6 +3941,11 @@ function MonthlyArrClosedChart({ deals }) {
  */
 function ArrPersonallyClosedSection({ accounts, ownerName }) {
   const deals = useMemo(() => flattenPersonallyClosedDeals(accounts, ownerName), [accounts, ownerName]);
+  const pipelines = useMemo(
+    () => [...new Set(deals.map((d) => d.pipeline).filter(Boolean))].sort(),
+    [deals]
+  );
+  const [pipelineFilter, setPipelineFilter] = useState([]); // empty = all pipelines
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState({ column: 'closeDate', direction: 'desc' });
   const [exporting, setExporting] = useState(false);
@@ -3957,6 +3963,10 @@ function ArrPersonallyClosedSection({ accounts, ownerName }) {
     }
   }
 
+  function togglePipeline(p) {
+    setPipelineFilter((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+  }
+
   function toggleSort(column) {
     setSort((prev) => (prev.column === column
       ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
@@ -3965,8 +3975,9 @@ function ArrPersonallyClosedSection({ accounts, ownerName }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? deals.filter((d) => d.companyName?.toLowerCase().includes(q)) : deals;
-  }, [deals, search]);
+    const base = pipelineFilter.length === 0 ? deals : deals.filter((d) => pipelineFilter.includes(d.pipeline));
+    return q ? base.filter((d) => d.companyName?.toLowerCase().includes(q)) : base;
+  }, [deals, search, pipelineFilter]);
 
   const sorted = useMemo(() => {
     const { column, direction } = sort;
@@ -3991,8 +4002,8 @@ function ArrPersonallyClosedSection({ accounts, ownerName }) {
       description={
         !ownerName
           ? 'Set HUBSPOT_OWNER_ID in server/.env to enable this section.'
-          : search.trim()
-            ? `${filtered.length} of ${deals.length} deal(s) shown, matching "${search.trim()}" — totaling ${currencyStr(filteredTotalCents)}`
+          : search.trim() || pipelineFilter.length > 0
+            ? `${filtered.length} of ${deals.length} deal(s) shown${search.trim() ? `, matching "${search.trim()}"` : ''} — totaling ${currencyStr(filteredTotalCents)}`
             : `${deals.length} deal(s) you personally closed this year, totaling ${currencyStr(totalCents)}`
       }
       defaultExpanded={false}
@@ -4028,8 +4039,29 @@ function ArrPersonallyClosedSection({ accounts, ownerName }) {
             <MonthlyArrClosedChart deals={deals} />
           </div>
 
+          <div className="flex flex-wrap gap-2 mb-4">
+            {pipelines.map((p) => (
+              <button
+                key={p}
+                onClick={() => togglePipeline(p)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  pipelineFilter.includes(p)
+                    ? 'bg-accent-500 text-white border-accent-500'
+                    : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+            {pipelineFilter.length > 0 && (
+              <button onClick={() => setPipelineFilter([])} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
+                Clear filter
+              </button>
+            )}
+          </div>
+
           {sorted.length === 0 ? (
-            <p className="text-sm text-neutral-500 italic py-4">No deals match the current search.</p>
+            <p className="text-sm text-neutral-500 italic py-4">No deals match the current filters.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -5510,6 +5542,9 @@ export default function AccountHealthDashboard() {
             }
           >
             <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-xs px-2.5 py-1 rounded-full border border-neutral-200 bg-neutral-50 text-neutral-500 font-medium">
+                Total: {searchFilteredAccounts.length}
+              </span>
               {ARR_TIER_ORDER.filter((t) => t !== 'Tier 5').map((t) => {
                 const tCount = searchFilteredAccounts.filter((a) => ((a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`) === t).length;
                 if (tCount === 0) return null;
@@ -5741,6 +5776,9 @@ export default function AccountHealthDashboard() {
           {unassignedTierOpen && <UnassignedTierDrawer accounts={unassignedTierAccounts} onClose={() => setUnassignedTierOpen(false)} />}
           <SectionCard title="Portfolio Entitlements" description="What percentage of live ALIS environments have each entitlement turned on — a manual, on-demand check (not part of the regular Refresh) across every account with an ALIS Admin Company ID on file. Shared with the Team AM board." defaultExpanded={false}>
             <PortfolioEntitlementsSection accounts={accounts} />
+          </SectionCard>
+          <SectionCard title="Portfolio Usage Audit" description="Combined adoption score (% features Enabled + % features actually Used) per account, expandable to each account's own communities — the portfolio-wide version of the old manually-maintained red/yellow/green client spreadsheets. A manual, on-demand check across every account with a known ALIS Company Host on file." defaultExpanded={false}>
+            <PortfolioUsageAuditSection accounts={accounts} />
           </SectionCard>
           <SectionCard title="Deals by Type" description="Aggregated across every account's deal history — value shown is ARR" defaultExpanded={false}>
             <DealTypeChart accounts={accounts} chartType={dealTypeChartType} setChartType={setDealTypeChartType} />

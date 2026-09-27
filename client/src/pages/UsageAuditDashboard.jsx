@@ -22,7 +22,7 @@ function stateKey(v) {
 function Dot({ kind, value, title }) {
   return (
     <span
-      className={`inline-block w-2.5 h-2.5 rounded-full ${DOT_COLOR[kind][stateKey(value)]}`}
+      className={`inline-block w-4 h-4 rounded-full ring-2 ring-white shadow-sm ${DOT_COLOR[kind][stateKey(value)]}`}
       title={title}
     />
   );
@@ -61,7 +61,7 @@ function Legend() {
       <span className="flex items-center gap-1.5"><Dot kind="enabled" value={true} /> Enabled</span>
       <span className="flex items-center gap-1.5"><Dot kind="used" value={true} /> Used</span>
       <span className="text-neutral-300">|</span>
-      <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full bg-neutral-100" /> No data / not scraped</span>
+      <span className="flex items-center gap-1.5"><span className="inline-block w-4 h-4 rounded-full ring-2 ring-white shadow-sm bg-neutral-100" /> No data / not scraped</span>
     </div>
   );
 }
