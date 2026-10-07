@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
   LineChart, Line,
@@ -8,13 +9,18 @@ import BackToTopButton from '../components/BackToTopButton';
 import FloatingSectionNav from '../components/FloatingSectionNav';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
-import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
-import EscalationRequestsSection from '../components/EscalationRequestsSection';
-import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
-import TierKpiSection, { AmKpiSection, TIER_KPI_TITLE, AM_KPI_TITLE } from '../components/TierKpiSection';
+import EnhancementRequestsSection, { countEnhancementMatches, ENHANCEMENT_TOP3_TITLE, ENHANCEMENT_ALL_TITLE } from '../components/EnhancementRequestsSection';
+import CollapsibleSubsection from '../components/CollapsibleSubsection';
+import TicketTable, { ticketMatchesQuery } from '../components/TicketTable';
+import DataCompletenessSection, { computeCompletenessGaps } from '../components/DataCompletenessSection';
+import { SECTION_SEARCH_SET_EVENT, pushSectionSearch } from '../utils/sectionSearchBus';
+import EscalationRequestsSection, { countEscalationMatches, ESCALATION_TITLE } from '../components/EscalationRequestsSection';
+import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink, getInternalTicketMatchCount, INTERNAL_SEARCH_SET_EVENT, ensureInternalTicketsLoaded } from '../components/AlisInternalSection';
+import TierKpiSection, { AmKpiSection, TIER_KPI_TITLE, AM_KPI_TITLE, TIER_COLOR, useTierKpis, pivot, TrendChart, count as fmtCount } from '../components/TierKpiSection';
 import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
 import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
+import PortfolioExclusionsCheck from '../components/PortfolioExclusionsCheck';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import ContractTruthSection from '../components/ContractTruthSection';
 import AlisQuickLinks from '../components/AlisQuickLinks';
@@ -23,8 +29,7 @@ import { arrayBufferToBase64 } from '../utils/base64';
 import { exportUnmappedAmRecords } from '../utils/unmappedAmExport';
 import { exportAtRiskAccounts } from '../utils/atRiskExport';
 import { exportUnassignedTierAccounts } from '../utils/unassignedTierExport';
-import { exportCompanyHostTemplate, parseCompanyHostTemplate } from '../utils/accountHealthExport';
-import { exportTeamAmPortfolioExcel } from '../utils/teamAmExport';
+import { exportTeamAmPortfolioExcel, exportTeamAmAccountsTable } from '../utils/teamAmExport';
 import { exportAllDeals } from '../utils/allDealsExport';
 import { exportArrAddedDeals } from '../utils/arrAddedDealsExport';
 
@@ -182,6 +187,17 @@ function slugify(title) {
 /** Cross-component "jump to this section" signal — QuickJumpNav dispatches it, every SectionCard listens for its own id, expands itself if collapsed, and scrolls into view. A DOM event rather than lifted state: this file renders a dozen independent SectionCards (several inside their own child components, e.g. UnmappedAmSection) and threading expanded/onToggle props through all of them just for this would be far more invasive than one shared event. */
 const JUMP_EVENT = 'alis-hub:jump-to-section';
 
+/**
+ * Same mechanism as AccountHealthDashboard.jsx's identical context (Aaron,
+ * Sep 2026: "can the sections on the landing page be filtered out to only
+ * the sections returned in the [global search] pop up?") — lets every
+ * SectionCard know the current global search state without threading it
+ * through as a prop at each call site. `active` is whether a query is
+ * currently typed at all; `hitTitles` is the exact set of titles
+ * computeGlobalSearchHits returned for it.
+ */
+const SectionSearchFilterContext = createContext(null);
+
 // Single source of truth for "every section on this page" — used by both
 // the "Account & Operations Overview" card's QuickJumpNav and the floating
 // butterfly FloatingSectionNav (Sep 2026) that takes over once that card
@@ -207,6 +223,7 @@ function SectionCard({ title, children, description, action, collapsible = true,
   const [expanded, setExpanded] = useState(defaultExpanded);
   const ref = useRef(null);
   const sectionId = slugify(title);
+  const searchFilter = useContext(SectionSearchFilterContext);
 
   useEffect(() => {
     function handleJump(e) {
@@ -217,6 +234,12 @@ function SectionCard({ title, children, description, action, collapsible = true,
     window.addEventListener(JUMP_EVENT, handleJump);
     return () => window.removeEventListener(JUMP_EVENT, handleJump);
   }, [sectionId]);
+
+  // Sep 2026, Aaron: "can the sections on the landing page be filtered out
+  // to only the sections returned in the [global search] pop up?" —
+  // renders nothing at all (not just collapsed) when a search is active
+  // and this section's own title isn't one of computeGlobalSearchHits' hits.
+  if (searchFilter?.active && !searchFilter.hitTitles.has(title)) return null;
 
   const open = !collapsible || expanded;
   return (
@@ -354,7 +377,15 @@ function CompanyLink({ account, children, className = 'font-medium text-cool-gla
  * ~94) — meaningfully slower than a single-AM refresh, so it needs real
  * progress feedback rather than a bare synchronous request.
  */
-function RefreshButton({ onRefreshed }) {
+/** "X companies · X no AM · X no tier/ARR" completeness line (Aaron, Sep 2026: surface data-quality gaps right next to the refresh that would fix them) — tier and ARR are treated as one gap since HubSpot's ARR rollup is itself tier-derived, so a missing tier almost always means an uncaptured ARR too. Duplicated from AccountHealthDashboard.jsx's identical helper — same "copy per page" convention as these buttons' own doc comments. */
+function hubspotCompletenessStr(accounts) {
+  if (!accounts || accounts.length === 0) return null;
+  const noAm = accounts.filter((a) => !a.account_manager_name).length;
+  const noTier = accounts.filter((a) => a.tier == null || a.tier === 0).length;
+  return `${accounts.length} compan${accounts.length === 1 ? 'y' : 'ies'} · ${noAm} no AM · ${noTier} no tier/ARR`;
+}
+
+function RefreshButton({ onRefreshed, accounts }) {
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -460,12 +491,14 @@ function RefreshButton({ onRefreshed }) {
 
   const refreshing = progress != null;
   const pct = refreshing && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
+  const completeness = hubspotCompletenessStr(accounts);
 
   return (
     <div>
-      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`}>
+      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`} title="Re-pulls every Home Office account team-wide from HubSpot — health score, tickets, deals, ARR, tier, AM, and lifecycle status. Run this so the numbers on this page reflect what's in HubSpot right now; every other section reads from this cached pull, not live.">
         {refreshing ? (progress.total > 0 ? `Refreshing… ${pct}%` : 'Starting…') : '🔄 Refresh HubSpot Data'}
       </button>
+      {!refreshing && completeness && <p className="text-[11px] text-neutral-400 mt-1 max-w-xs">{completeness}</p>}
       {refreshing && (
         <div className="mt-1 max-w-xs">
           <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden">
@@ -499,7 +532,7 @@ function RefreshButton({ onRefreshed }) {
  * ALIS subdomain (company_hosts), not with the full company count — see
  * the coverage lines in the header above.
  */
-function RefreshOccupancyButton({ onRefreshed }) {
+function RefreshOccupancyButton({ onRefreshed, accounts }) {
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -604,12 +637,16 @@ function RefreshOccupancyButton({ onRefreshed }) {
 
   const refreshing = progress != null;
   const pct = refreshing && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
+  const occupancyCount = accounts?.filter((a) => a.occupancy_as_of_date).length ?? null;
 
   return (
     <div>
-      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`}>
+      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`} title="Logs into each account's mapped ALIS subdomain and pulls current capacity/census — only works for accounts with a known ALIS subdomain (see Discover & Align below to map more). This is the only source for Total Capacity/Current Census, HubSpot doesn't carry it.">
         {refreshing ? (progress.total > 0 ? `Refreshing… ${pct}%` : 'Starting…') : '🏘️ Refresh Occupancy Data'}
       </button>
+      {!refreshing && occupancyCount != null && (
+        <p className="text-[11px] text-neutral-400 mt-1 max-w-xs">{occupancyCount} of {accounts.length} companies have occupancy data</p>
+      )}
       {refreshing && (
         <div className="mt-1 max-w-xs">
           <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden">
@@ -634,93 +671,6 @@ function RefreshOccupancyButton({ onRefreshed }) {
           {result.processed} processed{result.errorCount > 0 && `, ${result.errorCount} failed`}
         </p>
       )}
-    </div>
-  );
-}
-
-/**
- * Same ALIS-subdomain mapping buttons as AccountHealthDashboard.jsx's
- * CompanyHostMappingButtons, copied rather than shared (this file's
- * established per-page convention) — company_hosts is a single global
- * table (see this page's own `load()` comment above), so a subdomain
- * mapped from either dashboard's template shows up on both; this just
- * gives Team AM its own entry point for filling it in without having to
- * switch pages. Posts to the same existing /api/company-hosts/import route.
- */
-function CompanyHostMappingButtons({ accounts, companyHosts, onImported }) {
-  const [importing, setImporting] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
-  // Matches by HubSpot ID first, falling back to company name — same
-  // fallback exportCompanyHostTemplate uses, needed for company_hosts rows
-  // sourced from the admin.alisonline.com scrape (no HubSpot ID at all).
-  const mappedCount = accounts.filter((a) => companyHosts.some((h) =>
-    (h.hubspot_company_id && h.hubspot_company_id === a.hubspot_company_id) ||
-    (h.company_name || '').trim().toLowerCase() === (a.company_name || '').trim().toLowerCase()
-  )).length;
-
-  async function handleDownload() {
-    await exportCompanyHostTemplate(accounts, companyHosts);
-  }
-
-  async function handleUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setImporting(true);
-    setError('');
-    setResult(null);
-    try {
-      const rows = await parseCompanyHostTemplate(file);
-      if (rows.length === 0) throw new Error('No rows with an ALIS Subdomain filled in were found in this file.');
-      const res = await fetch('/api/company-hosts/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
-      setResult(data);
-      await onImported();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setImporting(false);
-      e.target.value = '';
-    }
-  }
-
-  async function handleRefreshFromAdmin() {
-    setRefreshing(true);
-    setError('');
-    setResult(null);
-    try {
-      const res = await fetch('/api/company-hosts/refresh-from-admin', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Refresh failed (${res.status})`);
-      setResult(data);
-      await onImported();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  const subdomainStatus = `${mappedCount} of ${accounts.length} accounts have a known ALIS subdomain`;
-
-  return (
-    <div className="flex items-center gap-2">
-      <button onClick={handleRefreshFromAdmin} className="btn btn-sm btn-secondary" title="Log in to admin.alisonline.com and pull every company's subdomain directly" disabled={refreshing}>
-        {refreshing ? 'Refreshing…' : '🔄 Refresh from ALIS Admin'}
-      </button>
-      <button onClick={handleDownload} className="btn btn-sm btn-secondary" title={subdomainStatus}>📋 Download Subdomain Template</button>
-      <label className="btn btn-sm btn-secondary cursor-pointer" title={subdomainStatus}>
-        {importing ? 'Importing…' : '📤 Upload Completed Template'}
-        <input type="file" accept=".xlsx" onChange={handleUpload} disabled={importing} className="hidden" />
-      </label>
-      {error && <p className="text-xs text-error max-w-xs">{error}</p>}
-      {result && <p className="text-xs text-neutral-500 max-w-xs">{result.imported} subdomain(s) imported{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}{result.found != null ? ` (${result.found} found on admin.alisonline.com)` : ''}</p>}
     </div>
   );
 }
@@ -759,7 +709,7 @@ function ImportAgingReportButton({ onImported }) {
 
   return (
     <div>
-      <label className="btn btn-sm btn-secondary cursor-pointer">
+      <label className="btn btn-sm btn-secondary cursor-pointer" title="Uploads Dave Johnson's weekly Intacct Customer Aging Report PDF and matches its rows to accounts by name, populating each account's Aging Balance and DSO — the only source for those two columns, no HubSpot equivalent exists.">
         {importing ? 'Importing…' : '📥 Import Aging Report'}
         <input type="file" accept="application/pdf" onChange={handleFile} disabled={importing} className="hidden" />
       </label>
@@ -802,7 +752,7 @@ function ExportExcelButton({ accounts, rollup, rollupByAccountManager }) {
 
   return (
     <div className="text-right">
-      <button onClick={handleClick} disabled={exporting} className="btn btn-sm btn-secondary">
+      <button onClick={handleClick} disabled={exporting} className="btn btn-sm btn-secondary" title="Multi-sheet workbook: Summary, By Account Manager, By Tier, Accounts (one row per account, every column on this page), and Implementation Projects — the full team-wide portfolio in one file, for pivoting/sharing outside the app.">
         {exporting ? 'Exporting…' : '📊 Export Excel'}
       </button>
       {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
@@ -847,7 +797,7 @@ function ExportPptButton() {
 
   return (
     <div className="text-right">
-      <button onClick={handleClick} disabled={exporting} className="btn btn-sm btn-secondary">
+      <button onClick={handleClick} disabled={exporting} className="btn btn-sm btn-secondary" title="Slide deck mirroring this dashboard's own charts — a bar AND a pie slide for every KPI-by-AM metric, plus Companies/Communities/ARR by Tier by AM, portfolio-wide. For presenting in a meeting, not a data export.">
         {exporting ? 'Exporting…' : '📊 Export to PPT'}
       </button>
       {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
@@ -1125,9 +1075,40 @@ function HealthScoreTrendSection() {
  * numeric histogram, since Unhealthy/At Risk/Stable/Healthy is already
  * the language this whole app uses for a health score.
  */
+/** Hover card for HealthScoreDistributionChart — the band's tier makeup (raw count + % of that band's own total), same {name, value, pct-of-row-total} shape as CommunitiesByTierByAmTooltip just keyed on health band instead of AM. */
+function HealthScoreDistributionTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+  const tiers = TIER_ORDER.filter((t) => row.byTier[t] > 0);
+  return (
+    <div className="bg-white border border-neutral-200 rounded-lg shadow-sm px-3 py-2 text-xs">
+      <p className="font-semibold text-primary-900 mb-1">{row.name}</p>
+      {tiers.map((t) => {
+        const value = row.byTier[t] || 0;
+        const pct = row.total > 0 ? Math.round((value / row.total) * 100) : 0;
+        return (
+          <p key={t} style={{ color: TIER_COST_COLOR[t] || '#737373' }}>
+            {t}: {value} ({pct}%)
+          </p>
+        );
+      })}
+      <p className="font-semibold text-neutral-700 mt-1 pt-1 border-t border-neutral-100">Total: {row.total}</p>
+    </div>
+  );
+}
+
 function HealthScoreDistributionChart({ accounts }) {
   const data = HEALTH_BANDS
-    .map((band) => ({ name: band, total: accounts.filter((a) => a.health_band === band).length, color: BAND_COLOR[BAND_LABEL_TO_COLOR[band]] }))
+    .map((band) => {
+      const bandAccounts = accounts.filter((a) => a.health_band === band);
+      const byTier = {};
+      for (const a of bandAccounts) {
+        const t = (a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`;
+        byTier[t] = (byTier[t] || 0) + 1;
+      }
+      return { name: band, total: bandAccounts.length, color: BAND_COLOR[BAND_LABEL_TO_COLOR[band]], byTier };
+    })
     .filter((d) => d.total > 0);
 
   if (data.length === 0) {
@@ -1140,7 +1121,7 @@ function HealthScoreDistributionChart({ accounts }) {
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="name" tick={{ fontSize: 13 }} />
         <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-        <Tooltip formatter={(v) => `${v} account${v === 1 ? '' : 's'}`} />
+        <Tooltip content={<HealthScoreDistributionTooltip />} />
         <Bar dataKey="total" radius={[4, 4, 0, 0]}>
           <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
           {data.map((d, i) => <Cell key={i} fill={d.color} />)}
@@ -1539,15 +1520,16 @@ function ArrByTierByAmTooltip({ active, payload, label }) {
  * same convention as TierByArrChart's pctOf just scoped per-AM instead of
  * portfolio-wide.
  */
-function ArrByTierByAmChart({ accounts, chartType, setChartType }) {
+function ArrByTierByAmChart({ accounts, chartType, setChartType, metricKey = 'arrCents' }) {
   const byAm = new Map();
   for (const a of accounts) {
     const amKey = a.account_manager_name || 'Unassigned';
     if (!byAm.has(amKey)) byAm.set(amKey, { name: amKey, total: 0 });
     const row = byAm.get(amKey);
     const tierKey = tierLabel(a.tier);
-    row[tierKey] = (row[tierKey] || 0) + (a.arr_cents || 0);
-    row.total += (a.arr_cents || 0);
+    const value = metricKey === 'arrAddedThisYearCents' ? (a.arr_added_this_year_cents || 0) : (a.arr_cents || 0);
+    row[tierKey] = (row[tierKey] || 0) + value;
+    row.total += value;
   }
   const data = Array.from(byAm.values()).filter((d) => d.total > 0).sort((a, b) => b.total - a.total);
   const tierKeys = TIER_ORDER.filter((t) => data.some((d) => d[t] > 0));
@@ -1623,6 +1605,7 @@ function CommunitiesByTierByAmTooltip({ active, payload, label }) {
           </p>
         );
       })}
+      {row?.total != null && <p className="font-semibold text-neutral-700 mt-1 pt-1 border-t border-neutral-100">Total: {row.total}</p>}
     </div>
   );
 }
@@ -1784,49 +1767,102 @@ function CompaniesByTierByAmChart({ accounts, chartType, setChartType }) {
   );
 }
 
-/** "Number of companies per tier" (Aaron, Sep 2026) — a straight headcount, portfolio-wide, same bar/pie-toggle shape as the other tier charts. Colored per-tier via TIER_COST_COLOR in both bar and pie modes (Sep 2026, Aaron: "verify that all tier related reports are consistent with 1 = green, 2 = blue, 3 = orange, 4 = red") — was a flat purple bar / rainbow-indexed pie. */
-function CompaniesByTierChart({ accounts, chartType, setChartType }) {
+/**
+ * Trend sub-section shared by CompaniesByTierChart/CommunitiesByTierChart's
+ * two report modes below — same helper as AccountHealthDashboard.jsx's
+ * identical function (this file's established per-page-duplication
+ * convention), fetching the same per-tier daily history the "Tier KPIs"
+ * section already records (server/services/tierKpiRollup.js), pivoted to
+ * whichever single metricKey the active report mode calls for (Sep 2026,
+ * Aaron: "add tracking and trend to the companies by tier section").
+ */
+function TierReportTrend({ endpoint, metricKey }) {
+  const { data, error } = useTierKpis(endpoint);
+  if (error) return <p className="text-sm text-error">{error}</p>;
+  if (!data) return <p className="text-sm text-neutral-400">Loading trend…</p>;
+  const rows = pivot(data.history.tier, metricKey);
+  return (
+    <div className="mt-6 pt-6 border-t border-neutral-100">
+      <h3 className="text-sm font-medium text-neutral-700 mb-2">Trend</h3>
+      <TrendChart rows={rows} keys={data.current.tiers} colorFor={(t) => TIER_COLOR[t] || '#737373'} formatValue={fmtCount} />
+    </div>
+  );
+}
+
+/** "Current" vs. "Added (this year)" toggle shared by CompaniesByTierChart/CommunitiesByTierChart. */
+function ReportModeSelect({ mode, setMode, addedLabel }) {
+  return (
+    <select value={mode} onChange={(e) => setMode(e.target.value)} className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white">
+      <option value="current">Current</option>
+      <option value="added">{addedLabel}</option>
+    </select>
+  );
+}
+
+/**
+ * "Number of companies per tier" (Aaron, Sep 2026) — a straight headcount,
+ * portfolio-wide, same bar/pie-toggle shape as the other tier charts.
+ * Colored per-tier via TIER_COST_COLOR in both bar and pie modes (Sep 2026,
+ * Aaron: "verify that all tier related reports are consistent with 1 =
+ * green, 2 = blue, 3 = orange, 4 = red") — was a flat purple bar / rainbow-
+ * indexed pie. Now also toggles to "Added (this year)" — accounts with at
+ * least one deal closed-won this calendar year carrying ARR, same
+ * definition as the Tier KPIs section's "Companies Contributing ARR" block
+ * (Aaron, Sep 2026: "toggle to Companies add[ed] to AM account in 2026 by
+ * tier") — plus a trend beneath either mode.
+ */
+function CompaniesByTierChart({ accounts, chartType, setChartType, endpoint }) {
+  const [mode, setMode] = useState('current');
+  const year = new Date().getFullYear();
+  const source = mode === 'added' ? accounts.filter((a) => (a.arr_added_this_year_cents || 0) > 0) : accounts;
   const byTier = {};
-  for (const a of accounts) {
+  for (const a of source) {
     const key = tierLabel(a.tier);
     byTier[key] = (byTier[key] || 0) + 1;
   }
   const data = Object.entries(byTier).map(([name, total]) => ({ name, total })).sort(tierSort);
 
   if (data.length === 0) {
-    return <p className="text-sm text-neutral-500 italic">No account data yet — click Refresh to pull it.</p>;
+    return <p className="text-sm text-neutral-500 italic">{mode === 'added' ? `No companies added in ${year} yet.` : 'No account data yet — click Refresh to pull it.'}</p>;
   }
 
   const totalCompanies = data.reduce((s, d) => s + d.total, 0);
+  // Sep 2026, Aaron: "add percentages to the labels... ala the pattern of
+  // the ARR by Tier report" — share of THIS chart's own total.
+  const pctOf = (v) => (totalCompanies > 0 ? ` (${Math.round((v / totalCompanies) * 100)}%)` : '');
   const chartHeight = chartType === 'pie' ? 420 : 320;
 
   return (
     <>
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-neutral-600">Total: <span className="font-semibold text-neutral-800">{totalCompanies.toLocaleString()}</span> compan{totalCompanies === 1 ? 'y' : 'ies'}</p>
-        <ChartTypeToggle value={chartType} onChange={setChartType} />
+        <div className="flex items-center gap-2">
+          <ReportModeSelect mode={mode} setMode={setMode} addedLabel={`Added (${year})`} />
+          <ChartTypeToggle value={chartType} onChange={setChartType} />
+        </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
         {chartType === 'pie' ? (
           <PieChart>
-            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => p.total)} isAnimationActive={false}>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => `${p.total}${pctOf(p.total)}`)} isAnimationActive={false}>
               {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
             </Pie>
-            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
           </PieChart>
         ) : (
           <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" tick={{ fontSize: 13 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
             <Bar dataKey="total" radius={[4, 4, 0, 0]}>
               {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
-              <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+              <LabelList dataKey="total" position="top" formatter={(v) => `${v}${pctOf(v)}`} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
             </Bar>
           </BarChart>
         )}
       </ResponsiveContainer>
+      {endpoint && <TierReportTrend endpoint={endpoint} metricKey={mode === 'added' ? 'companiesContributingArr' : 'companyCount'} />}
     </>
   );
 }
@@ -1907,9 +1943,10 @@ function TierComparisonChart({ accounts }) {
             <YAxis tick={{ fontSize: 12 }} unit="%" />
             <Tooltip formatter={(v) => `${v}%`} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="Companies %" fill="#2563eb" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Communities %" fill="#16a34a" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="ARR %" fill="#ea580c" radius={[4, 4, 0, 0]} />
+            {/* ALIS brand colors instead of the tier palette (Aaron, Sep 2026: too easy to mistake for the Tier 1/2/3 blue/green/orange used elsewhere) — cool-glacier and Marigold are the brand's own secondary/warm accents; success green is reserved for ARR alone ("cash money"). */}
+            <Bar dataKey="Companies %" fill="#2c6e8b" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="Communities %" fill="#fbb219" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="ARR %" fill="#10b981" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ) : (
@@ -1946,48 +1983,57 @@ function TierComparisonChart({ accounts }) {
   );
 }
 
-function CommunitiesByTierChart({ accounts, chartType, setChartType }) {
+/** Now also toggles to "Added (this year)" — active_community_count summed for accounts with ARR added this calendar year, same approximation as the Tier KPIs section's "Communities Contributing ARR" block (deals attach to the Home Office, not a specific community) — plus a trend beneath either mode. */
+function CommunitiesByTierChart({ accounts, chartType, setChartType, endpoint }) {
+  const [mode, setMode] = useState('current');
+  const year = new Date().getFullYear();
+  const source = mode === 'added' ? accounts.filter((a) => (a.arr_added_this_year_cents || 0) > 0) : accounts;
   const byTier = {};
-  for (const a of accounts) {
+  for (const a of source) {
     const key = tierLabel(a.tier);
     byTier[key] = (byTier[key] || 0) + (a.active_community_count || 0);
   }
   const data = Object.entries(byTier).map(([name, total]) => ({ name, total })).filter((d) => d.total > 0).sort(tierSort);
 
   if (data.length === 0) {
-    return <p className="text-sm text-neutral-500 italic">No community data yet — click Refresh to pull it.</p>;
+    return <p className="text-sm text-neutral-500 italic">{mode === 'added' ? `No communities added in ${year} yet.` : 'No community data yet — click Refresh to pull it.'}</p>;
   }
 
   const totalCommunities = data.reduce((s, d) => s + d.total, 0);
+  const pctOf = (v) => (totalCommunities > 0 ? ` (${Math.round((v / totalCommunities) * 100)}%)` : '');
   const chartHeight = chartType === 'pie' ? 420 : 320;
 
   return (
     <>
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm text-neutral-600">Total: <span className="font-semibold text-neutral-800">{totalCommunities.toLocaleString()}</span> communit{totalCommunities === 1 ? 'y' : 'ies'}</p>
-        <ChartTypeToggle value={chartType} onChange={setChartType} />
+        <div className="flex items-center gap-2">
+          <ReportModeSelect mode={mode} setMode={setMode} addedLabel={`Added (${year})`} />
+          <ChartTypeToggle value={chartType} onChange={setChartType} />
+        </div>
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
         {chartType === 'pie' ? (
           <PieChart>
-            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => p.total)} isAnimationActive={false}>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => `${p.total}${pctOf(p.total)}`)} isAnimationActive={false}>
               {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
             </Pie>
-            <Tooltip formatter={(v) => `${v} communit${v === 1 ? 'y' : 'ies'}`} />
+            <Tooltip formatter={(v) => `${v} communit${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
           </PieChart>
         ) : (
           <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" tick={{ fontSize: 13 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v) => `${v} communit${v === 1 ? 'y' : 'ies'}`} />
+            <Tooltip formatter={(v) => `${v} communit${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
             <Bar dataKey="total" radius={[4, 4, 0, 0]}>
               {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
-              <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+              <LabelList dataKey="total" position="top" formatter={(v) => `${v}${pctOf(v)}`} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
             </Bar>
           </BarChart>
         )}
       </ResponsiveContainer>
+      {endpoint && <TierReportTrend endpoint={endpoint} metricKey={mode === 'added' ? 'communitiesContributingArr' : 'communityCount'} />}
     </>
   );
 }
@@ -2515,25 +2561,53 @@ function OpenTicketVolumeChart({ items }) {
  * ticket activity table to the Team AM dashboard").
  */
 function TicketActivitySection({ accounts }) {
+  // Excludes Enhancement + Escalation tickets (Sep 2026, Aaron: "focus here
+  // on tickets that are Open Ticket Volume... NOT escalations, not
+  // enhancements, but ALL other topics") — those two categories already
+  // have their own dedicated portfolio-wide sections further down the
+  // page, so counting them here too double-booked the same tickets in
+  // three places (this chart, the ALIS Escalation section, and the
+  // Enhancement Requests section).
   const items = useMemo(
-    () => accounts.flatMap((a) => (a.serviceHealth?.ticketDates || []).map((t) => ({ ...t, tier: a.tier, accountManagerName: a.account_manager_name || 'Unassigned' }))),
+    () => accounts
+      .flatMap((a) => {
+        const own = (a.serviceHealth?.ticketDates || []).filter((t) => !t.isEnhancementRequest && t.category !== 'ALIS Escalation');
+        const byAge = [...own].sort((x, y) => (x.createdAt || '').localeCompare(y.createdAt || ''));
+        return byAge.map((t, i) => ({
+          ...t,
+          tier: a.tier,
+          accountManagerName: a.account_manager_name || 'Unassigned',
+          companyName: a.company_name,
+          hubspotCompanyId: a.hubspot_company_id,
+          hubspotUrl: a.hubspotUrl,
+          arrCents: a.arr_cents,
+          totalCapacity: a.total_capacity,
+          daysOpen: t.isOpen && t.createdAt ? Math.round((Date.now() - new Date(t.createdAt).getTime()) / 86400000) : null,
+          companyPosition: `${i + 1} of ${byAge.length}`,
+        }));
+      }),
     [accounts]
   );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium text-neutral-700 mb-2">Open Ticket Volume <span className="font-normal text-neutral-400">(Client Submitted + In Progress)</span></h3>
-        <OpenTicketVolumeChart items={items} />
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-neutral-700 mb-2">Opened</h3>
-        <CalendarHeatmap items={items} dateField="createdAt" colorScale={OPENED_COLOR_SCALE} emptyLabel="No dated tickets to map yet — click Refresh to pull them." />
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-neutral-700 mb-2">Closed</h3>
-        <CalendarHeatmap items={items} dateField="closedAt" colorScale={CLOSED_COLOR_SCALE} emptyLabel="No closed tickets to map yet." />
-      </div>
+      <CollapsibleSubsection title="Charts">
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Open Ticket Volume <span className="font-normal text-neutral-400">(Client Submitted + In Progress)</span></h3>
+            <OpenTicketVolumeChart items={items} />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Opened</h3>
+            <CalendarHeatmap items={items} dateField="createdAt" colorScale={OPENED_COLOR_SCALE} emptyLabel="No dated tickets to map yet — click Refresh to pull them." />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Closed</h3>
+            <CalendarHeatmap items={items} dateField="closedAt" colorScale={CLOSED_COLOR_SCALE} emptyLabel="No closed tickets to map yet." />
+          </div>
+        </div>
+      </CollapsibleSubsection>
+      <TicketTable items={items} showAccountManager />
     </div>
   );
 }
@@ -3827,10 +3901,37 @@ function computeGlobalSearchHits(query, accounts) {
   const hits = [];
   const accountHits = accounts.filter((a) => nameHit(a.company_name) || nameHit(a.account_manager_name)).length;
   if (accountHits > 0) hits.push({ title: 'Accounts', count: accountHits });
-  const openDealHits = flattenDeals(accounts).filter((d) => d.isOpen && rowHit(d)).length;
-  if (openDealHits > 0) hits.push({ title: 'All Deals', count: openDealHits });
+  // Matches DealsSection's own filter exactly (its "Open + recently-closed
+  // (90 days)" scope, company OR AM name) — was wrongly isOpen-only before,
+  // undercounting against what the section's own search box would show.
+  const dealHits = flattenDeals(accounts).filter(rowHit).length;
+  if (dealHits > 0) hits.push({ title: 'All Deals', count: dealHits });
   const arrAddedHits = flattenArrAddedDeals(accounts).filter(rowHit).length;
   if (arrAddedHits > 0) hits.push({ title: 'ARR Added This Year', count: arrAddedHits });
+  // Sep 2026, Aaron: "add all of the other search functionalities in
+  // here as well" — Enhancement Requests: Top 3, Enhancement Requests
+  // (broader), and ALIS Internal, matching each section's own search box
+  // exactly (see countEnhancementMatches/getInternalTicketMatchCount).
+  const top3Hits = countEnhancementMatches(accounts, { includeAccountManager: true, topThreeOnly: true, query });
+  if (top3Hits > 0) hits.push({ title: ENHANCEMENT_TOP3_TITLE, count: top3Hits });
+  const enhancementHits = countEnhancementMatches(accounts, { includeAccountManager: true, topThreeOnly: false, query });
+  if (enhancementHits > 0) hits.push({ title: ENHANCEMENT_ALL_TITLE, count: enhancementHits });
+  // null (not 0) means ALIS Internal hasn't been opened yet this session,
+  // so its own ticket data isn't loaded to check against; left out of the
+  // dropdown rather than shown as a false zero.
+  const internalHits = getInternalTicketMatchCount(q);
+  if (internalHits) hits.push({ title: INTERNAL_SECTION_TITLE, count: internalHits });
+  // Matches TicketTable's own search predicate exactly (see ticketMatchesQuery) —
+  // Aaron, Sep 2026: "a tickets table... searchable from the global search bar."
+  const ticketActivityHits = accounts
+    .flatMap((a) => (a.serviceHealth?.ticketDates || []).map((t) => ({ ...t, companyName: a.company_name, accountManagerName: a.account_manager_name })))
+    .filter((t) => !t.isEnhancementRequest && t.category !== 'ALIS Escalation' && ticketMatchesQuery(t, q)).length;
+  if (ticketActivityHits > 0) hits.push({ title: 'Ticket Activity', count: ticketActivityHits });
+  const dataCompletenessHits = accounts
+    .filter((a) => computeCompletenessGaps(a).length > 0 && (nameHit(a.company_name) || nameHit(a.account_manager_name))).length;
+  if (dataCompletenessHits > 0) hits.push({ title: 'Data Completeness', count: dataCompletenessHits });
+  const escalationHits = countEscalationMatches(accounts, { includeAccountManager: true, query });
+  if (escalationHits > 0) hits.push({ title: ESCALATION_TITLE, count: escalationHits });
   return hits;
 }
 
@@ -3984,6 +4085,16 @@ function ArrAddedDealsSection({ accounts }) {
   const [sort, setSort] = useState({ column: 'arrValueCents', direction: 'desc' });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  // Own metric/chart-type state (Sep 2026, Aaron: "a collapsible report
+  // section to the ARR added this year leveraging existing graphs... in
+  // total, by tier, by account manager, with tracking and trending over
+  // time") — deliberately separate from the "ARR by Tier" SectionCard's own
+  // arrByTierMetricKey state further down the page so toggling one doesn't
+  // move the other; defaults to the Added metric since that's this
+  // section's own subject.
+  const [reportMetricKey, setReportMetricKey] = useState('arrAddedThisYearCents');
+  const [reportChartType, setReportChartType] = useState('bar');
+  const [reportByAmChartType, setReportByAmChartType] = useState('bar');
 
   async function handleExport() {
     setExporting(true);
@@ -4120,6 +4231,30 @@ function ArrAddedDealsSection({ accounts }) {
           )}
         </>
       )}
+      <div className="mt-6 pt-6 border-t border-neutral-100">
+        <CollapsibleSubsection title="Trend Report — Total, by Tier, by Account Manager">
+          <TierByArrChart
+            accounts={accounts}
+            metricKey={reportMetricKey}
+            setMetricKey={setReportMetricKey}
+            chartType={reportChartType}
+            setChartType={setReportChartType}
+          />
+          <div className="mt-6 pt-6 border-t border-neutral-100">
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Trend</h3>
+            <ArrByTierTrendSection metricKey={reportMetricKey} />
+          </div>
+          <div className="mt-6 pt-6 border-t border-neutral-100">
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">By Account Manager</h3>
+            <ArrByTierByAmChart
+              accounts={accounts}
+              chartType={reportByAmChartType}
+              setChartType={setReportByAmChartType}
+              metricKey={reportMetricKey}
+            />
+          </div>
+        </CollapsibleSubsection>
+      </div>
     </SectionCard>
   );
 }
@@ -4138,6 +4273,15 @@ function DealsSection({ accounts }) {
   );
   const [pipelineFilter, setPipelineFilter] = useState([]); // empty = all pipelines
   const [search, setSearch] = useState('');
+  // Lets the page-level global search push a query into this section's
+  // own search box (Aaron, Sep 2026: "All deals would be huge!!!").
+  useEffect(() => {
+    function handleSetSearch(e) {
+      if (e.detail?.key === 'All Deals' && typeof e.detail?.query === 'string') setSearch(e.detail.query);
+    }
+    window.addEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+    return () => window.removeEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+  }, []);
   const [sort, setSort] = useState({ column: 'expectedCloseDate', direction: 'asc' });
   const [expandedKey, setExpandedKey] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -4322,9 +4466,55 @@ export default function TeamAmDashboard() {
   const [companyHosts, setCompanyHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Sep 2026, Aaron: "leave the caution icon in this area -- but leave the
+  // explanation collapsed by default" — keep the warning visible (icon +
+  // count) without the full paragraph taking up space on every load.
+  const [lifecycleWarningOpen, setLifecycleWarningOpen] = useState(false);
   useInternalDeepLink(!loading && accounts.length > 0, JUMP_EVENT);
-  const [search, setSearch] = useState('');
-  const globalSearchHits = useMemo(() => computeGlobalSearchHits(search, accounts), [search, accounts]);
+  // Pre-fills the header's global search from ?search=<query> — the same
+  // "?internal=<query> for a Chrome site-search shortcut" idea
+  // AlisInternalSection already had, generalized to the whole page now that
+  // this box is a real global search (Aaron, Sep 2026: "is there any way to
+  // add this search functionality to the chrome 'site search'
+  // functionality"). Read once at initial mount, same as that component's
+  // own ?internal= initializer.
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  // Warms ALIS Internal's shared ticket cache in the background on mount
+  // (Aaron, Sep 2026: a search hit "inspiren" on Enhancement Requests but
+  // not ALIS Internal, purely because this section hadn't been expanded
+  // yet this session, so getInternalTicketMatchCount had no data to check).
+  // `internalReady` just forces globalSearchHits' memo below to recompute
+  // once the background fetch actually lands.
+  const [internalReady, setInternalReady] = useState(false);
+  useEffect(() => { ensureInternalTicketsLoaded().then(() => setInternalReady(true)); }, []);
+  const globalSearchHits = useMemo(() => computeGlobalSearchHits(search, accounts), [search, accounts, internalReady]);
+  // Sep 2026, Aaron: "make it override everything that is under it... when
+  // it is open it needs to be solid" — an `absolute` dropdown inside this
+  // header only ever stacks within ITS OWN local stacking context, so
+  // content elsewhere on the page (SectionCards further down, each their
+  // own stacking context) could still paint over it depending on DOM/paint
+  // order. Portaled to document.body and positioned in viewport coordinates
+  // (fixed, not absolute) — same fix AlisQuickLinks.jsx's own menu needed
+  // for the identical class of problem — so it always renders on top of
+  // literally everything, full stop.
+  const searchAnchorRef = useRef(null);
+  const [searchDropdownPos, setSearchDropdownPos] = useState(null);
+  useEffect(() => {
+    if (globalSearchHits.length === 0) { setSearchDropdownPos(null); return undefined; }
+    function reposition() {
+      if (searchAnchorRef.current) {
+        const r = searchAnchorRef.current.getBoundingClientRect();
+        setSearchDropdownPos({ top: r.bottom + 4, left: r.left, width: r.width });
+      }
+    }
+    reposition();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [globalSearchHits.length]);
   // Multiselect (Sep 2026, Aaron: "would love this to be the standard
   // around the apps... filter pills that can be multiselected") — a Set of
   // active tier labels, any number active at once, empty means no filter.
@@ -4506,7 +4696,13 @@ export default function TeamAmDashboard() {
     window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: 'accounts' } }));
   }
 
+  const searchFilterValue = useMemo(
+    () => ({ active: Boolean(search.trim()), hitTitles: new Set(globalSearchHits.map((h) => h.title)) }),
+    [search, globalSearchHits]
+  );
+
   return (
+    <SectionSearchFilterContext.Provider value={searchFilterValue}>
     <div>
       <div className="card mb-4">
         <div className="flex items-start justify-between gap-6">
@@ -4540,7 +4736,7 @@ export default function TeamAmDashboard() {
               SectionCard below already filters on, so typing here doesn't
               move the page; Enter/the button dispatches JUMP_EVENT to
               expand-and-scroll to that table, already pre-filtered. */}
-          <div className="flex flex-col gap-2 shrink-0 relative">
+          <div className="flex flex-col gap-2 shrink-0 relative" ref={searchAnchorRef}>
             <form onSubmit={jumpToAccounts} className="flex items-center gap-2">
               <input
                 type="text"
@@ -4553,22 +4749,56 @@ export default function TeamAmDashboard() {
             </form>
             {/* Global search results (Sep 2026, Aaron: "search all search
                 bars and return the sections with a hit") — same mechanism
-                as AccountHealthDashboard.jsx's identical dropdown. */}
-            {globalSearchHits.length > 0 && (
-              <div className="absolute z-20 top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-lg shadow-lg py-1">
-                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Sections with a match</p>
+                as AccountHealthDashboard.jsx's identical dropdown. Portaled
+                to document.body (see searchDropdownPos's own doc comment
+                above) so it's always solid and on top, regardless of what
+                else is on the page. */}
+            {searchDropdownPos && globalSearchHits.length > 0 && createPortal(
+              <div
+                style={{ position: 'fixed', top: searchDropdownPos.top, left: searchDropdownPos.left }}
+                className="z-50 w-80 bg-white border border-neutral-200 rounded-lg shadow-2xl py-1"
+              >
+                <div className="flex items-center justify-between px-3 py-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Sections with a match</p>
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    title="Close"
+                    className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-neutral-100 shrink-0"
+                  >
+                    <img src="/butterfly-icon.png" alt="" className="h-4 w-auto" />
+                  </button>
+                </div>
                 {globalSearchHits.map((h) => (
                   <button
                     key={h.title}
                     type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(h.title) } }))}
-                    className="flex items-center justify-between w-full px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(h.title) } }));
+                      // Sections with their own independent search box get
+                      // the query pushed into it too, not just a scroll —
+                      // deferred a tick (same setTimeout idiom
+                      // useInternalDeepLink already uses) so it lands after
+                      // JUMP_EVENT's expand has actually mounted/re-rendered
+                      // that section. ALIS Internal predates the generic
+                      // keyed bus and keeps its own single-purpose event;
+                      // every other searchable section listens for its own
+                      // title as the key — safe to push unconditionally,
+                      // a section that isn't listening just ignores it.
+                      if (h.title === INTERNAL_SECTION_TITLE) {
+                        setTimeout(() => window.dispatchEvent(new CustomEvent(INTERNAL_SEARCH_SET_EVENT, { detail: { query: search } })), 0);
+                      } else {
+                        setTimeout(() => pushSectionSearch(h.title, search), 0);
+                      }
+                    }}
+                    className="flex items-center justify-between gap-3 w-full px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
                   >
-                    <span>{h.title}</span>
-                    <span className="text-neutral-400 text-xs">{h.count}</span>
+                    <span className="flex-1 min-w-0 text-left break-words">{h.title}</span>
+                    <span className="text-neutral-400 text-xs shrink-0">{h.count}</span>
                   </button>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
             <button
               type="button"
@@ -4586,11 +4816,11 @@ export default function TeamAmDashboard() {
           <ExportExcelButton accounts={accounts} rollup={rollup} rollupByAccountManager={rollupByAccountManager} />
           <ExportPptButton />
         </div>
-        <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={silentReload} />
+        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+          <AlisAdminIdDiscovery accounts={accounts} companyHosts={companyHosts} onImported={silentReload} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <AlisAdminIdDiscovery accounts={accounts} onImported={silentReload} />
+          <PortfolioExclusionsCheck />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <ImportAgingReportButton onImported={silentReload} />
@@ -4599,13 +4829,13 @@ export default function TeamAmDashboard() {
           </p>
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <RefreshButton onRefreshed={load} />
+          <RefreshButton onRefreshed={load} accounts={accounts} />
           <p className="text-[11px] text-neutral-400 mt-1">
             {rollup.lastHubspotRefreshAt ? `Last updated: ${dateTimeStr(rollup.lastHubspotRefreshAt)}` : 'Last updated: never'}
           </p>
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <RefreshOccupancyButton onRefreshed={load} />
+          <RefreshOccupancyButton onRefreshed={load} accounts={accounts} />
           <p className="text-[11px] text-neutral-400 mt-1">
             {rollup.occupancyAsOfDate ? `Last updated: as of ${rollup.occupancyAsOfDate}` : 'Last updated: never'}
           </p>
@@ -4615,16 +4845,27 @@ export default function TeamAmDashboard() {
       {error && <div className="alert alert-error mb-6"><span>⚠️</span><p className="text-sm">{error}</p></div>}
 
       {rollup.flaggedAccountCount > 0 && (
-        <div className="alert alert-warning mb-6">
-          <span>⚠️</span>
-          <p className="text-sm">
-            {rollup.flaggedAccountCount} of these Home Offices aren't an active "Client - Home Office" record in
-            HubSpot — a pure Lead or Canceled record is dropped from this dashboard entirely unless it still carries
-            an aging balance (kept so someone keeps chasing the money owed); Client - Community and no-lifecycle-
-            stage-set accounts stay visible either way (look for the amber badge next to the name), since those look
-            more like a HubSpot data-entry gap than a real non-client. Either way, flagged accounts are excluded from
-            every total/average on this page so they can't skew portfolio ARR or health score.
-          </p>
+        <div className="alert alert-warning mb-6 block">
+          <button
+            type="button"
+            onClick={() => setLifecycleWarningOpen((v) => !v)}
+            className="flex items-center gap-2 w-full text-left"
+          >
+            <span>⚠️</span>
+            <p className="text-sm">
+              {rollup.flaggedAccountCount} of these Home Offices aren't an active "Client - Home Office" record in HubSpot
+              <span className="text-neutral-500 ml-1">({lifecycleWarningOpen ? 'hide' : 'show'} details)</span>
+            </p>
+          </button>
+          {lifecycleWarningOpen && (
+            <p className="text-sm mt-2">
+              A pure Lead or Canceled record is dropped from this dashboard entirely unless it still carries
+              an aging balance (kept so someone keeps chasing the money owed); Client - Community and no-lifecycle-
+              stage-set accounts stay visible either way (look for the amber badge next to the name), since those look
+              more like a HubSpot data-entry gap than a real non-client. Either way, flagged accounts are excluded from
+              every total/average on this page so they can't skew portfolio ARR or health score.
+            </p>
+          )}
         </div>
       )}
 
@@ -4724,13 +4965,23 @@ export default function TeamAmDashboard() {
             title="Accounts"
             description="Sorted by Health Score by default — weakest accounts first"
             action={
-              <input
-                type="text"
-                placeholder="Search accounts or AM…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-64"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search accounts or AM…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-64"
+                />
+                <button
+                  onClick={() => exportTeamAmAccountsTable(filtered)}
+                  disabled={filtered.length === 0}
+                  className="btn btn-sm btn-secondary"
+                  title="Every column in the table below, exactly as currently sorted/filtered — a plain data dump, not the full multi-sheet workbook."
+                >
+                  ⬇ Export
+                </button>
+              </div>
             }
           >
             <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -4792,22 +5043,41 @@ export default function TeamAmDashboard() {
                       onClick={() => setSelected(a)}
                     >
                       <td className="py-2 pr-4 font-medium text-base">
-                        <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
-                        <KeyContactsToggle
-                          account={a}
-                          expanded={expandedContactsId === a.hubspot_company_id}
-                          onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
-                          className="ml-1.5 align-middle"
-                        />
-                        <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} className="ml-1.5 align-middle" />
-                        {a.lifecycle_flag_label && (
-                          <span
-                            title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}
-                            className="ml-1.5 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 align-middle"
-                          >
-                            ⚠ {a.lifecycle_flag_label}
-                          </span>
-                        )}
+                        {/* A short name (e.g. "Vera") sits on one line while a
+                            long one wraps to two — badges used to be plain
+                            inline content right after the name text, so they
+                            landed wherever THAT text happened to end,
+                            drifting up/down row to row (Sep 2026, Aaron:
+                            "right align the buttons so a short company name
+                            ... won't throw off the button alignments
+                            north/south"). Splitting into two flex items with
+                            items-start pins the badge cluster to the top of
+                            the row and the right edge of the column, every
+                            row, regardless of how many lines the name takes —
+                            withNote={false} pulls CompanyLink's own NOTE pill
+                            out so it can join that same right-aligned cluster
+                            instead of trailing the name text. */}
+                        <div className="flex items-start justify-between gap-2">
+                          <CompanyLink account={a} withNote={false} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                            <PinnedNoteButton noteId={a.pinned_note_id} title={a.company_name} className="!h-7" />
+                            <KeyContactsToggle
+                              className="!h-7"
+                              account={a}
+                              expanded={expandedContactsId === a.hubspot_company_id}
+                              onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
+                            />
+                            <AlisQuickLinks buttonClassName="!h-7" companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
+                            {a.lifecycle_flag_label && (
+                              <span
+                                title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}
+                                className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700"
+                              >
+                                ⚠ {a.lifecycle_flag_label}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="py-2 pr-4 text-neutral-500">{a.account_manager_name}</td>
                       <td className="py-2 pr-4 text-neutral-500">{tierStr(a.tier)}</td>
@@ -4867,6 +5137,14 @@ export default function TeamAmDashboard() {
 
           <SectionCard title="Ticket Activity" description="Trailing 12 months, opened vs. closed, across the whole team's portfolio" defaultExpanded={false}>
             <TicketActivitySection accounts={accounts} />
+          </SectionCard>
+
+          <SectionCard
+            title="Data Completeness"
+            description="Setup/data gaps per account, team-wide — no score, just what's missing"
+            defaultExpanded={false}
+          >
+            <DataCompletenessSection accounts={accounts} showAccountManager />
           </SectionCard>
 
           <SectionCard title="Enhancement Requests: Top 3" description="Every account's staged Top 3 Enhancement Request, portfolio-wide" defaultExpanded={false}>
@@ -4965,12 +5243,12 @@ export default function TeamAmDashboard() {
             <ArrByTierByAmChart accounts={accounts} chartType={arrByTierByAmChartType} setChartType={setArrByTierByAmChartType} />
           </SectionCard>
 
-          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
-            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
+          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide — toggle to Added (this year) for new ARR-contributing companies instead" defaultExpanded={false}>
+            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} endpoint="/api/team-am/tier-kpis" />
           </SectionCard>
 
-          <SectionCard title="Communities by Tier" description="Number of communities grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
-            <CommunitiesByTierChart accounts={accounts} chartType={communitiesByTierChartType} setChartType={setCommunitiesByTierChartType} />
+          <SectionCard title="Communities by Tier" description="Number of communities grouped by Client Tier, portfolio-wide — toggle to Added (this year) for communities under new ARR-contributing companies instead" defaultExpanded={false}>
+            <CommunitiesByTierChart accounts={accounts} chartType={communitiesByTierChartType} setChartType={setCommunitiesByTierChartType} endpoint="/api/team-am/tier-kpis" />
           </SectionCard>
 
           <SectionCard title="Tier Comparison" description="Companies, communities, and ARR grouped by Client Tier — compare each tier's share of the portfolio, or its raw volume" defaultExpanded={false}>
@@ -5026,5 +5304,6 @@ export default function TeamAmDashboard() {
       />
       <BackToTopButton />
     </div>
+    </SectionSearchFilterContext.Provider>
   );
 }

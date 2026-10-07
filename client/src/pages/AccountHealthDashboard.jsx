@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, LabelList,
   LineChart, Line, ComposedChart,
@@ -8,22 +9,24 @@ import BackToTopButton from '../components/BackToTopButton';
 import FloatingSectionNav from '../components/FloatingSectionNav';
 import TopThreeEnhancementsCard from '../components/TopThreeEnhancementsCard';
 import AlisPayTicketsCard from '../components/AlisPayTicketsCard';
-import EnhancementRequestsSection from '../components/EnhancementRequestsSection';
-import EscalationRequestsSection from '../components/EscalationRequestsSection';
+import EnhancementRequestsSection, { countEnhancementMatches, ENHANCEMENT_TOP3_TITLE, ENHANCEMENT_ALL_TITLE } from '../components/EnhancementRequestsSection';
+import CollapsibleSubsection from '../components/CollapsibleSubsection';
+import TicketTable, { ticketMatchesQuery } from '../components/TicketTable';
+import DataCompletenessSection, { computeCompletenessGaps } from '../components/DataCompletenessSection';
+import { SECTION_SEARCH_SET_EVENT, pushSectionSearch } from '../utils/sectionSearchBus';
+import EscalationRequestsSection, { countEscalationMatches, ESCALATION_TITLE } from '../components/EscalationRequestsSection';
 import CommunityRevenueSection from '../components/CommunityRevenueSection';
-import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink } from '../components/AlisInternalSection';
-import TierKpiSection, { TIER_KPI_TITLE } from '../components/TierKpiSection';
+import AlisInternalSection, { INTERNAL_SECTION_TITLE, useInternalDeepLink, getInternalTicketMatchCount, INTERNAL_SEARCH_SET_EVENT, ensureInternalTicketsLoaded } from '../components/AlisInternalSection';
+import TierKpiSection, { TIER_KPI_TITLE, TIER_COLOR, useTierKpis, pivot, TrendChart, count as fmtCount } from '../components/TierKpiSection';
 import PinnedNoteButton, { PinnedNoteInline } from '../components/PinnedNote';
 import AccountTruthPanel from '../components/AccountTruthPanel';
 import AlisAdminIdDiscovery from '../components/AlisAdminIdDiscovery';
-import PortfolioExclusionsCheck from '../components/PortfolioExclusionsCheck';
 import PortfolioEntitlementsSection from '../components/PortfolioEntitlementsSection';
 import PortfolioUsageAuditSection from '../components/PortfolioUsageAuditSection';
 import AlisQuickLinks from '../components/AlisQuickLinks';
 import { KeyContactsToggle, KeyContactsExpandPanel } from '../components/KeyContactsExpand';
 import {
-  exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel,
-  exportCompanyHostTemplate, parseCompanyHostTemplate,
+  exportAccountHealthPortfolioExcel, exportAccountHealthSingleExcel, exportAccountHealthAccountsTable,
   exportRecurringCallsExcel, exportRecurringCallsTemplate, parseRecurringCallsTemplate,
   exportKeyContactsExcel, flattenKeyContacts,
 } from '../utils/accountHealthExport';
@@ -345,6 +348,19 @@ function slugify(title) {
 /** Cross-component "jump to this section" signal — QuickJumpNav dispatches it, every SectionCard listens for its own id, expands itself if collapsed, and scrolls into view. A DOM event rather than lifted state: this file renders SectionCards from several independent sub-components (RecurringCallsSection, ArrAddedDealsSection, DealsSection) and threading expanded/onToggle props through all of them just for this would be far more invasive than one shared event. */
 const JUMP_EVENT = 'alis-hub:jump-to-section';
 
+/**
+ * Lets every SectionCard on the page know the current global search state
+ * without threading it through as a prop at each of the dozens of call
+ * sites (Aaron, Sep 2026: "can the sections on the landing page be
+ * filtered out to only the sections returned in the [global search] pop
+ * up?"). `active` is whether a query is currently typed at all; `hitTitles`
+ * is the exact set of titles computeGlobalSearchHits returned for it — a
+ * SectionCard hides itself entirely when active and its own title isn't in
+ * that set, turning the whole page into a focused view instead of just a
+ * jump-to index. Provided once, at the top of this page's own return.
+ */
+const SectionSearchFilterContext = createContext(null);
+
 // Single source of truth for "every section on this page" — used by both
 // the "Account & Operations Overview" card's QuickJumpNav and the floating
 // butterfly FloatingSectionNav (Sep 2026) that takes over once that card
@@ -363,7 +379,7 @@ const JUMP_EVENT = 'alis-hub:jump-to-section';
 // hand-ordered) so a newly added section can't silently drift out of
 // order.
 const OVERVIEW_SECTIONS = [
-  { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Portfolio Entitlements', 'Recurring Calls', 'Tier KPIs'].sort((a, b) => a.localeCompare(b)) },
+  { category: 'Accounts', items: ['Accounts', 'AM KPI', 'Communities by Tier', 'Companies by Tier', 'Health Score by Tier', 'Health Score Trend', 'Key Contacts', 'Onboarding', 'Portfolio Entitlements', 'Recurring Calls', 'Tier KPIs'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Financials', items: ['All Deals', 'ARR Added This Year', 'ARR by Tier', 'ARR Personally Closed', 'Community Revenue & Occupancy', 'Cost to Serve by Tier', 'Deals by Type'].sort((a, b) => a.localeCompare(b)) },
   { category: 'Tickets', items: ['Enhancement Requests', 'Enhancement Requests: Top 3', 'Ticket Activity', 'Ticket Volume by Client Tier', 'Tickets by Category Closed', 'Tickets by Category Open', 'Tickets: ALIS Internal', 'Tickets: Escalation'].sort((a, b) => a.localeCompare(b)) },
 ];
@@ -372,6 +388,7 @@ function SectionCard({ title, children, description, action, collapsible = true,
   const [expanded, setExpanded] = useState(defaultExpanded);
   const ref = useRef(null);
   const sectionId = slugify(title);
+  const searchFilter = useContext(SectionSearchFilterContext);
 
   useEffect(() => {
     function handleJump(e) {
@@ -382,6 +399,12 @@ function SectionCard({ title, children, description, action, collapsible = true,
     window.addEventListener(JUMP_EVENT, handleJump);
     return () => window.removeEventListener(JUMP_EVENT, handleJump);
   }, [sectionId]);
+
+  // Sep 2026, Aaron: "can the sections on the landing page be filtered out
+  // to only the sections returned in the [global search] pop up?" —
+  // renders nothing at all (not just collapsed) when a search is active
+  // and this section's own title isn't one of computeGlobalSearchHits' hits.
+  if (searchFilter?.active && !searchFilter.hitTitles.has(title)) return null;
 
   const open = !collapsible || expanded;
   return (
@@ -493,7 +516,15 @@ function QuickJumpNav({ sections }) {
   );
 }
 
-function RefreshButton({ onRefreshed }) {
+/** "X companies · X no AM · X no tier/ARR" completeness line (Aaron, Sep 2026: surface data-quality gaps right next to the refresh that would fix them) — tier and ARR are treated as one gap since HubSpot's ARR rollup is itself tier-derived, so a missing tier almost always means an uncaptured ARR too. */
+function hubspotCompletenessStr(accounts) {
+  if (!accounts || accounts.length === 0) return null;
+  const noAm = accounts.filter((a) => !a.account_manager_name).length;
+  const noTier = accounts.filter((a) => a.tier == null || a.tier === 0).length;
+  return `${accounts.length} compan${accounts.length === 1 ? 'y' : 'ies'} · ${noAm} no AM · ${noTier} no tier/ARR`;
+}
+
+function RefreshButton({ onRefreshed, accounts }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
@@ -513,11 +544,14 @@ function RefreshButton({ onRefreshed }) {
     }
   }
 
+  const completeness = hubspotCompletenessStr(accounts);
+
   return (
     <div className="text-right">
-      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`}>
+      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`} title="Re-pulls every owned account from HubSpot — health score, tickets, deals, ARR, tier, and lifecycle status. Run this so the numbers on this page reflect what's in HubSpot right now; every other section reads from this cached pull, not live.">
         {refreshing ? 'Refreshing… (can take a couple minutes for a full portfolio)' : '🔄 Refresh HubSpot Data'}
       </button>
+      {completeness && <p className="text-[11px] text-neutral-400 mt-1 max-w-xs ml-auto">{completeness}</p>}
       {error && <p className="text-xs text-error mt-1 max-w-xs ml-auto">{error}</p>}
     </div>
   );
@@ -563,7 +597,7 @@ function ImportAgingReportButton({ onImported }) {
 
   return (
     <div>
-      <label className="btn btn-sm btn-secondary cursor-pointer">
+      <label className="btn btn-sm btn-secondary cursor-pointer" title="Uploads Dave Johnson's weekly Intacct Customer Aging Report PDF and matches its rows to accounts by name, populating each account's Aging Balance and DSO — the only source for those two columns, no HubSpot equivalent exists.">
         {importing ? 'Importing…' : '📥 Import Aging Report'}
         <input type="file" accept="application/pdf" onChange={handleFile} disabled={importing} className="hidden" />
       </label>
@@ -574,94 +608,6 @@ function ImportAgingReportButton({ onImported }) {
           {result.unmatchedCount > 0 && ` — ${result.unmatchedCount} row(s) didn't match any of your accounts (likely other AMs' clients)`}
         </p>
       )}
-    </div>
-  );
-}
-
-/**
- * Lets Aaron map each account to its ALIS subdomain — the one piece of
- * data needed to pull capacity/census (server/api/companyHosts.js has no
- * UI of its own, only a bulk-import API route). Downloads a template
- * pre-filled with every account name + ID (and any subdomain already
- * known); the upload half reads a completed copy back and posts it to
- * that same existing import route. Confirmed live (Sep 2026): only 7 of
- * 109 accounts have a mapping today, so this is expected to be filled in
- * gradually, not all at once.
- */
-function CompanyHostMappingButtons({ accounts, companyHosts, onImported }) {
-  const [importing, setImporting] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
-  // Matches by HubSpot ID first, falling back to company name — same
-  // fallback exportCompanyHostTemplate uses, needed for company_hosts rows
-  // sourced from the admin.alisonline.com scrape (no HubSpot ID at all).
-  const mappedCount = accounts.filter((a) => companyHosts.some((h) =>
-    (h.hubspot_company_id && h.hubspot_company_id === a.hubspot_company_id) ||
-    (h.company_name || '').trim().toLowerCase() === (a.company_name || '').trim().toLowerCase()
-  )).length;
-
-  async function handleDownload() {
-    await exportCompanyHostTemplate(accounts, companyHosts);
-  }
-
-  async function handleUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setImporting(true);
-    setError('');
-    setResult(null);
-    try {
-      const rows = await parseCompanyHostTemplate(file);
-      if (rows.length === 0) throw new Error('No rows with an ALIS Subdomain filled in were found in this file.');
-      const res = await fetch('/api/company-hosts/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
-      setResult(data);
-      await onImported();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setImporting(false);
-      e.target.value = '';
-    }
-  }
-
-  async function handleRefreshFromAdmin() {
-    setRefreshing(true);
-    setError('');
-    setResult(null);
-    try {
-      const res = await fetch('/api/company-hosts/refresh-from-admin', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Refresh failed (${res.status})`);
-      setResult(data);
-      await onImported();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setRefreshing(false);
-    }
-  }
-
-  const subdomainStatus = `${mappedCount} of ${accounts.length} accounts have a known ALIS subdomain`;
-
-  return (
-    <div className="flex items-center gap-2">
-      <button onClick={handleRefreshFromAdmin} className="btn btn-sm btn-secondary" title="Log in to admin.alisonline.com and pull every company's subdomain directly" disabled={refreshing}>
-        {refreshing ? 'Refreshing…' : '🔄 Refresh from ALIS Admin'}
-      </button>
-      <button onClick={handleDownload} className="btn btn-sm btn-secondary" title={subdomainStatus}>📋 Download Subdomain Template</button>
-      <label className="btn btn-sm btn-secondary cursor-pointer" title={subdomainStatus}>
-        {importing ? 'Importing…' : '📤 Upload Completed Template'}
-        <input type="file" accept=".xlsx" onChange={handleUpload} disabled={importing} className="hidden" />
-      </label>
-      {error && <p className="text-xs text-error max-w-xs">{error}</p>}
-      {result && <p className="text-xs text-neutral-500 max-w-xs">{result.imported} subdomain(s) imported{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}{result.found != null ? ` (${result.found} found on admin.alisonline.com)` : ''}</p>}
     </div>
   );
 }
@@ -682,7 +628,7 @@ function CompanyHostMappingButtons({ accounts, companyHosts, onImported }) {
  * carries the full job row (completed/total/failed) for hydration;
  * item_start/item_done/item_fail update the running counters live.
  */
-function RefreshOccupancyButton({ onRefreshed }) {
+function RefreshOccupancyButton({ onRefreshed, accounts }) {
   const [progress, setProgress] = useState(null); // { completed, total, failed, lastItem } while running
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -803,12 +749,16 @@ function RefreshOccupancyButton({ onRefreshed }) {
 
   const refreshing = progress != null;
   const pct = refreshing && progress.total > 0 ? Math.round((progress.completed / progress.total) * 100) : 0;
+  const occupancyCount = accounts?.filter((a) => a.occupancy_as_of_date).length ?? null;
 
   return (
     <div className="text-right">
-      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`}>
+      <button onClick={handleClick} disabled={refreshing} className={`btn btn-sm ${refreshing ? 'btn-accent' : 'btn-secondary'}`} title="Logs into each account's mapped ALIS subdomain and pulls current capacity/census — only works for accounts with a known ALIS subdomain (see Discover & Align below to map more). This is the only source for Total Capacity/Current Census, HubSpot doesn't carry it.">
         {refreshing ? (progress.total > 0 ? `Refreshing… ${pct}%` : 'Starting…') : '🏘️ Refresh Occupancy Data'}
       </button>
+      {!refreshing && occupancyCount != null && (
+        <p className="text-[11px] text-neutral-400 mt-1 max-w-xs ml-auto">{occupancyCount} of {accounts.length} companies have occupancy data</p>
+      )}
       {refreshing && (
         <div className="mt-1 max-w-xs ml-auto">
           <div className="h-1.5 bg-neutral-200 rounded-full overflow-hidden">
@@ -879,10 +829,10 @@ function ExportButtons({ onExcel, onPdf, size = 'sm' }) {
   return (
     <div className="text-right">
       <div className="flex gap-2 justify-end">
-        <button onClick={() => run('excel', onExcel)} disabled={busy != null} className={`btn btn-${size} btn-secondary`}>
+        <button onClick={() => run('excel', onExcel)} disabled={busy != null} className={`btn btn-${size} btn-secondary`} title="Multi-sheet workbook: Summary, Accounts (one row per account, every column on this page), Deals, Key Contacts, and ARR Added Deals — the full portfolio in one file, for pivoting/sharing outside the app.">
           {busy === 'excel' ? 'Exporting…' : '📊 Export Excel'}
         </button>
-        <button onClick={() => run('pdf', onPdf)} disabled={busy != null} className={`btn btn-${size} btn-secondary`}>
+        <button onClick={() => run('pdf', onPdf)} disabled={busy != null} className={`btn btn-${size} btn-secondary`} title="Portfolio summary report: Health Score Trend, Companies by Tier, AM KPI, ARR by Tier, Deals by Type, Ticket Volume by Tier, Escalations, Enhancement Requests, Key Contacts, and All Deals — a shareable snapshot of this whole page, not a data export.">
           {busy === 'pdf' ? 'Exporting…' : '📄 Export PDF'}
         </button>
       </div>
@@ -1276,25 +1226,52 @@ function TicketActivityHeatmap({ accounts }) {
   // Each ticket tagged with its own account's client_tier (Sep 2026) —
   // needed for OpenTicketVolumeChart's by-tier breakout/toggle below; the
   // heatmaps further down don't use it, only ever reading dateField.
+  // Excludes Enhancement + Escalation tickets (Sep 2026, Aaron: "focus here
+  // on tickets that are Open Ticket Volume... NOT escalations, not
+  // enhancements, but ALL other topics") — those two categories already
+  // have their own dedicated portfolio-wide sections further down the
+  // page, so counting them here too double-booked the same tickets in
+  // three places (this chart, the ALIS Escalation section, and the
+  // Enhancement Requests section).
   const items = useMemo(
-    () => accounts.flatMap((a) => (a.serviceHealth?.ticketDates || []).map((t) => ({ ...t, tier: a.tier }))),
+    () => accounts
+      .flatMap((a) => {
+        const own = (a.serviceHealth?.ticketDates || []).filter((t) => !t.isEnhancementRequest && t.category !== 'ALIS Escalation');
+        const byAge = [...own].sort((x, y) => (x.createdAt || '').localeCompare(y.createdAt || ''));
+        return byAge.map((t, i) => ({
+          ...t,
+          tier: a.tier,
+          companyName: a.company_name,
+          hubspotCompanyId: a.hubspot_company_id,
+          hubspotUrl: a.hubspotUrl,
+          arrCents: a.arr_cents,
+          totalCapacity: a.total_capacity,
+          daysOpen: t.isOpen && t.createdAt ? Math.round((Date.now() - new Date(t.createdAt).getTime()) / 86400000) : null,
+          companyPosition: `${i + 1} of ${byAge.length}`,
+        }));
+      }),
     [accounts]
   );
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium text-neutral-700 mb-2">Open Ticket Volume <span className="font-normal text-neutral-400">(Client Submitted + In Progress)</span></h3>
-        <OpenTicketVolumeChart items={items} />
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-neutral-700 mb-2">Opened</h3>
-        <CalendarHeatmap items={items} dateField="createdAt" colorScale={OPENED_COLOR_SCALE} emptyLabel="No dated tickets to map yet — click Refresh to pull them." />
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-neutral-700 mb-2">Closed</h3>
-        <CalendarHeatmap items={items} dateField="closedAt" colorScale={CLOSED_COLOR_SCALE} emptyLabel="No closed tickets to map yet." />
-      </div>
+      <CollapsibleSubsection title="Charts">
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Open Ticket Volume <span className="font-normal text-neutral-400">(Client Submitted + In Progress)</span></h3>
+            <OpenTicketVolumeChart items={items} />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Opened</h3>
+            <CalendarHeatmap items={items} dateField="createdAt" colorScale={OPENED_COLOR_SCALE} emptyLabel="No dated tickets to map yet — click Refresh to pull them." />
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Closed</h3>
+            <CalendarHeatmap items={items} dateField="closedAt" colorScale={CLOSED_COLOR_SCALE} emptyLabel="No closed tickets to map yet." />
+          </div>
+        </div>
+      </CollapsibleSubsection>
+      <TicketTable items={items} />
     </div>
   );
 }
@@ -1977,10 +1954,47 @@ function AmKpiTrendSection({ metricKey }) {
   );
 }
 
-/** Same shape as TeamAmDashboard.jsx's chart of the same name — how many accounts (not communities/tickets) fall into each Client Tier, portfolio-wide. Duplicated locally rather than shared, matching TicketsByTierChart/CostToServeByTierChart just above (this file's established per-page-duplication convention), and uses this file's own "unset" tier-key convention (label "Unset") to stay consistent with its siblings rather than Team AM's "Unassigned." */
-function CompaniesByTierChart({ accounts, chartType, setChartType }) {
+/**
+ * Trend sub-section shared by CompaniesByTierChart/CommunitiesByTierChart's
+ * two report modes below — fetches the same per-tier daily history the big
+ * "Tier KPIs" section already records (server/services/tierKpiRollup.js),
+ * just pivoted to whichever single metricKey the active report mode calls
+ * for (Sep 2026, Aaron: "add tracking and trend to the companies by tier
+ * section"). A second independent fetch of the same tier-kpis endpoint
+ * TierKpiSection.jsx also calls — accepted duplication (this app's
+ * established per-section fetch convention) rather than plumbing shared
+ * state across sections that don't otherwise know about each other.
+ */
+function TierReportTrend({ endpoint, metricKey }) {
+  const { data, error } = useTierKpis(endpoint);
+  if (error) return <p className="text-sm text-error">{error}</p>;
+  if (!data) return <p className="text-sm text-neutral-400">Loading trend…</p>;
+  const rows = pivot(data.history.tier, metricKey);
+  return (
+    <div className="mt-6 pt-6 border-t border-neutral-100">
+      <h3 className="text-sm font-medium text-neutral-700 mb-2">Trend</h3>
+      <TrendChart rows={rows} keys={data.current.tiers} colorFor={(t) => TIER_COLOR[t] || '#737373'} formatValue={fmtCount} />
+    </div>
+  );
+}
+
+/** "Current" vs. "Added (this year)" toggle shared by CompaniesByTierChart/CommunitiesByTierChart — small enough to inline rather than thread through as yet another prop pair. */
+function ReportModeSelect({ mode, setMode, addedLabel }) {
+  return (
+    <select value={mode} onChange={(e) => setMode(e.target.value)} className="text-xs border border-neutral-200 rounded-lg px-2 py-1.5 bg-white">
+      <option value="current">Current</option>
+      <option value="added">{addedLabel}</option>
+    </select>
+  );
+}
+
+/** Same shape as TeamAmDashboard.jsx's chart of the same name — how many accounts (not communities/tickets) fall into each Client Tier, portfolio-wide. Duplicated locally rather than shared, matching TicketsByTierChart/CostToServeByTierChart just above (this file's established per-page-duplication convention), and uses this file's own "unset" tier-key convention (label "Unset") to stay consistent with its siblings rather than Team AM's "Unassigned." Now also toggles to "Added (this year)" — accounts with at least one deal closed-won this calendar year carrying ARR, same definition as the Tier KPIs section's "Companies Contributing ARR" block (Aaron, Sep 2026: "toggle to Companies add[ed] to AM account in 2026 by tier") — plus a trend beneath either mode. */
+function CompaniesByTierChart({ accounts, chartType, setChartType, endpoint }) {
+  const [mode, setMode] = useState('current');
+  const year = new Date().getFullYear();
   const byTier = {};
-  for (const a of accounts) {
+  const source = mode === 'added' ? accounts.filter((a) => (a.arr_added_this_year_cents || 0) > 0) : accounts;
+  for (const a of source) {
     const key = (a.tier == null || a.tier === 0) ? 'unset' : a.tier;
     byTier[key] = (byTier[key] || 0) + 1;
   }
@@ -1989,37 +2003,109 @@ function CompaniesByTierChart({ accounts, chartType, setChartType }) {
     .sort((a, b) => (a.tier === 'unset' ? 1 : b.tier === 'unset' ? -1 : a.tier - b.tier));
 
   if (data.length === 0) {
-    return <p className="text-sm text-neutral-500 italic">No account data yet — click Refresh to pull it.</p>;
+    return <p className="text-sm text-neutral-500 italic">{mode === 'added' ? `No companies added in ${year} yet.` : 'No account data yet — click Refresh to pull it.'}</p>;
   }
 
+  // Sep 2026, Aaron: "add percentages to the labels... ala the pattern of
+  // the ARR by Tier report" — same reasoning as TierByArrChart's own pctOf:
+  // share of THIS chart's own total (all companies, or just this year's
+  // additions), not portfolio ARR.
+  const grandTotal = data.reduce((s, d) => s + d.total, 0);
+  const pctOf = (v) => (grandTotal > 0 ? ` (${Math.round((v / grandTotal) * 100)}%)` : '');
   const chartHeight = chartType === 'pie' ? 420 : 320;
 
   return (
     <>
-      <div className="flex items-center justify-end mb-3">
+      <div className="flex items-center justify-end gap-2 mb-3">
+        <ReportModeSelect mode={mode} setMode={setMode} addedLabel={`Added (${year})`} />
         <ChartTypeToggle value={chartType} onChange={setChartType} />
       </div>
       <ResponsiveContainer width="100%" height={chartHeight}>
         {chartType === 'pie' ? (
           <PieChart>
-            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => p.total)} isAnimationActive={false}>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => `${p.total}${pctOf(p.total)}`)} isAnimationActive={false}>
               {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
             </Pie>
-            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
           </PieChart>
         ) : (
           <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" tick={{ fontSize: 13 }} />
             <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}`} />
+            <Tooltip formatter={(v) => `${v} compan${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
             <Bar dataKey="total" radius={[4, 4, 0, 0]}>
               {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
-              <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+              <LabelList dataKey="total" position="top" formatter={(v) => `${v}${pctOf(v)}`} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
             </Bar>
           </BarChart>
         )}
       </ResponsiveContainer>
+      {endpoint && <TierReportTrend endpoint={endpoint} metricKey={mode === 'added' ? 'companiesContributingArr' : 'companyCount'} />}
+    </>
+  );
+}
+
+/**
+ * New (Sep 2026, Aaron: "add a communities by tier section right under
+ * companies by tier") — this dashboard's own copy of Team AM's identically-
+ * named chart (TeamAmDashboard.jsx), same duplication convention. "Added
+ * (this year)" sums active_community_count for accounts with ARR added
+ * this calendar year — the same approximation the Tier KPIs section's
+ * "Communities Contributing ARR" block uses (deals attach to the Home
+ * Office, not a specific community, so this is a proxy, not a precise
+ * per-community figure).
+ */
+function CommunitiesByTierChart({ accounts, chartType, setChartType, endpoint }) {
+  const [mode, setMode] = useState('current');
+  const year = new Date().getFullYear();
+  const byTier = {};
+  const source = mode === 'added' ? accounts.filter((a) => (a.arr_added_this_year_cents || 0) > 0) : accounts;
+  for (const a of source) {
+    const key = (a.tier == null || a.tier === 0) ? 'unset' : a.tier;
+    byTier[key] = (byTier[key] || 0) + (a.active_community_count || 0);
+  }
+  const data = Object.entries(byTier)
+    .map(([tier, total]) => ({ tier, total, name: tier === 'unset' ? 'Unset' : `Tier ${tier}` }))
+    .filter((d) => d.total > 0)
+    .sort((a, b) => (a.tier === 'unset' ? 1 : b.tier === 'unset' ? -1 : a.tier - b.tier));
+
+  if (data.length === 0) {
+    return <p className="text-sm text-neutral-500 italic">{mode === 'added' ? `No communities added in ${year} yet.` : 'No community data yet — click Refresh to pull it.'}</p>;
+  }
+
+  const grandTotal = data.reduce((s, d) => s + d.total, 0);
+  const pctOf = (v) => (grandTotal > 0 ? ` (${Math.round((v / grandTotal) * 100)}%)` : '');
+  const chartHeight = chartType === 'pie' ? 420 : 320;
+
+  return (
+    <>
+      <div className="flex items-center justify-end gap-2 mb-3">
+        <ReportModeSelect mode={mode} setMode={setMode} addedLabel={`Added (${year})`} />
+        <ChartTypeToggle value={chartType} onChange={setChartType} />
+      </div>
+      <ResponsiveContainer width="100%" height={chartHeight}>
+        {chartType === 'pie' ? (
+          <PieChart>
+            <Pie data={data} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius="68%" label={wrappedPieLabel((p) => `${p.total}${pctOf(p.total)}`)} isAnimationActive={false}>
+              {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
+            </Pie>
+            <Tooltip formatter={(v) => `${v} communit${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
+          </PieChart>
+        ) : (
+          <BarChart data={data} margin={{ top: 24, right: 16, left: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" tick={{ fontSize: 13 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip formatter={(v) => `${v} communit${v === 1 ? 'y' : 'ies'}${pctOf(v)}`} />
+            <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+              {data.map((d, i) => <Cell key={i} fill={TIER_COST_COLOR[d.name] || '#737373'} />)}
+              <LabelList dataKey="total" position="top" formatter={(v) => `${v}${pctOf(v)}`} style={{ fontSize: 13, fontWeight: 600, fill: '#1e293b' }} />
+            </Bar>
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+      {endpoint && <TierReportTrend endpoint={endpoint} metricKey={mode === 'added' ? 'communitiesContributingArr' : 'communityCount'} />}
     </>
   );
 }
@@ -3278,12 +3364,40 @@ function computeGlobalSearchHits(query, accounts, ownerName) {
   if (recurringHits > 0) hits.push({ title: 'Recurring Calls', count: recurringHits });
   const contactHits = flattenKeyContacts(accounts).filter((c) => nameHit(c.companyName)).length;
   if (contactHits > 0) hits.push({ title: 'Key Contacts', count: contactHits });
-  const openDealHits = flattenDeals(accounts).filter((d) => d.isOpen && nameHit(d.companyName)).length;
-  if (openDealHits > 0) hits.push({ title: 'All Deals', count: openDealHits });
+  // Matches DealsSection's own filter exactly (its "Open + recently-closed
+  // (90 days)" scope, company name only — this page has no AM column) —
+  // was wrongly isOpen-only before, undercounting against what the
+  // section's own search box would actually show.
+  const dealHits = flattenDeals(accounts).filter((d) => nameHit(d.companyName)).length;
+  if (dealHits > 0) hits.push({ title: 'All Deals', count: dealHits });
   const arrAddedHits = flattenArrAddedDeals(accounts).filter((d) => nameHit(d.companyName)).length;
   if (arrAddedHits > 0) hits.push({ title: 'ARR Added This Year', count: arrAddedHits });
   const personallyClosedHits = flattenPersonallyClosedDeals(accounts, ownerName).filter((d) => nameHit(d.companyName)).length;
   if (personallyClosedHits > 0) hits.push({ title: 'ARR Personally Closed', count: personallyClosedHits });
+  // Sep 2026, Aaron: "add all of the other search functionalities in
+  // here as well" — Enhancement Requests: Top 3, Enhancement Requests
+  // (broader), and ALIS Internal, matching each section's own search box
+  // exactly (see countEnhancementMatches/getInternalTicketMatchCount).
+  const top3Hits = countEnhancementMatches(accounts, { includeAccountManager: false, topThreeOnly: true, query });
+  if (top3Hits > 0) hits.push({ title: ENHANCEMENT_TOP3_TITLE, count: top3Hits });
+  const enhancementHits = countEnhancementMatches(accounts, { includeAccountManager: false, topThreeOnly: false, query });
+  if (enhancementHits > 0) hits.push({ title: ENHANCEMENT_ALL_TITLE, count: enhancementHits });
+  // null (not 0) means ALIS Internal hasn't been opened yet this session,
+  // so its own ticket data isn't loaded to check against; left out of the
+  // dropdown rather than shown as a false zero.
+  const internalHits = getInternalTicketMatchCount(q);
+  if (internalHits) hits.push({ title: INTERNAL_SECTION_TITLE, count: internalHits });
+  // Matches TicketTable's own search predicate exactly (see ticketMatchesQuery) —
+  // Aaron, Sep 2026: "a tickets table... searchable from the global search bar."
+  const ticketActivityHits = accounts
+    .flatMap((a) => (a.serviceHealth?.ticketDates || []).map((t) => ({ ...t, companyName: a.company_name })))
+    .filter((t) => !t.isEnhancementRequest && t.category !== 'ALIS Escalation' && ticketMatchesQuery(t, q)).length;
+  if (ticketActivityHits > 0) hits.push({ title: 'Ticket Activity', count: ticketActivityHits });
+  const dataCompletenessHits = accounts
+    .filter((a) => computeCompletenessGaps(a).length > 0 && nameHit(a.company_name)).length;
+  if (dataCompletenessHits > 0) hits.push({ title: 'Data Completeness', count: dataCompletenessHits });
+  const escalationHits = countEscalationMatches(accounts, { includeAccountManager: false, query });
+  if (escalationHits > 0) hits.push({ title: ESCALATION_TITLE, count: escalationHits });
   return hits;
 }
 
@@ -3493,6 +3607,7 @@ function RecurringCallsExportButtons({ accounts, onImported }) {
       {result && (
         <p className="text-xs text-neutral-500 max-w-xs">
           {result.imported} row(s) imported{result.skipped > 0 ? `, ${result.skipped} skipped` : ''}
+          {result.duplicatesMerged > 0 && ` (${result.duplicatesMerged} matched an existing call and were merged into it, not created as duplicates)`}
           {result.staleIdFallbackCount > 0 && (
             <>
               {' — '}
@@ -3525,6 +3640,248 @@ function RecurringCallsExportButtons({ accounts, onImported }) {
             )}
           </p>
         )
+      )}
+    </div>
+  );
+}
+
+/**
+ * Freeform fallback for a "no candidate" or ambiguous discovered call (Sep
+ * 2026) — same reasoning/shape as AlisAdminIdDiscovery.jsx's
+ * CustomCompanyPicker: the fuzzy title matcher can miss a real match
+ * entirely (e.g. a compound name like "Colliers Assisted Living / Inspirit
+ * Senior Living" scored just under the candidate threshold against a
+ * calendar title that only said "Colliers"), so this lets a human search
+ * the full portfolio instead of being stuck with nothing to pick.
+ */
+function CustomCompanyPickerForCalls({ accounts, onPick }) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const matches = q.length >= 2 ? accounts.filter((a) => a.company_name?.toLowerCase().includes(q)).slice(0, 8) : [];
+  return (
+    <div className="inline-flex flex-col gap-0.5">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search company name…"
+        className="text-xs border border-neutral-200 rounded px-1 py-0.5 w-48"
+      />
+      {matches.length > 0 && (
+        <div className="border border-neutral-200 rounded bg-white shadow-sm max-h-32 overflow-y-auto w-48">
+          {matches.map((a) => (
+            <button key={a.hubspot_company_id} type="button" onClick={() => { onPick(a); setQuery(''); }} className="block w-full text-left text-xs px-1.5 py-1 hover:bg-neutral-50">
+              {a.company_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Discover Recurring Calls from Calendar" (Aaron, Sep 2026: asked for a
+ * live-API way to populate recurring calls instead of hand-entering each
+ * one before Sync from Calendar has anything to work with) — scans the
+ * next 45 days of the primary Google Calendar for recurring event series
+ * and proposes matches against the portfolio by title
+ * (server/services/recurringCallDiscovery.js). Confident matches
+ * pre-checked, ambiguous/no-candidate rows need a human pick; nothing is
+ * written until "Import Selected," same review-before-write shape as
+ * AlisAdminIdDiscovery.jsx's own Discover flow this was modeled on.
+ */
+function RecurringCallDiscovery({ accounts, onImported }) {
+  const [discovering, setDiscovering] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [selections, setSelections] = useState({});
+  const [pickerOpenFor, setPickerOpenFor] = useState({});
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState(null);
+
+  async function handleDiscover() {
+    setDiscovering(true);
+    setError(null);
+    setResult(null);
+    setSelections({});
+    setPickerOpenFor({});
+    setApplyResult(null);
+    try {
+      const companies = accounts.map((a) => ({ id: a.hubspot_company_id, name: a.company_name }));
+      const res = await fetch('/api/account-health/recurring-calls/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companies }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      setResult(body);
+      const initial = {};
+      body.autoMatched.forEach((m, i) => { initial[`auto:${i}`] = m; });
+      setSelections(initial);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  function toggleAutoMatch(key, match, checked) {
+    setSelections((prev) => {
+      const next = { ...prev };
+      if (checked) next[key] = match; else delete next[key];
+      return next;
+    });
+  }
+
+  function setRowSelection(key, row, account) {
+    setSelections((prev) => {
+      const next = { ...prev };
+      if (account) next[key] = { ...row, hubspotCompanyId: account.hubspot_company_id, companyName: account.company_name };
+      else delete next[key];
+      return next;
+    });
+  }
+
+  async function handleApply() {
+    const rows = Object.values(selections).map((m) => ({
+      hubspotCompanyId: m.hubspotCompanyId,
+      label: m.title,
+      cadence: m.cadence,
+      nextCallDate: m.nextCallDate,
+      calendarLink: m.calendarLink,
+      dayOfWeek: m.dayOfWeek,
+      time: m.time,
+    }));
+    if (rows.length === 0) return;
+    setApplying(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/account-health/recurring-calls/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Import failed (${res.status})`);
+      setApplyResult(`Imported ${body.imported} recurring call(s)${body.duplicatesMerged > 0 ? ` (${body.duplicatesMerged} matched an existing call and were merged instead of duplicated)` : ''}.`);
+      setResult(null);
+      setSelections({});
+      await onImported();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  const selectedCount = Object.keys(selections).length;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={handleDiscover} disabled={discovering} className="btn btn-sm btn-secondary" title="Scans the next 45 days of your Google Calendar for recurring events and proposes matches by title">
+          {discovering ? '🔍 Scanning calendar…' : '🔍 Discover Recurring Calls'}
+        </button>
+        {applyResult && <span className="text-xs text-neutral-500">{applyResult}</span>}
+      </div>
+      {error && <p className="text-xs text-error max-w-md">{error}</p>}
+      {result && (
+        <div className="border border-neutral-200 rounded-lg p-3 bg-white max-w-2xl">
+          <p className="text-xs mb-2">
+            {result.seriesFoundCount} recurring series found in the next {result.daysAhead} days —{' '}
+            {result.autoMatched.length} confident match{result.autoMatched.length === 1 ? '' : 'es'},{' '}
+            {result.ambiguous.length} need review,{' '}
+            {result.noCandidate.length} no company match found
+            {result.alreadyTracked.length > 0 && <>, {result.alreadyTracked.length} already tracked</>}.
+          </p>
+          {result.autoMatched.length > 0 && (
+            <>
+              <p className="text-xs font-semibold mb-1">Confident matches (checked = will import)</p>
+              <div className="max-h-40 overflow-y-auto mb-2">
+                {result.autoMatched.map((m, i) => {
+                  const key = `auto:${i}`;
+                  return (
+                    <label key={key} className="flex items-center gap-2 text-xs py-0.5">
+                      <input type="checkbox" checked={Boolean(selections[key])} onChange={(e) => toggleAutoMatch(key, m, e.target.checked)} />
+                      <span><strong>{m.title}</strong> ({m.cadence || 'cadence unclear'}, {m.dayOfWeek}s) → {m.companyName}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {result.ambiguous.length > 0 && (
+            <>
+              <p className="text-xs font-semibold mb-1">Needs review — pick the right company, or leave as Skip</p>
+              <div className="max-h-40 overflow-y-auto mb-2">
+                {result.ambiguous.map((row, i) => {
+                  const key = `amb:${i}`;
+                  const chosen = selections[key];
+                  const isCustom = pickerOpenFor[key];
+                  return (
+                    <div key={key} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
+                      <span><strong>{row.title}</strong> ({row.cadence || 'cadence unclear'}, {row.dayOfWeek}s)</span>
+                      <span>→</span>
+                      {isCustom ? (
+                        chosen ? (
+                          <span className="font-medium">{chosen.companyName}</span>
+                        ) : (
+                          <CustomCompanyPickerForCalls accounts={accounts} onPick={(a) => setRowSelection(key, row, a)} />
+                        )
+                      ) : (
+                        <select
+                          value={chosen ? chosen.hubspotCompanyId : ''}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') { setPickerOpenFor((prev) => ({ ...prev, [key]: true })); setRowSelection(key, row, null); return; }
+                            const candidate = row.candidates.find((c) => c.hubspotCompanyId === e.target.value);
+                            setRowSelection(key, row, candidate ? { hubspot_company_id: candidate.hubspotCompanyId, company_name: candidate.companyName } : null);
+                          }}
+                          className="text-xs border border-neutral-200 rounded px-1 py-0.5"
+                        >
+                          <option value="">Skip</option>
+                          {row.candidates.map((c) => (
+                            <option key={c.hubspotCompanyId} value={c.hubspotCompanyId}>{c.companyName} ({Math.round(c.score * 100)}%)</option>
+                          ))}
+                          <option value="__custom__">Other company… (search)</option>
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {result.noCandidate.length > 0 && (
+            <>
+              <p className="text-xs font-semibold mb-1">No company match found — pick one, or leave as Skip</p>
+              <div className="max-h-40 overflow-y-auto mb-2">
+                {result.noCandidate.map((row, i) => {
+                  const key = `none:${i}`;
+                  const chosen = selections[key];
+                  return (
+                    <div key={key} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
+                      <span><strong>{row.title}</strong> ({row.cadence || 'cadence unclear'}, {row.dayOfWeek}s)</span>
+                      <span>→</span>
+                      {chosen ? (
+                        <>
+                          <span className="font-medium">{chosen.companyName}</span>
+                          <button type="button" onClick={() => setRowSelection(key, row, null)} className="text-neutral-400 hover:text-neutral-600 underline">clear</button>
+                        </>
+                      ) : (
+                        <CustomCompanyPickerForCalls accounts={accounts} onPick={(a) => setRowSelection(key, row, a)} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          <button onClick={handleApply} className="btn btn-sm btn-accent" disabled={applying || selectedCount === 0}>
+            {applying ? 'Importing…' : `Import Selected (${selectedCount})`}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -3755,6 +4112,36 @@ function flattenRecurringCalls(accounts) {
   return rows;
 }
 
+/**
+ * "Add a 'utilities' button to the recurring calls section with a side
+ * panel for the various utility buttons" (Aaron, Sep 2026) — same Drawer
+ * component the page-level Utilities button opens, just scoped to this one
+ * section's own local open/close state rather than the page-wide
+ * UTILITIES_TOGGLE_EVENT bus, since these actions (export, template round-
+ * trip, calendar sync/discover) only ever belong here.
+ */
+function RecurringCallsUtilityButton({ rows, accounts, onImported }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="btn btn-sm btn-secondary">🛠️ Utilities</button>
+      {open && (
+        <Drawer title="Recurring Calls Utilities" subtitle="Export, template round-trip, and calendar sync/discovery for this section" onClose={() => setOpen(false)}>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+              <button onClick={() => exportRecurringCallsExcel(rows)} disabled={rows.length === 0} className="btn btn-sm btn-secondary">⬇ Export to Excel</button>
+              <RecurringCallsExportButtons accounts={accounts} onImported={onImported} />
+            </div>
+            <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
+              <RecurringCallDiscovery accounts={accounts} onImported={onImported} />
+            </div>
+          </div>
+        </Drawer>
+      )}
+    </>
+  );
+}
+
 function RecurringCallsSection({ accounts, onSelect, onImported }) {
   const rows = useMemo(() => flattenRecurringCalls(accounts), [accounts]);
   const [search, setSearch] = useState('');
@@ -3816,8 +4203,7 @@ function RecurringCallsSection({ accounts, onSelect, onImported }) {
             onChange={(e) => setSearch(e.target.value)}
             className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-56"
           />
-          <button onClick={() => exportRecurringCallsExcel(rows)} disabled={rows.length === 0} className="btn btn-sm btn-secondary">⬇ Export to Excel</button>
-          <RecurringCallsExportButtons accounts={accounts} onImported={onImported} />
+          <RecurringCallsUtilityButton rows={rows} accounts={accounts} onImported={onImported} />
         </div>
       }
     >
@@ -4112,6 +4498,14 @@ function ArrAddedDealsSection({ accounts }) {
   const [sort, setSort] = useState({ column: 'arrValueCents', direction: 'desc' });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  // Own metric/chart-type state (Sep 2026, Aaron: "a collapsible report
+  // section to the ARR added this year leveraging existing graphs... in
+  // total, by tier... with tracking and trending over time") — deliberately
+  // separate from the "ARR by Tier" SectionCard's own arrByTierMetricKey
+  // state further down the page so toggling one doesn't move the other;
+  // defaults to the Added metric since that's this section's own subject.
+  const [reportMetricKey, setReportMetricKey] = useState('arrAddedThisYearCents');
+  const [reportChartType, setReportChartType] = useState('bar');
 
   async function handleExport() {
     setExporting(true);
@@ -4246,6 +4640,21 @@ function ArrAddedDealsSection({ accounts }) {
           )}
         </>
       )}
+      <div className="mt-6 pt-6 border-t border-neutral-100">
+        <CollapsibleSubsection title="Trend Report — Total, by Tier">
+          <TierByArrChart
+            accounts={accounts}
+            metricKey={reportMetricKey}
+            setMetricKey={setReportMetricKey}
+            chartType={reportChartType}
+            setChartType={setReportChartType}
+          />
+          <div className="mt-6 pt-6 border-t border-neutral-100">
+            <h3 className="text-sm font-medium text-neutral-700 mb-2">Trend</h3>
+            <ArrByTierTrendSection metricKey={reportMetricKey} />
+          </div>
+        </CollapsibleSubsection>
+      </div>
     </SectionCard>
   );
 }
@@ -4897,6 +5306,15 @@ function DealsSection({ accounts }) {
   );
   const [pipelineFilter, setPipelineFilter] = useState([]); // empty = all pipelines
   const [search, setSearch] = useState('');
+  // Lets the page-level global search push a query into this section's
+  // own search box (Aaron, Sep 2026: "All deals would be huge!!!").
+  useEffect(() => {
+    function handleSetSearch(e) {
+      if (e.detail?.key === 'All Deals' && typeof e.detail?.query === 'string') setSearch(e.detail.query);
+    }
+    window.addEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+    return () => window.removeEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+  }, []);
   const [sort, setSort] = useState({ column: 'expectedCloseDate', direction: 'asc' });
   const [expandedKey, setExpandedKey] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -5079,12 +5497,57 @@ export default function AccountHealthDashboard() {
   const [companyHosts, setCompanyHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const globalSearchHits = useMemo(() => computeGlobalSearchHits(search, accounts, ownerName), [search, accounts, ownerName]);
+  // Pre-fills the header's global search from ?search=<query> — the same
+  // "?internal=<query> for a Chrome site-search shortcut" idea
+  // AlisInternalSection already had, generalized to the whole page now that
+  // this box is a real global search (Aaron, Sep 2026: "is there any way to
+  // add this search functionality to the chrome 'site search'
+  // functionality"). Read once at initial mount, same as that component's
+  // own ?internal= initializer.
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  // Warms ALIS Internal's shared ticket cache in the background on mount
+  // (Aaron, Sep 2026: a search hit "inspiren" on Enhancement Requests but
+  // not ALIS Internal, even though that section's own search box finds it
+  // — purely because this section hadn't been expanded yet this session,
+  // so getInternalTicketMatchCount had no data to check). `internalReady`
+  // just forces globalSearchHits' memo below to recompute once the
+  // background fetch actually lands — the fetch itself doesn't touch
+  // React state on its own.
+  const [internalReady, setInternalReady] = useState(false);
+  useEffect(() => { ensureInternalTicketsLoaded().then(() => setInternalReady(true)); }, []);
+  const globalSearchHits = useMemo(() => computeGlobalSearchHits(search, accounts, ownerName), [search, accounts, ownerName, internalReady]);
+  // Sep 2026, Aaron: "make it override everything that is under it... when
+  // it is open it needs to be solid" — an `absolute` dropdown inside this
+  // header only ever stacks within ITS OWN local stacking context, so
+  // content elsewhere on the page (SectionCards further down, each their
+  // own stacking context) could still paint over it depending on DOM/paint
+  // order. Portaled to document.body and positioned in viewport coordinates
+  // (fixed, not absolute) — same fix AlisQuickLinks.jsx's own menu needed
+  // for the identical class of problem — so it always renders on top of
+  // literally everything, full stop.
+  const searchAnchorRef = useRef(null);
+  const [searchDropdownPos, setSearchDropdownPos] = useState(null);
+  useEffect(() => {
+    if (globalSearchHits.length === 0) { setSearchDropdownPos(null); return undefined; }
+    function reposition() {
+      if (searchAnchorRef.current) {
+        const r = searchAnchorRef.current.getBoundingClientRect();
+        setSearchDropdownPos({ top: r.bottom + 4, left: r.left, width: r.width });
+      }
+    }
+    reposition();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [globalSearchHits.length]);
   const [selected, setSelected] = useState(null);
   const [expandedContactsId, setExpandedContactsId] = useState(null);
   const [refreshResult, setRefreshResult] = useState(null);
   const [companiesByTierChartType, setCompaniesByTierChartType] = useState('bar');
+  const [communitiesByTierChartType, setCommunitiesByTierChartType] = useState('bar');
   const [arrByTierMetricKey, setArrByTierMetricKey] = useState('arrCents');
   const [arrByTierChartType, setArrByTierChartType] = useState('bar');
   const [unassignedTierOpen, setUnassignedTierOpen] = useState(false);
@@ -5268,7 +5731,13 @@ export default function AccountHealthDashboard() {
     window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: 'accounts' } }));
   }
 
+  const searchFilterValue = useMemo(
+    () => ({ active: Boolean(search.trim()), hitTitles: new Set(globalSearchHits.map((h) => h.title)) }),
+    [search, globalSearchHits]
+  );
+
   return (
+    <SectionSearchFilterContext.Provider value={searchFilterValue}>
     <div>
       <div className="card mb-4">
         <div className="flex items-start justify-between gap-6">
@@ -5291,7 +5760,7 @@ export default function AccountHealthDashboard() {
               </p>
             )}
           </div>
-          <div className="flex flex-col gap-2 shrink-0 relative">
+          <div className="flex flex-col gap-2 shrink-0 relative" ref={searchAnchorRef}>
             {/* Shares the same `search` state as the Accounts SectionCard's
                 own search box below (Sep 2026) — typing here doesn't move
                 the page (so it doesn't scroll itself out from under the
@@ -5312,21 +5781,52 @@ export default function AccountHealthDashboard() {
               />
               <button type="submit" className="btn btn-sm btn-secondary border border-accent-500/40 w-24 justify-center">Accounts</button>
             </form>
-            {globalSearchHits.length > 0 && (
-              <div className="absolute z-20 top-full left-0 mt-1 w-64 bg-white border border-neutral-200 rounded-lg shadow-lg py-1">
-                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Sections with a match</p>
+            {searchDropdownPos && globalSearchHits.length > 0 && createPortal(
+              <div
+                style={{ position: 'fixed', top: searchDropdownPos.top, left: searchDropdownPos.left }}
+                className="z-50 w-80 bg-white border border-neutral-200 rounded-lg shadow-2xl py-1"
+              >
+                <div className="flex items-center justify-between px-3 py-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Sections with a match</p>
+                  <button
+                    type="button"
+                    onClick={() => setSearch('')}
+                    title="Close"
+                    className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-neutral-100 shrink-0"
+                  >
+                    <img src="/butterfly-icon.png" alt="" className="h-4 w-auto" />
+                  </button>
+                </div>
                 {globalSearchHits.map((h) => (
                   <button
                     key={h.title}
                     type="button"
-                    onClick={() => window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(h.title) } }))}
-                    className="flex items-center justify-between w-full px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent(JUMP_EVENT, { detail: { id: slugify(h.title) } }));
+                      // Sections with their own independent search box get
+                      // the query pushed into it too, not just a scroll —
+                      // deferred a tick (same setTimeout idiom
+                      // useInternalDeepLink already uses) so it lands after
+                      // JUMP_EVENT's expand has actually mounted/re-rendered
+                      // that section. ALIS Internal predates the generic
+                      // keyed bus and keeps its own single-purpose event;
+                      // every other searchable section listens for its own
+                      // title as the key — safe to push unconditionally,
+                      // a section that isn't listening just ignores it.
+                      if (h.title === INTERNAL_SECTION_TITLE) {
+                        setTimeout(() => window.dispatchEvent(new CustomEvent(INTERNAL_SEARCH_SET_EVENT, { detail: { query: search } })), 0);
+                      } else {
+                        setTimeout(() => pushSectionSearch(h.title, search), 0);
+                      }
+                    }}
+                    className="flex items-center justify-between gap-3 w-full px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
                   >
-                    <span>{h.title}</span>
-                    <span className="text-neutral-400 text-xs">{h.count}</span>
+                    <span className="flex-1 min-w-0 text-left break-words">{h.title}</span>
+                    <span className="text-neutral-400 text-xs shrink-0">{h.count}</span>
                   </button>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
             {/* Utilities toggle moved here from the main nav bar (Sep
                 2026, Aaron: "tucking it tidily under the newly named
@@ -5359,14 +5859,8 @@ export default function AccountHealthDashboard() {
             onPdf={() => downloadPdf('/api/account-health/export-pdf', 'Account-Health-Portfolio.pdf')}
           />
         </div>
-        <div className="flex items-center gap-2 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <CompanyHostMappingButtons accounts={accounts} companyHosts={companyHosts} onImported={silentReload} />
-        </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <AlisAdminIdDiscovery accounts={accounts} onImported={silentReload} />
-        </div>
-        <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
-          <PortfolioExclusionsCheck />
+          <AlisAdminIdDiscovery accounts={accounts} companyHosts={companyHosts} onImported={silentReload} />
         </div>
         <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <ImportAgingReportButton onImported={silentReload} />
@@ -5376,13 +5870,13 @@ export default function AccountHealthDashboard() {
         </div>
         <div className="flex items-start gap-4 bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5">
           <div>
-            <RefreshOccupancyButton onRefreshed={load} />
+            <RefreshOccupancyButton onRefreshed={load} accounts={accounts} />
             <p className="text-[11px] text-neutral-400 mt-1">
               {rollup.occupancyAsOfDate ? `Last updated: as of ${rollup.occupancyAsOfDate}` : 'Last updated: never'}
             </p>
           </div>
           <div>
-            <RefreshButton onRefreshed={handleRefreshed} />
+            <RefreshButton onRefreshed={handleRefreshed} accounts={accounts} />
             <p className="text-[11px] text-neutral-400 mt-1">
               {rollup.lastHubspotRefreshAt ? `Last updated: ${dateTimeStr(rollup.lastHubspotRefreshAt)}` : 'Last updated: never'}
             </p>
@@ -5532,13 +6026,23 @@ export default function AccountHealthDashboard() {
           <SectionCard
             title="Accounts"
             action={
-              <input
-                type="text"
-                placeholder="Search accounts…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-56"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search accounts…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 w-56"
+                />
+                <button
+                  onClick={() => exportAccountHealthAccountsTable(filtered)}
+                  disabled={filtered.length === 0}
+                  className="btn btn-sm btn-secondary"
+                  title="Every column in the table below, exactly as currently sorted/filtered — a plain data dump, not the full multi-sheet workbook."
+                >
+                  ⬇ Export
+                </button>
+              </div>
             }
           >
             <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -5604,30 +6108,48 @@ export default function AccountHealthDashboard() {
                       onClick={() => setSelected(a)}
                     >
                       <td className="py-2 pr-4 font-medium text-base">
-                        <div className="flex items-center gap-1.5">
-                          <CompanyLink account={a} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
-                          <KeyContactsToggle
-                            account={a}
-                            expanded={expandedContactsId === a.hubspot_company_id}
-                            onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
-                          />
-                          <AlisQuickLinks companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
-                          {a.occupancy_error && (
-                            <span
-                              title={`Occupancy refresh failed: ${a.occupancy_error}`}
-                              className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-error/10 text-error cursor-help"
-                            >
-                              Failed
-                            </span>
-                          )}
-                          {a.lifecycle_flag_label && (
-                            <span
-                              title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}
-                              className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 cursor-help"
-                            >
-                              ⚠ {a.lifecycle_flag_label}
-                            </span>
-                          )}
+                        {/* A short name (e.g. "Vera") sits on one line while a
+                            long one wraps to two — badges used to be plain
+                            inline content right after the name text, so they
+                            landed wherever THAT text happened to end,
+                            drifting up/down row to row (Sep 2026, Aaron:
+                            "right align the buttons so a short company name
+                            ... won't throw off the button alignments
+                            north/south"). Splitting into two flex items with
+                            items-start pins the badge cluster to the top of
+                            the row and the right edge of the column, every
+                            row, regardless of how many lines the name takes —
+                            withNote={false} pulls CompanyLink's own NOTE pill
+                            out so it can join that same right-aligned cluster
+                            instead of trailing the name text. */}
+                        <div className="flex items-start justify-between gap-2">
+                          <CompanyLink account={a} withNote={false} className="text-neutral-700 hover:text-accent-600 hover:underline">{a.company_name}</CompanyLink>
+                          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                            <PinnedNoteButton noteId={a.pinned_note_id} title={a.company_name} className="!h-7" />
+                            <KeyContactsToggle
+                              className="!h-7"
+                              account={a}
+                              expanded={expandedContactsId === a.hubspot_company_id}
+                              onToggle={() => setExpandedContactsId((id) => (id === a.hubspot_company_id ? null : a.hubspot_company_id))}
+                            />
+                            <AlisQuickLinks buttonClassName="!h-7" companyHost={a.company_host} alisAdminCompanyId={a.alis_admin_company_id} hubspotUrl={a.hubspotUrl} />
+                            {a.occupancy_error && (
+                              <span
+                                title={`Occupancy refresh failed: ${a.occupancy_error}`}
+                                className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-error/10 text-error cursor-help"
+                              >
+                                Failed
+                              </span>
+                            )}
+                            {a.lifecycle_flag_label && (
+                              <span
+                                title={`Excluded from portfolio totals/averages above: ${a.lifecycle_flag_label}`}
+                                className="shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 cursor-help"
+                              >
+                                ⚠ {a.lifecycle_flag_label}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="py-2 pr-4 text-neutral-500">{tierStr(a.tier)}</td>
@@ -5675,6 +6197,14 @@ export default function AccountHealthDashboard() {
 
           <RecurringCallsSection accounts={accounts} onSelect={setSelected} onImported={silentReload} />
 
+          <SectionCard
+            title="Data Completeness"
+            description="Setup/data gaps per account, portfolio-wide — no score, just what's missing"
+            defaultExpanded={false}
+          >
+            <DataCompletenessSection accounts={accounts} />
+          </SectionCard>
+
           <SectionCard title="Tickets: Escalation" description="Every open ticket categorized ALIS Escalation, portfolio-wide — keeps high-priority items top of mind" defaultExpanded={false}>
             <EscalationRequestsSection accounts={accounts} />
           </SectionCard>
@@ -5694,8 +6224,12 @@ export default function AccountHealthDashboard() {
               health ask and Evan's Viva-style portfolio rollup ask, so
               they open the story instead of being buried under ticket
               detail. */}
-          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide" defaultExpanded={false}>
-            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} />
+          <SectionCard title="Companies by Tier" description="Number of accounts grouped by Client Tier, portfolio-wide — toggle to Added (this year) for new ARR-contributing companies instead" defaultExpanded={false}>
+            <CompaniesByTierChart accounts={accounts} chartType={companiesByTierChartType} setChartType={setCompaniesByTierChartType} endpoint="/api/account-health/tier-kpis" />
+          </SectionCard>
+
+          <SectionCard title="Communities by Tier" description="Number of communities grouped by Client Tier, portfolio-wide — toggle to Added (this year) for communities under new ARR-contributing companies instead" defaultExpanded={false}>
+            <CommunitiesByTierChart accounts={accounts} chartType={communitiesByTierChartType} setChartType={setCommunitiesByTierChartType} endpoint="/api/account-health/tier-kpis" />
           </SectionCard>
 
           <SectionCard title="ARR by Tier" description="Total ARR / ARR Added this year, grouped by Client Tier" defaultExpanded={false}>
@@ -5812,5 +6346,6 @@ export default function AccountHealthDashboard() {
       />
       <BackToTopButton />
     </div>
+    </SectionSearchFilterContext.Provider>
   );
 }

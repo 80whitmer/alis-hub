@@ -42,7 +42,7 @@ function parseHosts(companyHost) {
   return String(companyHost || '').split(',').map((h) => h.trim()).filter(Boolean);
 }
 
-export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspotUrl, className = '' }) {
+export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspotUrl, className = '', buttonClassName = '' }) {
   const [open, setOpen] = useState(false);
   // Menu position in viewport coordinates, computed from the button's own
   // rect right before opening — the menu is portaled to document.body (see
@@ -125,7 +125,7 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
         // Aaron: "make 回 the same color as the font in Note with the same
         // shading in the padding") rather than a separate glacier tint, so
         // the two pills read as one consistent set start to finish.
-        className="inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 shrink-0"
+        className={`inline-flex items-center justify-center h-4 text-[11px] font-semibold px-[5px] rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 shrink-0 ${buttonClassName}`}
         title="Quick links — ALIS, ALIS Admin, HubSpot"
       >
         回
@@ -146,6 +146,16 @@ export default function AlisQuickLinks({ companyHost, alisAdminCompanyId, hubspo
           style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
           className="z-50 w-56 bg-white border border-neutral-200 rounded-lg shadow-lg py-1 max-h-80 overflow-y-auto"
         >
+          <div className="flex justify-end px-1.5 pb-1">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              title="Close"
+              className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-neutral-100"
+            >
+              <img src="/butterfly-icon.png" alt="" className="h-4 w-auto" />
+            </button>
+          </div>
           {groups.map((g, i) => (
             <div key={i} className={i > 0 ? 'border-t border-neutral-100 mt-1 pt-1' : ''}>
               {g.heading && <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{g.heading}</p>}
