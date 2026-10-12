@@ -13,6 +13,7 @@ const { runCompanyUsageAuditJob }          = require('./usageAudit');
 const { runCrmIdAuditJob }                 = require('./crmIdAudit');
 const { runCrmIdAuditBulkJob }             = require('./crmIdAuditBulk');
 const { runAuditHistoryJob }               = require('./auditHistoryJob');
+const { runMovedOutBillingJob }            = require('./movedOutBillingJob');
 const { runAcuityHistoryJob }              = require('./acuityHistoryJob');
 
 /**
@@ -110,6 +111,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'audit-history':
         return await runAuditHistoryJob(jobId, payload);
+
+      case 'moved-out-billing':
+        return await runMovedOutBillingJob(jobId, payload);
 
       case 'resident-acuity-history':
         return await runAcuityHistoryJob(jobId, payload);

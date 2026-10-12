@@ -4,6 +4,7 @@ import { formatLocalTime, formatLocalDate, formatLocalTimeOnly, getUserTimezone 
 import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvExport';
 import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
+import MovedOutBillingSummary from '../components/MovedOutBillingSummary';
 
 const ITEM_CONFIG = {
   pending: { icon: '○', badge: 'badge-neutral', dot: 'status-dot-pending' },
@@ -381,6 +382,13 @@ export default function JobDetail() {
         <div className="card mt-6">
           <h3 className="font-semibold text-primary-900 mb-4">Acuity Reports</h3>
           <AcuityHistoryDownloads jobId={job.id} />
+        </div>
+      )}
+
+      {job.type === 'moved-out-billing' && job.status === 'done' && (
+        <div className="card mt-6">
+          <h3 className="font-semibold text-primary-900 mb-4">Moved-Out Billing Review</h3>
+          <MovedOutBillingSummary jobId={job.id} />
         </div>
       )}
 

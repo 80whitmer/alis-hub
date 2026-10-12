@@ -31,6 +31,7 @@ server/automation/kpi-cache/
 
 # Resident Acuity History job output (resident names, care levels, fees — never commit)
 server/automation/acuity-reports/
+server/automation/moved-out-billing-reports/
 
 # Portfolio-wide CRM ID Audit workbooks — generated job output, never commit
 server/automation/crm-id-audit-bulk-reports/

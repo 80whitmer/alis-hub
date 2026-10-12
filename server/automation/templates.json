@@ -677,6 +677,39 @@
         },
         "required": ["companyName", "companyHost"]
       }
+    },
+    {
+      "id": "moved-out-billing",
+      "name": "Moved-Out Residents With Open Billing",
+      "description": "Flags moved-out residents who still have billing activity in ALIS so communities can wrap it up: a recurring charge still scheduled (open-ended or past move-out), an open invoice balance, or a charge that ran past the move-out date. Runs for a whole company in one go, broken out by community and prioritized High/Medium/Low. Proxy report: ALIS's \"Resident still has billing enabled\" banner is not in the export API, so a resident with the banner but no live charges or open invoices will not appear.",
+      "category": "reporting",
+      "icon": "🧾",
+      "timeout": 300000,
+      "scriptPath": "./movedOutBillingJob.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Moved-Out Residents With Open Billing",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Saga Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"sagaseniorliving\" for sagaseniorliving.alisonline.com).",
+            "examples": ["sagaseniorliving"]
+          },
+          "communityName": {
+            "type": "string",
+            "title": "Community Name (optional)",
+            "description": "Leave blank for every community in the company, or give a name / unique partial match to limit the report to one.",
+            "examples": ["Terraces Kingwood"]
+          }
+        },
+        "required": ["companyName", "companyHost"]
+      }
     }
   ]
 }
