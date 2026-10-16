@@ -21,11 +21,41 @@
  * kpiExport.js/wellnessExport.js/usageAudit.js already use.
  */
 const { getCompanyHost } = require('../db/database');
-const { getOccupancy, getResidents, getHistoricalFloorPlan } = require('./alisApiClient');
+const { getOccupancy, getCommunities, getResidents, getHistoricalFloorPlan } = require('./alisApiClient');
 const { normalizeOccupancy } = require('./kpiNormalizer');
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Same convention as kpiExport.js's auto-resolve branch: a company_host's
+// community list can include Training communities and communities that have
+// since gone canceled/suspended — ALIS keeps their historical rows queryable
+// forever, so a bare getOccupancy(host)/historicalFloorPlan(host) pull
+// silently sums in every long-gone community right along with the ones
+// actually still open today. Confirmed live (Sep 2026, "Artegan"/host
+// "artegan"): 16 communities on that host, only 6 "active" — the other 10
+// (5 "suspended", 1 "canceled", 1 "Training Community") inflated Total
+// Capacity/Current Census from a real ~713/636 to a reported 1858/1570.
+// Only "canceled" and "active" have been seen in real data so far —
+// "suspended" isn't confirmed elsewhere, matched defensively in case a
+// different account uses it (same list kpiExport.js uses).
+const EXCLUDED_STATUSES = new Set(['canceled', 'cancelled', 'suspended']);
+
+/** Set of communityIds on `host` that are real, currently-open communities — or null if the lookup itself failed (caller should skip filtering rather than treat a lookup failure as "no active communities"). */
+async function getActiveCommunityIds(host) {
+  try {
+    const all = await getCommunities(host);
+    return new Set(
+      all
+        .filter((c) => !(c.communityName || '').toLowerCase().includes('training'))
+        .filter((c) => !EXCLUDED_STATUSES.has((c.status || '').toLowerCase()))
+        .map((c) => c.communityId)
+    );
+  } catch (err) {
+    console.error(`[accountHealthOccupancy] Failed to resolve active communities for host "${host}", occupancy will include every community on this host (including any Training/canceled/suspended ones): ${err.message}`);
+    return null;
+  }
 }
 
 // A HubSpot company can span more than one ALIS instance (e.g. grew
@@ -172,11 +202,19 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
   // host failed on BOTH the floor-plan pull and the residents fallback
   // below — a host that's simply wrong/unauthorized should still read
   // as a failure, not silently render as "no data."
+  // Resolved per host up front and reused for both the primary pull and the
+  // residents/floor-plan fallback below — a host's active-community set
+  // doesn't change mid-request.
+  const activeIdsByHost = new Map();
+  for (const h of hosts) activeIdsByHost.set(h, await getActiveCommunityIds(h));
+
   const rawRows = [];
   const hostErrors = [];
   for (const h of hosts) {
     try {
-      rawRows.push(...await getOccupancy(h));
+      const rows = await getOccupancy(h);
+      const activeIds = activeIdsByHost.get(h);
+      rawRows.push(...(activeIds ? rows.filter((r) => activeIds.has(r.communityId)) : rows));
     } catch (err) {
       hostErrors.push(`${h}: ${err.message}`);
     }
@@ -201,7 +239,9 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
   const residentErrors = [];
   for (const h of hosts) {
     try {
-      residents.push(...await getResidents(h));
+      const hostResidents = await getResidents(h);
+      const activeIds = activeIdsByHost.get(h);
+      residents.push(...(activeIds ? hostResidents.filter((r) => activeIds.has(r.communityId)) : hostResidents));
     } catch (err) {
       residentErrors.push(`${h}: ${err.message}`);
     }
@@ -211,7 +251,9 @@ async function getOccupancySnapshotForAccount(companyName, hubspotCompanyId) {
     const floorPlanRows = [];
     for (const h of hosts) {
       try {
-        floorPlanRows.push(...await getHistoricalFloorPlan(h));
+        const hostFloorPlan = await getHistoricalFloorPlan(h);
+        const activeIds = activeIdsByHost.get(h);
+        floorPlanRows.push(...(activeIds ? hostFloorPlan.filter((r) => activeIds.has(r.communityId)) : hostFloorPlan));
       } catch (err) {
         console.error(`[accountHealthOccupancy] ${companyName}: historicalFloorPlan pull failed for host "${h}", Total Capacity will stay unknown for this host: ${err.message}`);
       }

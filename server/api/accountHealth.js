@@ -9,6 +9,7 @@ const {
 const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl, computeContractTruth } = require('../services/hubspotTickets');
 const { getKeyContactsForCompany } = require('../services/hubspotContacts');
 const { getNextOccurrenceFromLink } = require('../services/googleCalendar');
+const { discoverRecurringCalls } = require('../services/recurringCallDiscovery');
 const { computeHealthScore, computeDsoDays } = require('../services/accountHealthScoring');
 const {
   pruneAccountHealthSnapshots, upsertAccountHealthSnapshot, listAccountHealthSnapshots, findRecentKpiSnapshotsByHubspotCompanyId,
@@ -168,6 +169,13 @@ function mapLiveServiceHealth(ticketSummary) {
     // else in this app) — category_2_0 === 'Enhancement' OR the subject
     // mentions "enhancement".
     ticketDates: ticketSummary.tickets.map((t) => ({
+      ticketId: t.id,
+      subject: t.subject || null,
+      url: t.url || null,
+      pinnedNoteId: t.pinnedNoteId || null,
+      category: t.category || null,
+      nextStep: t.nextStep || null,
+      isOpen: t.isOpen,
       createdAt: t.createdAt || null,
       closedAt: t.closedAt || null,
       pipelineStageLabel: t.pipelineStageLabel || null,
@@ -1263,6 +1271,26 @@ router.post('/recurring-calls/import', (req, res) => {
   } catch (err) {
     console.error('[accountHealth] Recurring-calls bulk import failed:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/account-health/recurring-calls/discover — scrapes nothing (this
+// app's Calendar OAuth connection already gives live read access); scans
+// the next `daysAhead` days of the primary calendar for recurring event
+// series and proposes matches against `companies` (sent by the client, same
+// pattern as alis-admin-ids/discover) by title. A proposal only — nothing
+// is written until the reviewed result is POSTed to /recurring-calls/import
+// below, exactly like the ALIS admin ID discovery flow.
+router.post('/recurring-calls/discover', async (req, res, next) => {
+  try {
+    const companies = req.body?.companies;
+    if (!Array.isArray(companies)) {
+      return res.status(400).json({ error: 'Expected { companies: [{ id, name }] }' });
+    }
+    const result = await discoverRecurringCalls(companies, listRecurringCalls());
+    res.json(result);
+  } catch (err) {
+    next(err);
   }
 });
 

@@ -11,7 +11,11 @@
 const express = require('express');
 const router = express.Router();
 const { getLiveEntitlements } = require('../services/alisEntitlements');
-const { discoverAlisAdminIds } = require('../services/alisCompanyDiscovery');
+const { checkCompanyAlignmentDrift } = require('../services/alisCompanyDiscovery');
+const {
+  startDiscovery, cancelDiscovery, getStatus: getDiscoveryStatus, STREAM_CHANNEL: DISCOVERY_STREAM_CHANNEL,
+} = require('../services/alisAdminDiscoveryJob');
+const { checkAgainstLastAudit } = require('../services/crmIdAuditLookup');
 const { findExcludedPortfolioAccounts } = require('../services/hubspotAccounts');
 const { hubspotRecordUrl } = require('../services/hubspotTickets');
 const {
@@ -27,6 +31,8 @@ const { subscribe, unsubscribe } = require('./broadcaster');
 const {
   getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId, listAlisAdminIds,
   listCompanyHosts, listPortfolioUsageSnapshots,
+  upsertCompanyHost, upsertCompanyAlignment, listCompanyAlignment,
+  logCompanyAlignmentActivity, listCompanyAlignmentActivityLog, deleteCompanyAlignmentActivityLogEntry,
 } = require('../db/database');
 
 // PUT /api/account-truth/:id/alis-admin-id
@@ -57,17 +63,161 @@ router.post('/alis-admin-ids/import', (req, res) => {
   res.json({ imported });
 });
 
-// POST /api/account-truth/alis-admin-ids/discover — scrapes ALIS admin's
-// own company directory and proposes matches against `companies` (sent by
-// the client — it already has the portfolio loaded). A proposal only;
-// nothing is saved until the reviewed result is POSTed to /import above.
-router.post('/alis-admin-ids/discover', async (req, res, next) => {
+// POST /api/account-truth/alis-admin-ids/discover/run — kicks off the
+// discovery scrape as a background job (Sep 2026, Aaron: hit a 502 running
+// this as a plain blocking POST — a slow run's CRM ID rescue pass
+// outlasted the dev proxy's own connection timeout even though the backend
+// was still working. 202 + poll/stream /status instead, same pattern as
+// portfolio-entitlements/usage-audit below). A proposal only; nothing is
+// saved until the reviewed result is POSTed to /import above.
+router.post('/alis-admin-ids/discover/run', (req, res) => {
+  const companies = req.body?.companies;
+  if (!Array.isArray(companies)) {
+    return res.status(400).json({ error: 'Expected { companies: [{ id, name, alisAdminCompanyId }] }' });
+  }
+  const started = startDiscovery(companies);
+  if (!started) {
+    return res.status(409).json({ error: 'A Discover & Align run is already in progress.' });
+  }
+  res.status(202).json({ started: true });
+});
+
+// POST /api/account-truth/alis-admin-ids/discover/cancel — stops a running
+// discovery after its current company finishes. No-op if nothing's running.
+router.post('/alis-admin-ids/discover/cancel', (req, res) => {
+  const cancelled = cancelDiscovery();
+  if (!cancelled) {
+    return res.status(409).json({ error: 'No Discover & Align run is currently in progress.' });
+  }
+  res.status(202).json({ cancelling: true });
+});
+
+// GET /api/account-truth/alis-admin-ids/discover/status — current job
+// state, including the final result once done (persists across reloads
+// since it's read from job memory, not tied to any one request/response).
+router.get('/alis-admin-ids/discover/status', (req, res) => {
+  res.json(getDiscoveryStatus());
+});
+
+// GET /api/account-truth/alis-admin-ids/discover/stream — live progress log
+// of a running discovery, same SSE convention as portfolio-entitlements/
+// portfolio-usage-audit's own /stream routes below.
+router.get('/alis-admin-ids/discover/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const job = getDiscoveryStatus();
+  res.write(`event: snapshot\ndata: ${JSON.stringify(job)}\n\n`);
+
+  if (job.status !== 'running') {
+    res.end();
+    return;
+  }
+
+  subscribe(DISCOVERY_STREAM_CHANNEL, res);
+  req.on('close', () => unsubscribe(DISCOVERY_STREAM_CHANNEL, res));
+});
+
+// POST /api/account-truth/alis-admin-ids/check-last-audit — cross-references
+// currently-unmapped accounts against the most recent CRM ID Audit (bulk)
+// report already on disk (see crmIdAuditLookup.js's doc comment: zero new
+// scraping, so it's fast on any portfolio size, unlike a live Discover run's
+// ambiguous-bucket rescue). Synchronous — a local file read, not a job.
+router.post('/alis-admin-ids/check-last-audit', async (req, res, next) => {
   try {
     const companies = req.body?.companies;
     if (!Array.isArray(companies)) {
       return res.status(400).json({ error: 'Expected { companies: [{ id, name, alisAdminCompanyId }] }' });
     }
-    const result = await discoverAlisAdminIds(companies);
+    const result = await checkAgainstLastAudit(companies);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/account-truth/company-alignment — every company_alignment row
+// (ALIS-side name, human-confirmed flag, last drift-check result), for the
+// combined template's pre-fill and the Company Alignment panel's own status
+// display. Cheap local read, no live scrape.
+router.get('/company-alignment', (req, res) => {
+  res.json({ rows: listCompanyAlignment() });
+});
+
+// POST /api/account-truth/company-alignment/import — the combined
+// Download/Upload template's write path (Aaron, Sep 2026: "combine these
+// templates and update/discovery patterns"), and what Discover's "Import
+// Selected" now posts to as well: one row can touch all three tables
+// (company_hosts, alis_admin_ids, company_alignment) since a single company
+// can carry a subdomain, an admin ID, and an alignment note independently —
+// each write is skipped if that row didn't include the relevant field,
+// rather than clobbering an existing value with a blank.
+router.post('/company-alignment/import', (req, res) => {
+  const rows = req.body?.rows;
+  if (!Array.isArray(rows)) {
+    return res.status(400).json({ error: 'Expected { rows: [{ hubspotCompanyId, companyName, companyHost?, alisAdminCompanyId?, alisCompanyName?, crmIdConfirmed? }] }' });
+  }
+  // Which of Discover & Align / the template / the new Check Last Audit
+  // Report triggered this write (Sep 2026, Aaron: "an audit log... to keep
+  // track of actioned updates and imports") — free text, defaults to
+  // 'template' since that's this route's original caller.
+  const source = req.body?.source || 'template';
+  let hostsImported = 0;
+  let adminIdsImported = 0;
+  let alignmentImported = 0;
+  for (const row of rows) {
+    const { hubspotCompanyId, companyName, companyHost, alisAdminCompanyId, alisCompanyName, crmIdConfirmed } = row;
+    if (!hubspotCompanyId) continue;
+    if (companyHost) {
+      upsertCompanyHost({ companyName, hubspotCompanyId, companyHost });
+      hostsImported++;
+    }
+    if (alisAdminCompanyId) {
+      setAlisAdminId({ hubspotCompanyId, companyName, alisAdminCompanyId });
+      adminIdsImported++;
+    }
+    if (alisCompanyName !== undefined || crmIdConfirmed !== undefined) {
+      upsertCompanyAlignment(hubspotCompanyId, { alisCompanyName, crmIdConfirmed });
+      alignmentImported++;
+    }
+  }
+  if (hostsImported > 0 || adminIdsImported > 0 || alignmentImported > 0) {
+    logCompanyAlignmentActivity(
+      source,
+      `${rows.length} row(s) imported — ${adminIdsImported} admin ID(s), ${hostsImported} subdomain(s), ${alignmentImported} alignment note(s).`
+    );
+  }
+  res.json({ hostsImported, adminIdsImported, alignmentImported });
+});
+
+// GET /api/account-truth/company-alignment/activity-log — the audit log of
+// every past import (see logCompanyAlignmentActivity's own call site
+// above), newest first.
+router.get('/company-alignment/activity-log', (req, res) => {
+  res.json({ rows: listCompanyAlignmentActivityLog() });
+});
+
+// DELETE /api/account-truth/company-alignment/activity-log/:id — removes
+// one log entry (Aaron: "the option to delete the records if they are
+// cluttering things up"). Log-only — never touches the actual imported
+// data (company_hosts/alis_admin_ids/company_alignment).
+router.delete('/company-alignment/activity-log/:id', (req, res) => {
+  deleteCompanyAlignmentActivityLogEntry(req.params.id);
+  res.status(204).end();
+});
+
+// POST /api/account-truth/company-alignment/check-drift — cross-checks
+// every account with a known ALIS Admin Company ID against a fresh scrape
+// of ALIS admin's own company directory (one login, one page — see
+// checkCompanyAlignmentDrift's doc comment for why no new scraping
+// capability was needed). Synchronous rather than a tracked job: the
+// directory scrape is a single page load, not a per-account loop like the
+// portfolio entitlements/usage-audit checks.
+router.post('/company-alignment/check-drift', async (req, res, next) => {
+  try {
+    const result = await checkCompanyAlignmentDrift();
     res.json(result);
   } catch (err) {
     next(err);

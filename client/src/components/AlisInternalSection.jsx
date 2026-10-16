@@ -1,6 +1,58 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { PinnedNoteBody } from './PinnedNote';
+import CollapsibleSubsection from './CollapsibleSubsection';
+
+/**
+ * Compact "NOTE" pill + popup modal, same visual pattern as PinnedNote.jsx's
+ * PinnedNoteButton/NotePanel (Aaron, Sep 2026: "add the 'Note' button
+ * pattern here with a link to a pop up of the pinned note") — but fed
+ * directly from segments/modifiedAt already present on the ticket, rather
+ * than PinnedNoteButton's own noteId+fetch, since this section's server
+ * route already resolves the pinned note inline for every ticket (see
+ * TicketCard's existing expanded-detail Pinned note block just below,
+ * which reads the exact same fields). A second fetch of data already in
+ * hand would be pure waste.
+ */
+function InlinePinnedNoteButton({ segments, modifiedAt, title }) {
+  const [open, setOpen] = useState(false);
+  if (!segments?.length) return null;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        title="Show pinned note"
+        className="inline-flex items-center justify-center h-4 align-middle text-[9px] font-semibold tracking-wide px-[5px] rounded border border-accent-300 text-accent-700 bg-accent-50 hover:bg-accent-100 ml-1.5 shrink-0"
+      >
+        NOTE
+      </button>
+      {open && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setOpen(false)}>
+          <div
+            role="dialog"
+            aria-label={`Pinned note${title ? `: ${title}` : ''}`}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-neutral-200 rounded-xl shadow-2xl p-6 w-full"
+            style={{ maxWidth: 720, maxHeight: '85vh' }}
+          >
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <p className="text-sm font-semibold text-neutral-500 uppercase tracking-wide">
+                Pinned note{title ? <span className="normal-case font-normal text-neutral-400"> · {title}</span> : null}
+              </p>
+              <button type="button" onClick={() => setOpen(false)} className="text-neutral-400 hover:text-neutral-600 text-lg leading-none" aria-label="Close">✕</button>
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 'calc(85vh - 64px)' }}>
+              <PinnedNoteBody segments={segments} modifiedAt={modifiedAt} textClassName="text-base leading-relaxed" />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 /**
  * "Tickets: ALIS Internal" — shared by Account Health and Team AM. Aaron,
@@ -16,6 +68,16 @@ export const INTERNAL_SECTION_TITLE = 'Tickets: ALIS Internal';
 export const INTERNAL_QUERY_PARAM = 'internal';
 const INTERNAL_SECTION_ID = 'tickets-alis-internal';
 
+// Lets the page-level global search (computeGlobalSearchHits in each
+// dashboard file) push a query into this section's own search box after
+// the fact — e.g. clicking this section's row in the "Sections with a
+// match" dropdown (Aaron, Sep 2026: "link up the ALIS internal search to
+// the main search"). Deliberately a CustomEvent, not a prop, matching
+// JUMP_EVENT's own cross-component-signal convention — this component is
+// already mounted independently by each dashboard with no search prop, and
+// threading one through now would mean both callers passing it.
+export const INTERNAL_SEARCH_SET_EVENT = 'alis-hub:set-internal-search';
+
 /** When the page URL carries ?internal=, expand-and-scroll to this section once the page's sections have rendered. */
 export function useInternalDeepLink(ready, jumpEvent) {
   const done = useRef(false);
@@ -30,6 +92,36 @@ export function useInternalDeepLink(ready, jumpEvent) {
 
 // Shared across both dashboards for the browser session; Refresh re-pulls.
 let cached = null;
+let inFlightFetch = null; // dedupes a concurrent background warm + an in-component load()
+
+/** The actual GET, shared by the component's own load() and the background warmer below — the only thing that touches `cached`. */
+async function fetchInternalTickets(refresh = false) {
+  const res = await fetch(`/api/internal-tickets${refresh ? '?refresh=1' : ''}`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  cached = body;
+  return body;
+}
+
+/**
+ * Warms the shared ticket cache in the background — e.g. called once from
+ * each dashboard's top-level component on mount — so the page-level global
+ * search's match count for this section is accurate even before a human
+ * has ever expanded it this session (Aaron, Sep 2026: a query hit
+ * Enhancement Requests but not ALIS Internal purely because this section's
+ * data hadn't loaded yet, not because there was no real match). Fire-and-
+ * forget, deduped against a concurrent call (including this section's own
+ * mount-time load() if the user opens it before this resolves), and
+ * silently swallows failure — this section's own Refresh/error UI is still
+ * the real error surface once actually opened, not something the
+ * background warm should surface on its own. Returns the fetch's promise
+ * so a caller can re-run a stale useMemo once real data lands.
+ */
+export function ensureInternalTicketsLoaded() {
+  if (cached) return Promise.resolve(cached);
+  if (!inFlightFetch) inFlightFetch = fetchInternalTickets().catch(() => null).finally(() => { inFlightFetch = null; });
+  return inFlightFetch;
+}
 
 function fmtDate(iso) {
   return iso ? iso.slice(0, 10) : '—';
@@ -135,6 +227,16 @@ function CreatedHeatmap({ items }) {
 }
 
 /** Weekly count of internal tickets open as of each week's end, replayed from createdAt/closedAt — no snapshot table needed. */
+// "MMM ''YY" (Sep 2026, Aaron: the raw "YYYY-MM-DD" weekly tick labels were
+// overlapping into an unreadable smear — "even if you label every other
+// month that would be fine"). Ticks are picked explicitly (one per month,
+// every other month) rather than relying on recharts' `interval` prop,
+// since evenly-spaced-by-INDEX ticks don't land on evenly-spaced-by-MONTH
+// boundaries once weeks/month vary between 4 and 5.
+function formatMonthTick(dateStr) {
+  return new Date(`${dateStr}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
 function OpenOverTimeChart({ items }) {
   const rows = useMemo(() => {
     const today = new Date();
@@ -155,13 +257,28 @@ function OpenOverTimeChart({ items }) {
     });
   }, [items]);
 
+  const monthTicks = useMemo(() => {
+    const ticks = [];
+    let lastMonth = null;
+    let monthIndex = 0;
+    for (const r of rows) {
+      const month = r.date.slice(0, 7);
+      if (month !== lastMonth) {
+        lastMonth = month;
+        monthIndex += 1;
+        if (monthIndex % 2 === 1) ticks.push(r.date);
+      }
+    }
+    return ticks;
+  }, [rows]);
+
   return (
     <ResponsiveContainer width="100%" height={240}>
       <LineChart data={rows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="date" tick={{ fontSize: 11 }} interval={Math.max(0, Math.ceil(rows.length / 12) - 1)} />
+        <XAxis dataKey="date" tick={{ fontSize: 11 }} ticks={monthTicks} tickFormatter={formatMonthTick} />
         <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-        <Tooltip />
+        <Tooltip labelFormatter={formatMonthTick} />
         <Legend />
         <Line type="monotone" dataKey="open" name="Still open" stroke="#6d28d9" strokeWidth={2} dot={false} isAnimationActive={false} />
         <Line type="monotone" dataKey="created" name="Created (cumulative)" stroke="#a3a3a3" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
@@ -203,6 +320,24 @@ function matchesSearch(t, q) {
   return q.split(/\s+/).every((word) => haystack.includes(word));
 }
 
+/**
+ * For the page-level global search's "Sections with a match" dropdown —
+ * reuses whatever this section already has loaded (the `cached` module
+ * variable) and the exact same matchesSearch this section's own search box
+ * filters by, so a hit here is guaranteed to show the same result count the
+ * user would see by typing the query directly into this section. Returns
+ * null (not 0) if this section hasn't been opened yet this session (no
+ * fetch has happened) — "not yet checked" is a different thing from "zero
+ * matches," and the caller should treat it that way (leave it out of the
+ * dropdown rather than claim a false zero).
+ */
+export function getInternalTicketMatchCount(query) {
+  if (!cached) return null;
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+  return cached.tickets.filter((t) => matchesSearch(t, q)).length;
+}
+
 const SORTS = {
   created: { label: 'Newest', fn: (a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') },
   updated: { label: 'Recently updated', fn: (a, b) => (b.lastModifiedAt || '').localeCompare(a.lastModifiedAt || '') },
@@ -229,6 +364,7 @@ function TicketCard({ t, onTracked, defaultOpen }) {
           <TrackedLink href={t.url} ticketId={t.ticketId} target="hubspot" onTracked={onTracked} className="font-medium text-primary-900 hover:underline">
             {t.subject}
           </TrackedLink>
+          <InlinePinnedNoteButton segments={t.pinnedNoteSegments} modifiedAt={t.pinnedNoteModifiedAt} title={t.subject} />
           <p className="text-xs text-neutral-400 mt-1">
             {t.stage} · created {fmtDate(t.createdAt)} · updated {fmtDate(t.lastModifiedAt)}
             {t.ownerName && t.ownerName !== 'Aaron Whitmer' ? ` · ${t.ownerName}` : ''}
@@ -310,10 +446,13 @@ export default function AlisInternalSection({ pagePath }) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/internal-tickets${refresh ? '?refresh=1' : ''}`);
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      cached = body;
+      // A background warm (ensureInternalTicketsLoaded, called from the
+      // dashboard's own mount) may already be in flight by the time this
+      // section is actually opened — piggyback on it instead of firing a
+      // second concurrent GET for the same data. An explicit Refresh click
+      // always re-fetches directly, bypassing the cache.
+      const body = refresh ? await fetchInternalTickets(true) : await ensureInternalTicketsLoaded();
+      if (!body) throw new Error('Failed to load internal tickets.');
       setData(body);
     } catch (err) {
       setError(err.message);
@@ -324,6 +463,14 @@ export default function AlisInternalSection({ pagePath }) {
 
   useEffect(() => {
     if (!cached) load();
+  }, []);
+
+  useEffect(() => {
+    function handleSetSearch(e) {
+      if (typeof e.detail?.query === 'string') setSearch(e.detail.query);
+    }
+    window.addEventListener(INTERNAL_SEARCH_SET_EVENT, handleSetSearch);
+    return () => window.removeEventListener(INTERNAL_SEARCH_SET_EVENT, handleSetSearch);
   }, []);
 
   // Optimistic local bump so a click shows up in counts/Hot Topics without a re-pull.
@@ -414,19 +561,20 @@ export default function AlisInternalSection({ pagePath }) {
         <StatTile label="Clicks (30d)" value={clicks30} sub="from this dashboard" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div>
-          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Created — Trailing 12 Months</h4>
-          <CreatedHeatmap items={tickets} />
+      <CollapsibleSubsection title="Charts">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div>
+            <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Created — Trailing 12 Months</h4>
+            <CreatedHeatmap items={tickets} />
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Open Internal Tickets Over Time</h4>
+            <OpenOverTimeChart items={tickets} />
+          </div>
         </div>
-        <div>
-          <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Open Internal Tickets Over Time</h4>
-          <OpenOverTimeChart items={tickets} />
-        </div>
-      </div>
+      </CollapsibleSubsection>
 
-      <div className="mb-6">
-        <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2">Hot Topics</h4>
+      <CollapsibleSubsection title="Hot Topics">
         {hotTopics.length === 0 ? (
           <p className="text-xs text-neutral-500 italic">
             No clicks recorded yet. Clicks on ticket and resource links below are counted here (HubSpot doesn't expose record views, so only clicks from this dashboard count).
@@ -443,7 +591,7 @@ export default function AlisInternalSection({ pagePath }) {
             ))}
           </ol>
         )}
-      </div>
+      </CollapsibleSubsection>
 
       <input
         placeholder="Search subject, description, next step, pinned note, or link names…"

@@ -1,10 +1,35 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList,
   LineChart, Line, Legend,
 } from 'recharts';
 import { exportEnhancementRequests } from '../utils/enhancementRequestsExport';
+import { SECTION_SEARCH_SET_EVENT } from '../utils/sectionSearchBus';
 import PinnedNoteButton from './PinnedNote';
+import CollapsibleSubsection from './CollapsibleSubsection';
+
+/** The two SectionCard titles this component renders under (see each dashboard's own call sites) — reused as the global search's hit titles and as the section-search-bus key, so a hit and this component always agree on identity without a separate prop. */
+export const ENHANCEMENT_TOP3_TITLE = 'Enhancement Requests: Top 3';
+export const ENHANCEMENT_ALL_TITLE = 'Enhancement Requests';
+
+/**
+ * Same flatten + substring-match logic the component's own search box uses
+ * (see searchFilteredItems below) — exported so the page-level global
+ * search can report a real match count without re-implementing or drifting
+ * from what typing the query directly into this section would show.
+ */
+export function countEnhancementMatches(accounts, { includeAccountManager, topThreeOnly, query }) {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+  const all = flattenEnhancementRequests(accounts, includeAccountManager);
+  const items = topThreeOnly ? all.filter((t) => t.isTopThree) : all;
+  return items.filter((t) =>
+    t.companyName?.toLowerCase().includes(q) ||
+    t.accountManagerName?.toLowerCase().includes(q) ||
+    t.subject?.toLowerCase().includes(q) ||
+    t.nextStep?.toLowerCase().includes(q)
+  ).length;
+}
 
 /**
  * Portfolio-wide "Enhancement Requests" section — every OPEN ticket whose
@@ -516,6 +541,19 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState(() => new Set());
 
+  // Lets the page-level global search push a query into this specific
+  // instance's search box (Top 3 vs. all are two separate mounts on the
+  // same page — the title match keeps each instance from reacting to the
+  // other's hit).
+  useEffect(() => {
+    const key = topThreeOnly ? ENHANCEMENT_TOP3_TITLE : ENHANCEMENT_ALL_TITLE;
+    function handleSetSearch(e) {
+      if (e.detail?.key === key && typeof e.detail?.query === 'string') setSearch(e.detail.query);
+    }
+    window.addEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+    return () => window.removeEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+  }, [topThreeOnly]);
+
   // `items` stays the full (unfiltered) set — it drives the stat tiles and
   // every chart above the table, which should keep telling the true
   // portfolio-wide story regardless of what's typed into the search box.
@@ -602,21 +640,23 @@ export default function EnhancementRequestsSection({ accounts, includeAccountMan
         )}
       </div>
 
-      <div className="mb-6">
-        <h3 className="font-semibold text-primary-900 text-sm mb-3">Opened vs. Closed — Trailing 12 Months</h3>
-        <EnhancementVolumeTrendChart openItems={items} closedItems={closedItems} includeAccountManager={includeAccountManager} />
-      </div>
+      <CollapsibleSubsection title="Charts">
+        <div className="mb-6">
+          <h3 className="font-semibold text-primary-900 text-sm mb-3">Opened vs. Closed — Trailing 12 Months</h3>
+          <EnhancementVolumeTrendChart openItems={items} closedItems={closedItems} includeAccountManager={includeAccountManager} />
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div>
-          <h3 className="font-semibold text-primary-900 text-sm mb-3">By Client Tier</h3>
-          <EnhancementsByTierChart items={items} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h3 className="font-semibold text-primary-900 text-sm mb-3">By Client Tier</h3>
+            <EnhancementsByTierChart items={items} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-primary-900 text-sm mb-3">Requests Created — Trailing 12 Months</h3>
+            <EnhancementCalendarHeatmap items={items} />
+          </div>
         </div>
-        <div>
-          <h3 className="font-semibold text-primary-900 text-sm mb-3">Requests Created — Trailing 12 Months</h3>
-          <EnhancementCalendarHeatmap items={items} />
-        </div>
-      </div>
+      </CollapsibleSubsection>
 
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold text-primary-900 text-sm">{topThreeOnly ? 'Enhancement Requests: Top 3' : 'All Open Enhancement Requests'}</h3>

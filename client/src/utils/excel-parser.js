@@ -46,6 +46,153 @@ export async function parseExcelFile(file) {
   }
 }
 
+/** Splits one CSV line into cells, respecting double-quoted fields that contain commas. */
+function parseCsvLine(line) {
+  const cells = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      cells.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+}
+
+/**
+ * Parses a .csv/.xlsx/.xls file into an array of row objects keyed by its
+ * header row — generic tabular import, not tied to any one job's column
+ * shape (see mapRowsToSchemaItems for turning these into a specific job
+ * field's item shape).
+ *
+ * For a multi-sheet workbook, picks the first sheet whose name
+ * case-insensitively matches one of `preferredSheetNames`, falling back to
+ * the first sheet — lets one uploaded workbook feed several different job
+ * fields (e.g. a "Communities" sheet and a "Care Items" sheet), one sheet
+ * per field's own Import control.
+ */
+export async function parseTabularFile(file, { preferredSheetNames = [] } = {}) {
+  if (/\.csv$/i.test(file.name)) {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+    if (lines.length === 0) return [];
+    const headers = parseCsvLine(lines[0]).map((h) => h.trim());
+    return lines.slice(1).map((line) => {
+      const cells = parseCsvLine(line);
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = (cells[i] ?? '').trim(); });
+      return obj;
+    });
+  }
+
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const wanted = preferredSheetNames.filter(Boolean).map((s) => s.toLowerCase());
+  const worksheet =
+    workbook.worksheets.find((ws) => wanted.includes(ws.name.toLowerCase())) || workbook.worksheets[0];
+  if (!worksheet) throw new Error('No worksheets found in file');
+
+  const rows = [];
+  const headers = [];
+  let isFirstRow = true;
+  worksheet.eachRow((row) => {
+    if (isFirstRow) {
+      row.eachCell((cell) => headers.push(String(cell.value ?? '').trim()));
+      isFirstRow = false;
+    } else {
+      const obj = {};
+      row.eachCell((cell, colNumber) => { obj[headers[colNumber - 1]] = cell.value; });
+      rows.push(obj);
+    }
+  });
+  return rows;
+}
+
+function triggerDownload(workbook, filename) {
+  return workbook.xlsx.writeBuffer().then((buffer) => {
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
+/**
+ * Generates and downloads a blank starter .xlsx for an array-of-objects job
+ * field — one sheet, headers taken from each sub-property's title (the
+ * same titles mapRowsToSchemaItems matches on, so a file built from this
+ * template always re-imports cleanly), and one example row filled from the
+ * schema's own `examples` where given. Generic — works for any array
+ * field's sub-schema, not just Care Items.
+ */
+export async function downloadArrayFieldTemplate(fieldLabel, itemProperties) {
+  const workbook = new ExcelJS.Workbook();
+  const sheetName = (fieldLabel || 'Items').replace(/[[\]*?/\\:]/g, '').slice(0, 31) || 'Items';
+  const sheet = workbook.addWorksheet(sheetName);
+  const propEntries = Object.entries(itemProperties || {});
+
+  sheet.columns = propEntries.map(([key, prop]) => ({
+    header: prop.title || key,
+    key,
+    width: Math.max(18, (prop.title || key).length + 4),
+  }));
+  sheet.getRow(1).font = { bold: true };
+  sheet.addRow(Object.fromEntries(propEntries.map(([key, prop]) => [key, prop.examples?.[0] ?? ''])));
+
+  await triggerDownload(workbook, `${sheetName.replace(/[^a-z0-9]/gi, '-')}-Template.xlsx`);
+}
+
+/**
+ * Maps parsed row objects onto an array field's own sub-schema shape by
+ * matching each column header against a sub-property's key or title,
+ * ignoring case/spaces/punctuation (so "Care Item Name", "care_item_name",
+ * and "careItemName" all match a `name` property titled "Care Item Name").
+ * Generic replacement for a per-template converter like
+ * convertExcelToBillingItems below — works for any array-of-objects job
+ * field's sub-schema without a bespoke mapping function.
+ */
+export function mapRowsToSchemaItems(rows, itemProperties) {
+  const propEntries = Object.entries(itemProperties || {});
+  const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  return rows
+    .map((row) => {
+      const item = {};
+      for (const [propKey, propSchema] of propEntries) {
+        const candidates = [propKey, propSchema.title].filter(Boolean).map(normalize);
+        const matchHeader = Object.keys(row).find((h) => candidates.includes(normalize(h)));
+        if (matchHeader !== undefined) {
+          const raw = row[matchHeader];
+          if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+            item[propKey] = String(raw).trim();
+          }
+        }
+      }
+      return item;
+    })
+    .filter((item) => Object.keys(item).length > 0);
+}
+
 /**
  * Convert Excel row structure to GL sync items
  * Handles various column naming conventions

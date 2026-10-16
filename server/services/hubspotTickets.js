@@ -234,13 +234,20 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   }
 
   const tickets = raw.map((t) => {
-    const stageLabel = stageLabels.get(`${t.properties.hs_pipeline}:${t.properties.hs_pipeline_stage}`)?.stage;
+    const resolvedPipeline = stageLabels.get(`${t.properties.hs_pipeline}:${t.properties.hs_pipeline_stage}`);
+    const stageLabel = resolvedPipeline?.stage;
     return {
       id: t.id,
       subject: t.properties.subject,
       category: ticketCategory(t.properties),
       pipelineStage: t.properties.hs_pipeline_stage,
       pipelineStageLabel: stageLabel || t.properties.hs_pipeline_stage,
+      // Which of the portal's 3 ticket pipelines (Account Management / ALIS
+      // Pay / Support Pipeline) this ticket actually sits in — needed
+      // below so alisPayTickets can be scoped to the AM pipeline only (see
+      // its own doc comment for why the dedicated "ALIS Pay" pipeline
+      // itself is excluded).
+      pipelineLabel: resolvedPipeline?.pipeline || null,
       priority: t.properties.hs_ticket_priority,
       createdAt: t.properties.createdate,
       closedAt: t.properties.closed_date || null,
@@ -361,8 +368,14 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
   // 2025-12-01, i.e. it's a frozen historical backlog from a
   // since-abandoned email-inbox-to-ticket integration, not a live signal.
   // A health-score/dashboard "volume" built on a frozen number would never
-  // move, defeating the point of an ongoing indicator.
-  const isAlisPayTicket = (t) => t.category === 'ALIS Pay';
+  // move, defeating the point of an ongoing indicator. Also explicitly
+  // scoped to the Account Management pipeline (Aaron, Sep 2026: "we don't
+  // need the tickets from the ALIS Pay Pipe HubSpot ticket pipeline, we
+  // only want tickets created for the Account Management HubSpot ticket
+  // pipeline that happen to be on the topic/category of ALIS Pay") — a
+  // category_2_0 = "ALIS Pay" ticket sitting in the frozen ALIS Pay
+  // pipeline or in Support Pipeline is excluded even if still open.
+  const isAlisPayTicket = (t) => t.category === 'ALIS Pay' && t.pipelineLabel === 'Account Management';
   const alisPayTickets = openTickets.filter(isAlisPayTicket);
 
   // Open "Escalation" tickets (Sep 2026, Aaron) — category_2_0's raw

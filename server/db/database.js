@@ -64,6 +64,17 @@ async function initDb() {
     );
   `);
 
+  // Per-item outcome for jobs that distinguish more than success/failed (e.g.
+  // care-item-* jobs: 'updated' | 'already-set' | 'skipped'), plus a short
+  // human detail like "ABST → Two Person Assist" for the job detail panel.
+  for (const col of ['outcome', 'detail']) {
+    try {
+      db.run(`ALTER TABLE job_items ADD COLUMN ${col} TEXT;`);
+    } catch {
+      // Column already exists — fine.
+    }
+  }
+
   db.run(`
     CREATE TABLE IF NOT EXISTS gl_sync_details (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -825,6 +836,48 @@ async function initDb() {
     );
   `);
 
+  // Bookkeeping for the "combine the subdomain + admin-ID templates and
+  // discovery patterns" alignment model (Aaron, Sep 2026) — carries the two
+  // pieces that don't belong in company_hosts or alis_admin_ids (each
+  // already keyed on hubspot_company_id, but scoped to one concern apiece):
+  // the company's name as ALIS admin's own directory spells it (so a human
+  // reviewing the combined template can see both names side by side without
+  // re-scraping), whether a human has actually confirmed the two systems'
+  // records line up for this company (vs. just an unreviewed auto-match),
+  // and the result of the most recent automated drift check (does ALIS
+  // admin's own directory still report the same subdomain/name we have on
+  // file for this company's admin ID).
+  db.run(`
+    CREATE TABLE IF NOT EXISTS company_alignment (
+      hubspot_company_id TEXT PRIMARY KEY,
+      alis_company_name    TEXT,
+      crm_id_confirmed      INTEGER NOT NULL DEFAULT 0,
+      confirmed_at          TEXT,
+      drift_detected        INTEGER NOT NULL DEFAULT 0,
+      drift_details_json    TEXT,
+      drift_checked_at      TEXT,
+      updated_at            TEXT
+    );
+  `);
+
+  // Company Alignment's own activity log (Sep 2026, Aaron: "an audit log
+  // in the negative space of the utility side panel to keep track of
+  // actioned updates and imports... a mini jobs board with the option to
+  // delete the records") — every write through /company-alignment/import
+  // (Discover & Align's apply, the Download/Upload template, and the new
+  // Check Last Audit Report) logs one row here, regardless of which of the
+  // three flows triggered it (`source`), so there's one place to see what
+  // actually changed and when — not tied to any one of those flows' own
+  // in-memory job state, which disappears on a page reload.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS company_alignment_activity_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL,
+      source     TEXT NOT NULL,
+      summary    TEXT NOT NULL
+    );
+  `);
+
   saveToDisk();
 }
 
@@ -911,6 +964,47 @@ function listPortfolioUsageSnapshots() {
 function countPortfolioUsageSnapshotCompanies() {
   const rows = queryAll('SELECT COUNT(*) AS n FROM portfolio_usage_snapshots');
   return rows[0]?.n ?? 0;
+}
+
+/** Merges the given fields into a company's alignment row (creating one if needed) without touching fields the caller didn't pass — e.g. importing a template row with only a subdomain shouldn't blank out a drift result some earlier check wrote. `crmIdConfirmed` (if passed) stamps confirmed_at now when true, clears it when explicitly set false. */
+function upsertCompanyAlignment(hubspotCompanyId, { alisCompanyName, crmIdConfirmed } = {}) {
+  const now = new Date().toISOString();
+  const existing = queryOne('SELECT * FROM company_alignment WHERE hubspot_company_id = ?', [hubspotCompanyId]);
+  const next = {
+    alis_company_name: alisCompanyName !== undefined ? alisCompanyName : (existing?.alis_company_name ?? null),
+    crm_id_confirmed: crmIdConfirmed !== undefined ? (crmIdConfirmed ? 1 : 0) : (existing?.crm_id_confirmed ?? 0),
+    confirmed_at: crmIdConfirmed !== undefined ? (crmIdConfirmed ? now : null) : (existing?.confirmed_at ?? null),
+  };
+  run(
+    `INSERT INTO company_alignment (hubspot_company_id, alis_company_name, crm_id_confirmed, confirmed_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET
+       alis_company_name = excluded.alis_company_name, crm_id_confirmed = excluded.crm_id_confirmed,
+       confirmed_at = excluded.confirmed_at, updated_at = excluded.updated_at`,
+    [hubspotCompanyId, next.alis_company_name, next.crm_id_confirmed, next.confirmed_at, now]
+  );
+}
+
+/** Separate from upsertCompanyAlignment above — a drift check result shouldn't require (or clobber) the name/confirmed fields, and vice versa. */
+function setCompanyAlignmentDrift(hubspotCompanyId, { driftDetected, driftDetails }) {
+  const now = new Date().toISOString();
+  run(
+    `INSERT INTO company_alignment (hubspot_company_id, drift_detected, drift_details_json, drift_checked_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(hubspot_company_id) DO UPDATE SET
+       drift_detected = excluded.drift_detected, drift_details_json = excluded.drift_details_json,
+       drift_checked_at = excluded.drift_checked_at, updated_at = excluded.updated_at`,
+    [hubspotCompanyId, driftDetected ? 1 : 0, JSON.stringify(driftDetails || []), now, now]
+  );
+}
+
+function listCompanyAlignment() {
+  return queryAll('SELECT * FROM company_alignment').map((r) => ({
+    ...r,
+    crm_id_confirmed: Boolean(r.crm_id_confirmed),
+    drift_detected: Boolean(r.drift_detected),
+    drift_details: r.drift_details_json ? JSON.parse(r.drift_details_json) : [],
+  }));
 }
 
 function getDb() {
@@ -1027,7 +1121,7 @@ function updateJobCounts(jobId) {
   );
 }
 
-function setItemStatus(jobId, name, status, error = null) {
+function setItemStatus(jobId, name, status, error = null, meta = null) {
   const now = new Date().toISOString();
   if (status === 'running') {
     run(
@@ -1036,8 +1130,8 @@ function setItemStatus(jobId, name, status, error = null) {
     );
   } else {
     run(
-      `UPDATE job_items SET status = ?, error = ?, finished_at = ? WHERE job_id = ? AND name = ?`,
-      [status, error, now, jobId, name]
+      `UPDATE job_items SET status = ?, error = ?, finished_at = ?, outcome = ?, detail = ? WHERE job_id = ? AND name = ?`,
+      [status, error, now, meta?.outcome ?? null, meta?.detail ?? null, jobId, name]
     );
     updateJobCounts(jobId);
   }
@@ -1762,13 +1856,74 @@ function deleteRecurringCall(id) {
  * this fallback so it's visible on the dashboard, not just something a
  * future person has to discover by noticing data went missing.
  */
+/**
+ * Same eid-decoding as googleCalendar.js's resolveSeriesKey, duplicated
+ * here rather than required in — database.js is a dependency-free
+ * low-level module and googleCalendar.js pulls in googleapis/OAuth, which
+ * this pure string-parse has no business depending on. Returns null for
+ * anything unparseable, same as the original.
+ */
+function seriesKeyFromCalendarLink(link) {
+  if (!link) return null;
+  try {
+    const eid = new URL(link).searchParams.get('eid');
+    if (!eid) return null;
+    const decoded = Buffer.from(eid, 'base64').toString('utf8');
+    const spaceIdx = decoded.indexOf(' ');
+    if (spaceIdx === -1) return null;
+    const eventId = decoded.slice(0, spaceIdx);
+    const calendarId = decoded.slice(spaceIdx + 1);
+    const masterId = eventId.replace(/_\d{8}(T\d{6}Z)?$/, '');
+    return `${calendarId}::${masterId}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Identity key for a call with no calendar link to de-dupe by (e.g. hand-entered) — company + label (case/space-insensitive) + day + time. No label at all means nothing distinctive to key on, so those are never treated as duplicates of each other. */
+function fallbackCallKey({ hubspotCompanyId, label, dayOfWeek, time }) {
+  const normLabel = (label || '').trim().toLowerCase();
+  if (!normLabel) return null;
+  return `${hubspotCompanyId}::${normLabel}::${dayOfWeek || ''}::${time || ''}`;
+}
+
+/**
+ * Bulk create/update, now with a duplicate-prevention pass (Aaron, Sep
+ * 2026: "it allowed us to import doubles! Can we get a double check in the
+ * system... especially around updates") — a genuine bug in Discover's own
+ * proposal-side dedup (recurringCallDiscovery.js, fixed separately) let the
+ * SAME series get proposed and imported twice; this is the second,
+ * independent layer so a duplicate can't reach the database even if
+ * something upstream (a future Discover bug, a duplicate row hand-typed
+ * into the bulk template) proposes one again. A row with no `id` is
+ * checked against every OTHER call on the same account — by resolved
+ * calendar series key first (the strong signal, when both sides have a
+ * link), falling back to label+day+time (for hand-entered calls with no
+ * link) — and merged into the existing row (an update) instead of creating
+ * a second one. The index is built once from the DB and kept updated as
+ * this same import batch creates new rows, so two duplicate rows in one
+ * upload merge into each other too, not just against what was already there.
+ */
 function bulkImportRecurringCalls(rows) {
   let imported = 0;
   let staleIdFallbackCount = 0;
+  let duplicatesMerged = 0;
+
+  const existing = queryAll('SELECT id, hubspot_company_id, label, day_of_week, time, calendar_link FROM recurring_calls');
+  const bySeriesKey = new Map();
+  const byFallbackKey = new Map();
+  for (const c of existing) {
+    const seriesKey = seriesKeyFromCalendarLink(c.calendar_link);
+    if (seriesKey) bySeriesKey.set(seriesKey, c.id);
+    const fk = fallbackCallKey({ hubspotCompanyId: c.hubspot_company_id, label: c.label, dayOfWeek: c.day_of_week, time: c.time });
+    if (fk) byFallbackKey.set(fk, c.id);
+  }
+
   for (const row of rows) {
     const { id, hubspotCompanyId, label, cadence, nextCallDate, calendarLink, notes, dayOfWeek, time } = row;
     if (!cadence && !nextCallDate && !calendarLink && !notes && !dayOfWeek && !time && !label) continue;
     const fields = { label, cadence, nextCallDate, calendarLink, notes, dayOfWeek, time };
+
     if (id) {
       const updated = updateRecurringCall(id, fields);
       if (updated) {
@@ -1778,14 +1933,27 @@ function bulkImportRecurringCalls(rows) {
         imported++;
         staleIdFallbackCount++;
       }
-      // id given, update matched nothing, AND no hubspotCompanyId to fall
-      // back on — genuinely unrecoverable, correctly not counted as imported.
-    } else if (hubspotCompanyId) {
-      createRecurringCall({ hubspotCompanyId, ...fields });
-      imported++;
+      continue;
     }
+    if (!hubspotCompanyId) continue;
+
+    const seriesKey = seriesKeyFromCalendarLink(calendarLink);
+    const fk = fallbackCallKey({ hubspotCompanyId, label, dayOfWeek, time });
+    const duplicateId = (seriesKey && bySeriesKey.get(seriesKey)) || (fk && byFallbackKey.get(fk)) || null;
+
+    if (duplicateId) {
+      updateRecurringCall(duplicateId, fields);
+      imported++;
+      duplicatesMerged++;
+      continue;
+    }
+
+    const newId = createRecurringCall({ hubspotCompanyId, ...fields });
+    imported++;
+    if (seriesKey) bySeriesKey.set(seriesKey, newId);
+    if (fk) byFallbackKey.set(fk, newId);
   }
-  return { imported, staleIdFallbackCount };
+  return { imported, staleIdFallbackCount, duplicatesMerged };
 }
 
 /**
@@ -2043,6 +2211,22 @@ function setTeamAmOccupancyError(hubspotCompanyId, errorMessage) {
   );
 }
 
+function logCompanyAlignmentActivity(source, summary) {
+  run(
+    `INSERT INTO company_alignment_activity_log (created_at, source, summary) VALUES (?, ?, ?)`,
+    [new Date().toISOString(), source, summary]
+  );
+}
+
+/** Newest first — this is a log, not a table to sort in the UI. */
+function listCompanyAlignmentActivityLog() {
+  return queryAll('SELECT id, created_at, source, summary FROM company_alignment_activity_log ORDER BY id DESC');
+}
+
+function deleteCompanyAlignmentActivityLogEntry(id) {
+  return run('DELETE FROM company_alignment_activity_log WHERE id = ?', [id]);
+}
+
 function recordInternalTicketClick(ticketId, target) {
   run(`INSERT INTO internal_ticket_clicks (ticket_id, target, clicked_at) VALUES (?, ?, ?)`, [String(ticketId), target || null, new Date().toISOString()]);
 }
@@ -2101,4 +2285,6 @@ module.exports = {
   listAlisAdminIds, getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId,
   replaceEntitlementSnapshot, listEntitlementSnapshots, countEntitlementSnapshotCompanies,
   replacePortfolioUsageSnapshot, listPortfolioUsageSnapshots, countPortfolioUsageSnapshotCompanies,
+  upsertCompanyAlignment, setCompanyAlignmentDrift, listCompanyAlignment,
+  logCompanyAlignmentActivity, listCompanyAlignmentActivityLog, deleteCompanyAlignmentActivityLogEntry,
 };

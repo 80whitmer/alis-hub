@@ -79,15 +79,18 @@ export function flattenKeyContacts(accounts) {
 }
 
 /**
- * Downloadable template for mapping each account to its ALIS subdomain —
- * the one piece of information needed (server/api/companyHosts.js) to
- * pull capacity/census data, which otherwise has no connection to
- * anything HubSpot already gave this dashboard. Pre-fills the ALIS
- * Subdomain column wherever a mapping is already known, so Aaron only
- * has to fill in the blanks before re-uploading via
- * exportAccountHealthPortfolioExcel's counterpart, ImportCompanyHostsButton.
+ * Combined downloadable template for the whole ALIS↔HubSpot company
+ * alignment picture (Aaron, Sep 2026: "combine these templates... company
+ * name in HubSpot, company name in ALIS Admin, capture that the CRM ID has
+ * been confirmed as aligned, a confirmed ALIS subdomain or domains, and the
+ * ALIS ID that anchors the company URL") — replaces the old separate
+ * subdomain-only and admin-ID-only templates with one round-trip covering
+ * every field this app tracks for a company's ALIS↔HubSpot link, pre-filled
+ * wherever already known so only real gaps need entry. `alignmentByCompany`
+ * is a Map<hubspotCompanyId, {alis_company_name, crm_id_confirmed}> from
+ * GET /api/account-truth/company-alignment.
  */
-export async function exportCompanyHostTemplate(accounts, existingHosts) {
+export async function exportCompanyAlignmentTemplate(accounts, existingHosts, alignmentByCompany) {
   const hostByCompanyId = new Map();
   const hostByNameKey = new Map();
   for (const h of existingHosts || []) {
@@ -95,58 +98,45 @@ export async function exportCompanyHostTemplate(accounts, existingHosts) {
     const nameKey = (h.company_name || '').trim().toLowerCase();
     if (nameKey) hostByNameKey.set(nameKey, h.company_host);
   }
-  // The admin.alisonline.com directory scrape (companyHosts.js's
-  // refresh-from-admin route) only knows a company's NAME, not its
-  // HubSpot ID, so its rows land in company_hosts with hubspot_company_id
-  // null — an ID-only join would silently skip every one of them here.
-  // Falling back to a name match (same normalization as the server's
-  // normalizeNameKey) surfaces those rows too.
   const hostFor = (a) => hostByCompanyId.get(a.hubspot_company_id) || hostByNameKey.get((a.company_name || '').trim().toLowerCase()) || '';
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'alis-hub';
   workbook.created = new Date();
 
-  const sheet = workbook.addWorksheet('ALIS Subdomains');
-  // Multiple ALIS instances for one HubSpot company (grew through M&A,
-  // communities split across two ALIS subdomains) — comma-separate them
-  // in the same cell, e.g. "vivaeast,vivawest". Same convention the QBR/
-  // Wellness/Usage Audit pipelines already use for this table. This
-  // guidance USED to be a cell .note (an Excel comment) — moved into the
-  // plain header text instead (Sep 2026): ExcelJS has a known round-trip
-  // bug reading a workbook's cell comments back in once real Excel has
-  // re-saved the file, throwing "Cannot read properties of undefined
-  // (reading 'comments')" deep inside its own xlsx reader — confirmed
-  // live reproducing a real user's re-uploaded template. A plain header
-  // has no such failure mode, and is arguably more discoverable than a
-  // hover-only comment anyway.
+  const sheet = workbook.addWorksheet('Company Alignment');
   sheet.columns = [
-    { header: 'Company Name', key: 'companyName', width: 34 },
+    { header: 'Company Name (HubSpot)', key: 'companyName', width: 34 },
     { header: 'HubSpot Company ID', key: 'hubspotCompanyId', width: 20 },
+    { header: 'Company Name (ALIS Admin)', key: 'alisCompanyName', width: 34 },
+    { header: 'CRM ID Confirmed Aligned? (Yes/No)', key: 'crmIdConfirmed', width: 30 },
     { header: 'ALIS Subdomain(s) — comma-separate multiple, e.g. "vivaeast,vivawest"', key: 'companyHost', width: 55 },
+    { header: 'ALIS Admin Company ID — from admin.alisonline.com/Customers/EntitlementSets/EditCompany/{id}', key: 'alisAdminCompanyId', width: 65 },
   ];
   sheet.getRow(1).font = { bold: true };
   for (const a of accounts) {
+    const alignment = alignmentByCompany?.get(a.hubspot_company_id);
     sheet.addRow({
       companyName: a.company_name,
       hubspotCompanyId: a.hubspot_company_id,
+      alisCompanyName: alignment?.alis_company_name || '',
+      crmIdConfirmed: alignment?.crm_id_confirmed ? 'Yes' : '',
       companyHost: hostFor(a),
+      alisAdminCompanyId: a.alis_admin_company_id || '',
     });
   }
 
-  await download(workbook, 'Account-Health-ALIS-Subdomains-Template.xlsx');
+  await download(workbook, 'ALIS-HubSpot-Company-Alignment-Template.xlsx');
 }
 
 /**
- * Reads a completed copy of the template above back into
- * `{ companyName, hubspotCompanyId, companyHost }` rows — same field
- * names server/db/database.js's bulkImportCompanyHosts expects, so the
- * result can be POSTed to /api/company-hosts/import as-is. Rows with no
- * ALIS Subdomain filled in are skipped rather than sent as empty
- * mappings (bulkImportCompanyHosts would skip them anyway, but there's
- * no reason to send them).
+ * Reads a completed copy of the template above back into rows shaped for
+ * POST /api/account-truth/company-alignment/import — that route writes each
+ * field independently (a row with only a confirmed name-match and no
+ * subdomain yet still gets saved), so a row is included as long as ANY of
+ * its editable fields is non-blank, not just when every column is filled.
  */
-export async function parseCompanyHostTemplate(file) {
+export async function parseCompanyAlignmentTemplate(file) {
   const buffer = await file.arrayBuffer();
   const workbook = await loadWorkbookSafely(buffer);
   const sheet = workbook.worksheets[0];
@@ -157,8 +147,20 @@ export async function parseCompanyHostTemplate(file) {
     if (rowNumber === 1) return; // header
     const companyName = row.getCell(1).text?.trim();
     const hubspotCompanyId = row.getCell(2).text?.trim();
-    const companyHost = row.getCell(3).text?.trim();
-    if (companyHost) rows.push({ companyName, hubspotCompanyId, companyHost });
+    const alisCompanyName = row.getCell(3).text?.trim();
+    const crmIdConfirmedRaw = row.getCell(4).text?.trim().toLowerCase();
+    const companyHost = row.getCell(5).text?.trim();
+    const alisAdminCompanyId = row.getCell(6).text?.trim();
+    if (!hubspotCompanyId) return;
+    if (!alisCompanyName && !crmIdConfirmedRaw && !companyHost && !alisAdminCompanyId) return;
+    rows.push({
+      companyName,
+      hubspotCompanyId,
+      alisCompanyName: alisCompanyName || undefined,
+      crmIdConfirmed: crmIdConfirmedRaw ? /^(y|yes|true|1)$/.test(crmIdConfirmedRaw) : undefined,
+      companyHost: companyHost || undefined,
+      alisAdminCompanyId: alisAdminCompanyId || undefined,
+    });
   });
   return rows;
 }
@@ -659,4 +661,59 @@ export async function exportAccountHealthSingleExcel(account) {
   }
 
   await download(workbook, `${(account.company_name || 'Account').replace(/[^a-z0-9.\-]/gi, '_')}-Account-Health.xlsx`);
+}
+
+/**
+ * Plain one-sheet export of exactly the Accounts table as shown on screen
+ * (Aaron, Sep 2026: "just an accounts export here — it doesn't have to be
+ * fancy, but just getting the table contents cleanly out") — same rows/
+ * columns/order as the visible table, whatever the current search/tier
+ * filter/sort has it showing. Deliberately not folded into
+ * exportAccountHealthPortfolioExcel's multi-sheet workbook — that one's
+ * Accounts sheet re-derives its own column set independently and is meant
+ * as a full portfolio dump, not a "what I'm looking at" copy.
+ */
+export async function exportAccountHealthAccountsTable(rows) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'alis-hub';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Accounts');
+  sheet.columns = [
+    { header: 'Account', key: 'companyName', width: 34 },
+    { header: 'Tier', key: 'tier', width: 10 },
+    { header: 'Health', key: 'health', width: 8 },
+    { header: 'Open Tickets', key: 'openTickets', width: 12 },
+    { header: 'Closed Tickets', key: 'closedTickets', width: 13 },
+    { header: 'Open Deals', key: 'openDeals', width: 11 },
+    { header: 'Open Deal Value', key: 'openDealValue', width: 15 },
+    { header: 'ARR', key: 'arr', width: 12 },
+    { header: `ARR Added (${new Date().getFullYear()})`, key: 'arrAdded', width: 16 },
+    { header: 'Aging Balance', key: 'aging', width: 13 },
+    { header: 'DSO', key: 'dso', width: 8 },
+    { header: 'Total Capacity', key: 'capacity', width: 13 },
+    { header: 'Current Census', key: 'census', width: 14 },
+    { header: 'Last Activity', key: 'lastActivity', width: 14 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  for (const a of rows) {
+    sheet.addRow({
+      companyName: a.company_name,
+      tier: (a.tier == null || a.tier === 0) ? 'Unassigned' : `Tier ${a.tier}`,
+      health: a.health_score ?? '',
+      openTickets: a.open_ticket_count ?? 0,
+      closedTickets: a.closed_ticket_count ?? 0,
+      openDeals: a.open_deal_count ?? 0,
+      openDealValue: usd(a.open_deal_value_cents),
+      arr: usd(a.arr_cents),
+      arrAdded: usd(a.arr_added_this_year_cents),
+      aging: usd(a.aging_total_cents),
+      dso: a.dsoDays ?? '',
+      capacity: a.total_capacity ?? '',
+      census: a.current_census ?? '',
+      lastActivity: a.last_activity_date ? a.last_activity_date.slice(0, 10) : '',
+    });
+  }
+
+  await download(workbook, 'Account-Health-Accounts.xlsx');
 }

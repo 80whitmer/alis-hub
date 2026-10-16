@@ -4,6 +4,7 @@ import { formatLocalTime, formatLocalDate, formatLocalTimeOnly, getUserTimezone 
 import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvExport';
 import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
+import MedCartReportSummary from '../components/MedCartReportSummary';
 import MovedOutBillingSummary from '../components/MovedOutBillingSummary';
 
 const ITEM_CONFIG = {
@@ -31,6 +32,7 @@ export default function JobDetail() {
   const [glDetails, setGlDetails] = useState([]);
   const [showGlDetails, setShowGlDetails] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [itemFilter, setItemFilter] = useState('all'); // 'all' | 'failed' | 'success' | 'pending'
   const logRef                    = useRef(null);
   const esRef                     = useRef(null);
 
@@ -38,6 +40,24 @@ export default function JobDetail() {
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
+
+  // Default the Item Results filter to "Failed" the moment a job finishes
+  // with any failures — a live-log ticker scrolls away, and a flat
+  // "Completed" badge next to it looks identical whether every item
+  // succeeded or a handful silently failed (confirmed live, Sep 2026:
+  // Aaron only caught Dunedin's failures because he happened to be
+  // watching the log at that exact moment). Only fires once per job (the
+  // ref-less dependency on job.status/failed means a user who manually
+  // switches back to "All" afterward keeps that choice — this only sets
+  // the initial default).
+  const didDefaultFilter = useRef(false);
+  useEffect(() => {
+    if (didDefaultFilter.current) return;
+    if (job && job.status !== 'running' && job.status !== 'queued' && (job.failed || 0) > 0) {
+      setItemFilter('failed');
+      didDefaultFilter.current = true;
+    }
+  }, [job?.status, job?.failed]);
 
   useEffect(() => {
     // Initial load
@@ -377,11 +397,97 @@ export default function JobDetail() {
         </div>
       </div>
 
+      {/* Item Results — a persistent, filterable audit of every job item's
+          outcome (name, status, error, timing), reloadable at any time from
+          the DB rather than only visible while the ephemeral Live Log below
+          is still on screen. Generic to any job with per-item tracking. */}
+      {(job.items || []).length > 0 && (() => {
+        const items = job.items;
+        const counts = {
+          all: items.length,
+          success: items.filter((i) => i.status === 'success').length,
+          failed: items.filter((i) => i.status === 'failed').length,
+          pending: items.filter((i) => i.status === 'pending' || i.status === 'running').length,
+        };
+        const filtered = itemFilter === 'all' ? items : items.filter((i) =>
+          itemFilter === 'pending' ? (i.status === 'pending' || i.status === 'running') : i.status === itemFilter
+        );
+        const FILTERS = [
+          { key: 'all', label: `All (${counts.all})` },
+          { key: 'failed', label: `Failed (${counts.failed})` },
+          { key: 'success', label: `Success (${counts.success})` },
+          { key: 'pending', label: `Pending (${counts.pending})` },
+        ];
+
+        return (
+          <div className="card mt-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <h3 className="font-semibold text-primary-900">Item Results</h3>
+              <div className="flex gap-2 flex-wrap">
+                {FILTERS.filter((f) => f.key === 'all' || counts[f.key] > 0).map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setItemFilter(f.key)}
+                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                      itemFilter === f.key
+                        ? (f.key === 'failed' ? 'bg-error text-white' : 'bg-primary-900 text-white')
+                        : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-96 overflow-y-auto border border-neutral-200 rounded">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-100 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-semibold text-primary-900">Item</th>
+                    <th className="px-4 py-2 text-left font-semibold text-primary-900">Status</th>
+                    <th className="px-4 py-2 text-left font-semibold text-primary-900">Detail</th>
+                    <th className="px-4 py-2 text-left font-semibold text-primary-900">Finished</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan="4" className="text-center text-neutral-500 py-6">No items match this filter.</td></tr>
+                  ) : (
+                    filtered.map((item) => {
+                      const cfg = ITEM_CONFIG[item.status] || ITEM_CONFIG.pending;
+                      return (
+                        <tr key={item.id || item.name} className={`border-t border-neutral-200 ${item.status === 'failed' ? 'bg-red-50' : ''}`}>
+                          <td className="px-4 py-2 text-neutral-700">{item.name}</td>
+                          <td className="px-4 py-2">
+                            <span className={`badge ${cfg.badge}`}>{cfg.icon} {item.status}</span>
+                          </td>
+                          <td className="px-4 py-2 text-neutral-600 text-xs">{item.error || '—'}</td>
+                          <td className="px-4 py-2 text-neutral-600 text-xs">
+                            {item.finished_at ? formatLocalTimeOnly(item.finished_at) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
 
       {job.type === 'resident-acuity-history' && job.status === 'done' && (
         <div className="card mt-6">
           <h3 className="font-semibold text-primary-900 mb-4">Acuity Reports</h3>
           <AcuityHistoryDownloads jobId={job.id} />
+        </div>
+      )}
+
+      {job.type === 'med-cart-report' && job.status === 'done' && (
+        <div className="card mt-6">
+          <h3 className="font-semibold text-primary-900 mb-4">Med Cart Report</h3>
+          <MedCartReportSummary jobId={job.id} />
         </div>
       )}
 

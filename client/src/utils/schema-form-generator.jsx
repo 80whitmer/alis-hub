@@ -14,6 +14,8 @@
  * masked it.
  */
 
+import { parseTabularFile, mapRowsToSchemaItems, downloadArrayFieldTemplate } from './excel-parser';
+
 /**
  * Parses a bulk-paste block (comma AND/OR newline separated) into an array
  * of partial item objects for an array-of-objects field — e.g. "952, 965,
@@ -182,19 +184,59 @@ export function renderFormField(field, value, onChange) {
                 className="w-full text-sm border border-neutral-200 rounded-lg px-3 py-2 mb-2"
                 placeholder="Paste IDs, comma or newline separated (e.g. 952, 965, 1049) — or Name:ID / ID:Name pairs, one per line"
               />
-              <button
-                type="button"
-                className="btn btn-sm btn-secondary"
-                onClick={() => {
-                  const el = document.getElementById(`bulk-add-${key}`);
-                  const entries = parseBulkEntries(el.value, property.items.properties);
-                  if (entries.length === 0) return;
-                  onChange(key, [...(value || []), ...entries]);
-                  el.value = '';
-                }}
-              >
-                + Add all from list
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => {
+                    const el = document.getElementById(`bulk-add-${key}`);
+                    const entries = parseBulkEntries(el.value, property.items.properties);
+                    if (entries.length === 0) return;
+                    onChange(key, [...(value || []), ...entries]);
+                    el.value = '';
+                  }}
+                >
+                  + Add all from list
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => downloadArrayFieldTemplate(property.title || title, property.items.properties)}
+                >
+                  ⬇ Download template
+                </button>
+                <label className="btn btn-sm btn-secondary cursor-pointer">
+                  📄 Import from file
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = ''; // allow re-selecting the same file for another field
+                      if (!file) return;
+                      const fieldNames = [property.title, title, key].filter(Boolean);
+                      try {
+                        const rows = await parseTabularFile(file, { preferredSheetNames: fieldNames });
+                        const entries = mapRowsToSchemaItems(rows, property.items.properties);
+                        if (entries.length === 0) {
+                          const expectedCols = Object.values(property.items.properties)
+                            .map((p) => p.title || '').filter(Boolean).join(', ');
+                          alert(`No matching rows found in "${file.name}" for ${title} — check that its column headers match: ${expectedCols}`);
+                          return;
+                        }
+                        onChange(key, [...(value || []), ...entries]);
+                      } catch (err) {
+                        alert(`Import failed for ${title}: ${err.message}`);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="input-help mt-2">
+                Or upload a .csv/.xlsx file — column headers should match: {Object.values(property.items.properties).map((p) => p.title).filter(Boolean).join(', ')}.
+                For a multi-sheet workbook shared across fields, a sheet named "{property.title || title}" is used automatically.
+              </p>
             </div>
           )}
 

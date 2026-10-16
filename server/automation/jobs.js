@@ -2,8 +2,10 @@ const { newPage, ensureLoggedIn }          = require('./playwright/browser');
 const { createCommunity, setCrmId }        = require('./playwright/communityPage');
 const { navigateToBillingSettings, updateGLAccount, closeDetailView } = require('./playwright/billingPage');
 const { captureResidentSettings, applyResidentSettings } = require('./playwright/residentSettingsPage');
+const { navigateToCareSettings, setCareItemAssistanceLevel, setCareItemReportingLabel } = require('./playwright/carePage');
 const { getSettingsDestination } = require('../services/settingsDestinations');
-const { setJobStatus, setItemStatus }      = require('../db/database');
+const { getCommunities } = require('../services/alisApiClient');
+const { setJobStatus, setItemStatus, syncJobItems } = require('../db/database');
 const { broadcast }                        = require('../api/broadcaster');
 const { getTemplate }                      = require('./templates-loader');
 const { runKpiExportJob }                  = require('./kpiExport');
@@ -13,8 +15,9 @@ const { runCompanyUsageAuditJob }          = require('./usageAudit');
 const { runCrmIdAuditJob }                 = require('./crmIdAudit');
 const { runCrmIdAuditBulkJob }             = require('./crmIdAuditBulk');
 const { runAuditHistoryJob }               = require('./auditHistoryJob');
-const { runMovedOutBillingJob }            = require('./movedOutBillingJob');
 const { runAcuityHistoryJob }              = require('./acuityHistoryJob');
+const { runMedCartReportJob }              = require('./medCartReportJob');
+const { runMovedOutBillingJob }            = require('./movedOutBillingJob');
 
 /**
  * Run the create-communities job.
@@ -112,11 +115,20 @@ async function runTemplateJob(jobId, template, payload) {
       case 'audit-history':
         return await runAuditHistoryJob(jobId, payload);
 
+      case 'resident-acuity-history':
+        return await runAcuityHistoryJob(jobId, payload);
+
+      case 'med-cart-report':
+        return await runMedCartReportJob(jobId, payload);
+
       case 'moved-out-billing':
         return await runMovedOutBillingJob(jobId, payload);
 
-      case 'resident-acuity-history':
-        return await runAcuityHistoryJob(jobId, payload);
+      case 'care-item-assistance-level':
+        return await runCareItemAssistanceLevelJob(jobId, payload);
+
+      case 'care-item-reporting-label':
+        return await runCareItemReportingLabelJob(jobId, payload);
 
       default: {
         const error = `No handler for template: ${template.id}`;
@@ -347,10 +359,269 @@ async function runSyncResidentSettingsJob(jobId, payload) {
   emit('job_done', { jobId, source: sourceName, targets: targets.length });
 }
 
+/**
+ * Runs `fn` over `items` with at most `limit` in flight at once. Same
+ * pattern as kpiExport.js's mapWithConcurrency (see its comment for why
+ * `fn` must catch its own errors) — duplicated rather than imported since
+ * it's a 10-line generic helper, not worth a shared module for one caller
+ * on each side.
+ */
+async function mapWithConcurrency(items, limit, fn) {
+  const queue = [...items];
+  async function worker() {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      try {
+        await fn(item);
+      } catch (err) {
+        console.error('[care-item] mapWithConcurrency: fn should never throw — item may be incomplete:', err);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+/**
+ * Shared engine for the care-item-* jobs — bulk-sets one select field (see
+ * `spec`: Assistance Level or Reporting Label) on named Care Items (Settings/Care/{communityId}?tab=Care) across
+ * one or more communities. Built for Leisure Care's "add Total 2x Staff to
+ * every item that calls out 2+ staff in its title" ask (Sep 2026); the item
+ * list stays generic (name + target label) rather than hardcoding that
+ * pattern, since the same engine works for any Care Item field this table
+ * exposes via its edit pane.
+ *
+ * Each (community, item) pair is one job item — a community with 14 items
+ * to fix produces 14 rows, so partial failure on one item doesn't lose
+ * progress on the rest of that community.
+ *
+ * Communities run CONCURRENTLY (default 4 at once, see `concurrency`
+ * payload field) — a first sequential version took ~5 minutes per
+ * community (mostly ALIS server round-trips per item, not anything this
+ * code controls), which would have put a 48-community portfolio run around
+ * 4 hours. Each worker logs in independently (confirmed live, Sep 2026:
+ * two simultaneous independent logins on the same ALIS account both stayed
+ * authenticated — no concurrent-session kickout). An earlier version tried
+ * sharing one login's storageState across workers instead, to avoid N real
+ * login flows; confirmed live that this does NOT work here — a worker
+ * page seeded with another context's storageState still bounced to
+ * /Login, so each worker keeps its own real ensureLoggedIn call.
+ *
+ * SSE events: job_start | item_start | item_done | item_fail | job_done
+ */
+async function runCareItemFieldJob(jobId, payload, spec) {
+  const { companyName, items } = payload;
+  const emit = (event, data) => broadcast(jobId, event, data);
+  const concurrency = Math.max(1, Math.min(8, Number(payload.concurrency) || 4));
+
+  const hosts = (payload.companyHost || '').split(',').map((h) => h.trim()).filter(Boolean);
+  if (hosts.length === 0) {
+    setJobStatus(jobId, 'failed');
+    emit('job_error', { error: 'ALIS Company Host is required.' });
+    return;
+  }
+  if (!items || items.length === 0) {
+    setJobStatus(jobId, 'failed');
+    emit('job_error', { error: spec.itemsRequiredMessage });
+    return;
+  }
+
+  setJobStatus(jobId, 'running');
+
+  // Resolve communities — explicit list (with per-entry host override), or
+  // auto-pull every non-Training community per host, same convention as
+  // usageAudit.js / wellnessExport.js.
+  let communities = payload.communities;
+  const unresolvedCommunities = [];
+  if (communities && communities.length > 0) {
+    communities = communities.map((c) => ({ ...c, host: c.host || hosts[0] }));
+
+    // Entries given by NAME only (no communityId) are looked up on their host
+    // by exact, case/whitespace/apostrophe-insensitive name — so a pasted list
+    // of community names works without hunting down IDs first. Names that
+    // match nothing are surfaced as failed rows below, not silently dropped.
+    const norm = (n) => String(n || '').replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase();
+    const needLookup = communities.filter((c) => !c.communityId);
+    if (needLookup.length > 0) {
+      const byHost = {};
+      for (const host of new Set(needLookup.map((c) => c.host))) {
+        try {
+          byHost[host] = await getCommunities(host);
+        } catch (err) {
+          emit('progress', { message: `Failed to look up communities on host "${host}": ${err.message}` });
+          byHost[host] = [];
+        }
+      }
+      communities = communities.filter((c) => {
+        if (c.communityId) return true;
+        const match = (byHost[c.host] || []).find((x) => norm(x.communityName) === norm(c.name));
+        if (!match) {
+          unresolvedCommunities.push(c.name);
+          return false;
+        }
+        c.communityId = match.communityId;
+        return true;
+      });
+      if (unresolvedCommunities.length > 0) {
+        emit('progress', { message: `Could not find ${unresolvedCommunities.length} community name(s) on the host: ${unresolvedCommunities.join(', ')}` });
+      }
+    }
+  } else {
+    communities = [];
+    for (const host of hosts) {
+      try {
+        const all = await getCommunities(host);
+        const resolved = all
+          .filter((c) => !(c.communityName || '').toLowerCase().includes('training'))
+          .map((c) => ({ name: c.communityName, communityId: c.communityId, host }));
+        communities.push(...resolved);
+        emit('progress', { message: `Auto-resolved ${resolved.length} communities from host "${host}".` });
+      } catch (err) {
+        emit('progress', { message: `Failed to auto-resolve communities from host "${host}": ${err.message}` });
+      }
+    }
+  }
+
+  if (communities.length === 0) {
+    setJobStatus(jobId, 'failed');
+    emit('job_error', { error: 'No communities to process.' });
+    return;
+  }
+
+  // Backfill job_items with the REAL per-(community,item) rows and the
+  // correct total — this template's payload.communities is often empty at
+  // request time (auto-discover), so /api/jobs/create's own item-count
+  // guess is wrong (and even when communities IS given up front, the real
+  // unit of work is communities × items, not communities alone). Without
+  // this, every setItemStatus below silently updates zero rows (no row
+  // exists with a matching name), so the progress bar stays frozen at
+  // "0 of 0" and completed/failed never move — confirmed live (Sep 2026,
+  // Aaron's first concurrent run) even though the underlying automation
+  // ran correctly the whole time. Same fix already applied in every other
+  // multi-community job (kpiExport.js, wellnessExport.js, usageAudit.js, …).
+  const itemNames = [];
+  for (const community of communities) {
+    for (const item of items) itemNames.push(`${community.name} — ${item.name}`);
+  }
+  const unresolvedNames = unresolvedCommunities.map((n) => `${n} — (community not found on host)`);
+  syncJobItems(jobId, [...itemNames, ...unresolvedNames]);
+  for (const n of unresolvedNames) {
+    setItemStatus(jobId, n, 'failed', 'No community with this name exists on the given ALIS host');
+  }
+
+  emit('job_start', { jobId, total: itemNames.length + unresolvedNames.length, company: companyName, concurrency });
+
+  let updated = 0, alreadySet = 0, skipped = 0, failed = unresolvedNames.length;
+
+  async function processCommunity(community) {
+    const url = `https://${community.host}.alisonline.com/Settings/Care/${community.communityId}?tab=Care`;
+    let page;
+
+    try {
+      page = await newPage();
+      await ensureLoggedIn(page, url);
+      await navigateToCareSettings(page, url);
+    } catch (err) {
+      // Whole community unreachable — fail every item under it rather than
+      // silently skipping (matches the rest of this job's per-item accounting).
+      for (const item of items) {
+        const name = `${community.name} — ${item.name}`;
+        setItemStatus(jobId, name, 'failed', `Could not load Care Settings: ${err.message}`);
+        emit('item_fail', { name, error: `Could not load Care Settings: ${err.message}` });
+        failed++;
+      }
+      await page?.context().close().catch(() => {});
+      return;
+    }
+
+    for (const item of items) {
+      const name = `${community.name} — ${item.name}`;
+      setItemStatus(jobId, name, 'running');
+      emit('item_start', { name });
+
+      try {
+        const result = await spec.apply(page, item);
+
+        if (result.status === 'updated') {
+          updated++;
+          setItemStatus(jobId, name, 'success', null, { outcome: 'updated', detail: `${result.previousValue || '(blank)'} → ${spec.targetOf(item)}` });
+          emit('item_done', { name, status: 'updated', from: result.previousValue, to: spec.targetOf(item) });
+        } else if (result.status === 'already-set') {
+          alreadySet++;
+          setItemStatus(jobId, name, 'success', null, { outcome: 'already-set', detail: result.previousValue });
+          emit('item_done', { name, status: 'already-set' });
+        } else if (result.status === 'skipped-different-value') {
+          skipped++;
+          setItemStatus(jobId, name, 'success', null, { outcome: 'skipped', detail: `left as "${result.previousValue}"` });
+          emit('item_done', { name, status: 'skipped', from: result.previousValue, note: `${spec.fieldName} is "${result.previousValue}", not "${item.fromLabel}" — left unchanged` });
+        } else if (result.status === 'not-found') {
+          failed++;
+          setItemStatus(jobId, name, 'failed', 'Item not found on this community\'s Care Settings page');
+          emit('item_fail', { name, error: 'Item not found on this community\'s Care Settings page' });
+        } else {
+          failed++;
+          setItemStatus(jobId, name, 'failed', `This item has no ${spec.fieldName} field`);
+          emit('item_fail', { name, error: `This item has no ${spec.fieldName} field` });
+        }
+      } catch (err) {
+        const shot = `error_care_${jobId}_${name.replace(/[^a-z0-9]/gi, '_')}.png`;
+        await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+
+        failed++;
+        setItemStatus(jobId, name, 'failed', err.message);
+        emit('item_fail', { name, error: err.message });
+      }
+    }
+
+    await page.context().close().catch(() => {});
+  }
+
+  await mapWithConcurrency(communities, concurrency, processCommunity);
+
+  setJobStatus(jobId, 'done');
+  emit('job_done', {
+    jobId,
+    company: companyName,
+    communities: communities.length,
+    total: itemNames.length,
+    updated,
+    alreadySet,
+    skipped,
+    failed,
+  });
+}
+
+function runCareItemAssistanceLevelJob(jobId, payload) {
+  return runCareItemFieldJob(jobId, payload, {
+    fieldName: 'Assistance Level',
+    itemsRequiredMessage: 'At least one Care Item (name + target Assistance Level) is required.',
+    targetOf: (item) => item.assistanceLevel,
+    apply: (page, item) => setCareItemAssistanceLevel(page, item.name, item.assistanceLevel),
+  });
+}
+
+/**
+ * Run the care-item-reporting-label job — same engine as Assistance Level but
+ * sets the "Reporting Label" select (`#ReportingLabelId`). Built for the Oct
+ * 2026 Leisure Care ask: relabel the "Two Staff" Care Items to "Two Person
+ * Assist". Each item may carry an optional `fromLabel`; when set, the item is
+ * only changed if its Reporting Label currently equals it (e.g. "ABST"),
+ * otherwise it is left alone and reported as skipped.
+ */
+function runCareItemReportingLabelJob(jobId, payload) {
+  return runCareItemFieldJob(jobId, payload, {
+    fieldName: 'Reporting Label',
+    itemsRequiredMessage: 'At least one Care Item (name + target Reporting Label) is required.',
+    targetOf: (item) => item.reportingLabel,
+    apply: (page, item) => setCareItemReportingLabel(page, item.name, item.reportingLabel, item.fromLabel),
+  });
+}
+
 module.exports = {
   runCreateCommunitiesJob,
   runTemplateJob,
   runSyncGLAccountsJob,
   runSyncResidentSettingsJob,
   runKpiExportJob,
+  runCareItemAssistanceLevelJob,
+  runCareItemReportingLabelJob,
 };

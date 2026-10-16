@@ -20,9 +20,18 @@
 // ALIS Pay's two HubSpot values are folded into one category here since a
 // live-enabled Pay flag doesn't distinguish Legacy vs. All-Inclusive, and
 // ALIS AI's three tiers are folded the same way.
+//
+// "ALIS Billing" (Sep 2026, Aaron) is NOT a separate line item HubSpot
+// sells — there's no matching alis_products option for it, so it never
+// shows as "sold" below — it's a functional split on the FLAG side only:
+// "ALIS Billing confirms billing usage - invoice creation etc... ALIS Pay
+// goes a step farther to integration with our payment processor." Flags
+// about invoicing/collections/rent-roll land here; only the actual
+// payment-gateway flag stays under "ALIS Pay," so that category can answer
+// "which accounts use the processor" without billing-usage noise diluting it.
 const CATEGORY_LABELS = [
   'ALIS eHR', 'ALIS eMAR', 'ALIS Care Tracking', 'ALIS RET', 'ALIS HQ', 'ALIS CRM',
-  'ALIS RevOps', 'ALIS Connect', 'ALIS Pay', 'ALIS Communications', 'ALIS Move-In Packet',
+  'ALIS RevOps', 'ALIS Connect', 'ALIS Pay', 'ALIS Billing', 'ALIS Communications', 'ALIS Move-In Packet',
   'ALIS AI', 'eSign', 'Chromebooks',
 ];
 const OTHER_CATEGORY = 'Other / Uncategorized';
@@ -41,7 +50,14 @@ function hubspotProductValuesFor(category) {
 // Matched against the flag's raw id (underscores intact, so "gl"/"mar"
 // don't false-positive inside longer words) rather than the humanized label.
 const RULES = [
-  ['ALIS Pay', /\balis_pay\b|payment_gateway|save_draft_payment|billing_center|collections_center|amount_deduction|subsidi|rent_roll|resident_billing|invoic/],
+  // Only the actual payment-processor connection — everything else that
+  // used to fold in here (invoicing, collections, rent roll, draft
+  // payments) is billing USAGE, not processor adoption; see "ALIS Billing"
+  // below (Sep 2026, Aaron: "ALIS Pay specifically refers to our payment
+  // process integration... a signal that a community is taking advantage
+  // of that feature").
+  ['ALIS Pay', /\balis_pay\b|payment_gateway/],
+  ['ALIS Billing', /save_draft_payment|billing_center|collections_center|amount_deduction|subsidi|rent_roll|resident_billing|invoic/],
   ['ALIS RevOps', /_gl_integration|\bgl\b|general_ledger|intacct|multiview|billing_program/],
   ['ALIS eMAR', /\bmar\b|\bemar\b|med_pass|medication|drug_count|drug_database|narcotic|pharmacy_integration/],
   ['ALIS Care Tracking', /care_tracking|care_level|care_plan|community_task|resident_care_management|resident_progress|resident_monitoring|resident_vitals|incident/],

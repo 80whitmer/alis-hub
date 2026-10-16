@@ -129,6 +129,13 @@ function mapLiveServiceHealth(ticketSummary) {
     // tags each ticket with its own account's tier client-side, the same
     // way this file's other by-tier charts already do.
     ticketDates: ticketSummary.tickets.map((t) => ({
+      ticketId: t.id,
+      subject: t.subject || null,
+      url: t.url || null,
+      pinnedNoteId: t.pinnedNoteId || null,
+      category: t.category || null,
+      nextStep: t.nextStep || null,
+      isOpen: t.isOpen,
       createdAt: t.createdAt || null,
       closedAt: t.closedAt || null,
       pipelineStageLabel: t.pipelineStageLabel || null,

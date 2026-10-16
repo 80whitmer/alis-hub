@@ -3,7 +3,9 @@
   "version": "0.5.0",
   "description": "React frontend for alis-hub",
   "scripts": {
+    "predev": "node ../scripts/generate-version.js",
     "dev": "vite --port 5173",
+    "prebuild": "node ../scripts/generate-version.js",
     "build": "vite build",
     "preview": "vite preview"
   },

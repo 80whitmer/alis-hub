@@ -292,3 +292,56 @@ export async function exportTeamAmPortfolioExcel(accounts, rollup, rollupByAccou
 
   await download(workbook, 'Team-AM-Dashboard.xlsx');
 }
+
+/**
+ * Plain one-sheet export of exactly the Accounts table as shown on screen
+ * (Aaron, Sep 2026: "just an accounts export here — it doesn't have to be
+ * fancy, but just getting the table contents cleanly out") — same rows/
+ * columns/order as the visible table, whatever the current search/tier
+ * filter/sort has it showing, no separate rollup logic. Deliberately not
+ * folded into exportTeamAmPortfolioExcel's multi-sheet workbook above —
+ * that one's Accounts sheet re-derives its own column set independently
+ * and is meant as a full portfolio dump, not a "what I'm looking at" copy.
+ */
+export async function exportTeamAmAccountsTable(rows) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'alis-hub';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Accounts');
+  sheet.columns = [
+    { header: 'Account', key: 'companyName', width: 34 },
+    { header: 'AM', key: 'am', width: 20 },
+    { header: 'Tier', key: 'tier', width: 10 },
+    { header: 'Total Community', key: 'communities', width: 16 },
+    { header: 'Health', key: 'health', width: 8 },
+    { header: 'Open Tickets', key: 'openTickets', width: 12 },
+    { header: 'Closed Tickets', key: 'closedTickets', width: 13 },
+    { header: 'ARR', key: 'arr', width: 12 },
+    { header: `ARR Added (${new Date().getFullYear()})`, key: 'arrAdded', width: 16 },
+    { header: 'Aging Balance', key: 'aging', width: 13 },
+    { header: 'Total Capacity', key: 'capacity', width: 13 },
+    { header: 'Current Census', key: 'census', width: 14 },
+    { header: 'Last Activity', key: 'lastActivity', width: 14 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  for (const a of rows) {
+    sheet.addRow({
+      companyName: a.company_name,
+      am: a.account_manager_name || '',
+      tier: tierLabel(a.tier),
+      communities: a.active_community_count ?? '',
+      health: a.health_score ?? '',
+      openTickets: a.open_ticket_count ?? 0,
+      closedTickets: a.closed_ticket_count ?? 0,
+      arr: usd(a.arr_cents),
+      arrAdded: usd(a.arr_added_this_year_cents),
+      aging: usd(a.aging_total_cents),
+      capacity: a.total_capacity ?? '',
+      census: a.current_census ?? '',
+      lastActivity: a.last_activity_date ? a.last_activity_date.slice(0, 10) : '',
+    });
+  }
+
+  await download(workbook, 'Team-AM-Accounts.xlsx');
+}

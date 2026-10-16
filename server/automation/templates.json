@@ -336,11 +336,7 @@
                   "title": "Community Name",
                   "examples": ["The Gardens at Shadow Hills"]
                 },
-                "communityId": {
-                  "type": "string",
-                  "title": "ALIS Community ID",
-                  "examples": ["952"]
-                },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["952"] },
                 "host": {
                   "type": "string",
                   "title": "ALIS Host (optional)",
@@ -455,16 +451,8 @@
             "items": {
               "type": "object",
               "properties": {
-                "name": {
-                  "type": "string",
-                  "title": "Community Name",
-                  "examples": ["The Gardens at Lake Wellington Assisted Living"]
-                },
-                "communityId": {
-                  "type": "string",
-                  "title": "ALIS Community ID",
-                  "examples": ["952"]
-                },
+                "name": { "type": "string", "title": "Community Name", "examples": ["The Gardens at Lake Wellington Assisted Living"] },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["952"] },
                 "host": {
                   "type": "string",
                   "title": "ALIS Host (optional)",
@@ -676,6 +664,192 @@
           }
         },
         "required": ["companyName", "companyHost"]
+      }
+    },
+    {
+      "id": "care-item-assistance-level",
+      "name": "Bulk Update Care Item Settings",
+      "description": "Sets a field on named Care Items (Settings/Care/{communityId} → Care tab, e.g. \"Ambulation - Two Staff Assistance\") across one or more communities — built for setting Assistance Level to \"Total 2x Staff\" on every item that calls out 2+ staff, but works for any Care Item on this page's edit pane that exposes an Assistance Level field. Skips items already set to the target value; flags items not found or without an Assistance Level field rather than failing the whole run. Test against a single item on one community first.",
+      "category": "settings",
+      "icon": "🦽",
+      "timeout": 3600000,
+      "inputSchema": {
+        "type": "object",
+        "title": "Bulk Update Care Item Settings",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Leisure Care LLC"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host(s) (subdomain)",
+            "description": "The subdomain root of this company's ALIS URL (e.g. \"leisurecare\" for leisurecare.alisonline.com). Comma-separate multiple hosts for a multi-host account.",
+            "examples": ["leisurecare"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities (optional)",
+            "description": "Leave empty to run every non-Training community on the host(s).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Community Name", "examples": ["Ackerly at Redd's Crossing"] },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["489"] },
+                "host": { "type": "string", "title": "ALIS Host (optional)", "description": "Only needed for a multi-host account — defaults to the first host if omitted." }
+              },
+              "required": ["name", "communityId"]
+            }
+          },
+          "items": {
+            "type": "array",
+            "title": "Care Items",
+            "description": "Each item's exact Care Item name (as it appears in the Name column) and the Assistance Level option to set it to.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Care Item Name", "examples": ["Ambulation - Two Staff Assistance"] },
+                "assistanceLevel": { "type": "string", "title": "Target Assistance Level", "examples": ["Total 2x Staff"] }
+              },
+              "required": ["name", "assistanceLevel"]
+            }
+          },
+          "concurrency": {
+            "type": "number",
+            "title": "Communities to process at once (optional)",
+            "description": "How many communities to update in parallel. Higher is faster but hits ALIS harder at once; default 4 is a deliberately conservative starting point, not a measured safe ceiling — raise it if a run shows no errors/timeouts at the current level.",
+            "default": 4,
+            "examples": [4]
+          }
+        },
+        "required": ["companyHost", "items"]
+      }
+    },
+    {
+      "id": "care-item-reporting-label",
+      "name": "Bulk Update Care Items — Reporting Label",
+      "description": "Sets the Reporting Label on named Care Items (Settings/Care/{communityId} → Care tab) across a chosen list of communities — built to relabel the \"Two Staff\" Care Items to \"Two Person Assist\". Communities can be given by name alone (IDs are looked up on the host). Each item can optionally carry a \"Only change if currently\" value (e.g. ABST) so items with any other label are left untouched and reported as skipped. Items already at the target are skipped; items not found or whose label option doesn't exist are flagged rather than failing the run. Test on one item in one community (e.g. Training Community) first.",
+      "category": "settings",
+      "icon": "🏷️",
+      "timeout": 3600000,
+      "inputSchema": {
+        "type": "object",
+        "title": "Bulk Update Care Items — Reporting Label",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Leisure Care LLC"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host(s) (subdomain)",
+            "description": "The subdomain root of this company's ALIS URL (e.g. \"leisurecare\" for leisurecare.alisonline.com). Comma-separate multiple hosts for a multi-host account.",
+            "examples": ["leisurecare"]
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities",
+            "description": "Which communities to update. A community name alone is enough — its ALIS Community ID is looked up on the host by exact name. Leave empty to run every non-Training community on the host(s).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Community Name", "examples": ["Arlington Heights"] },
+                "communityId": { "type": "string", "title": "ALIS Community ID", "description": "Optional — looked up by name if blank.", "examples": ["489"] },
+                "host": { "type": "string", "title": "ALIS Host (optional)", "description": "Only needed for a multi-host account — defaults to the first host if omitted." }
+              },
+              "required": ["name"]
+            }
+          },
+          "items": {
+            "type": "array",
+            "title": "Care Items",
+            "description": "Each item's exact Care Item name (as in the Name column), the Reporting Label to set, and optionally the label it must currently have for the change to apply.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "title": "Care Item Name", "examples": ["Bathing - Two Staff Assistance 3x Per Week"] },
+                "reportingLabel": { "type": "string", "title": "Target Reporting Label", "examples": ["Two Person Assist"] },
+                "fromLabel": { "type": "string", "title": "Only change if currently", "description": "Optional guard — e.g. ABST, or several separated by | such as ABST|(blank) (\"(blank)\" = no label set). If the item's current Reporting Label is anything else, it is left unchanged and reported as skipped.", "examples": ["ABST"] }
+              },
+              "required": ["name", "reportingLabel"]
+            }
+          },
+          "concurrency": {
+            "type": "number",
+            "title": "Communities to process at once (optional)",
+            "description": "How many communities to update in parallel. Default 4 is a conservative starting point, not a measured safe ceiling.",
+            "default": 4,
+            "examples": [4]
+          }
+        },
+        "required": ["companyHost", "items"]
+      }
+    },
+    {
+      "id": "med-cart-report",
+      "name": "Community Med Cart Report",
+      "description": "Ties ALIS's \"Default Med Cart\" field (only available via a manual export of ALIS's own Floor Plan report — the export API has no cart field) to actual medication-pass activity, broken out by med pass shift (AM/Noon/PM/HS). Flags floor-plan residents it couldn't match in ALIS, residents matched but missing a cart assignment, and ALIS residents absent from the floor plan file, rather than guessing. Requires the community's \"Default Med Cart\" column to actually be filled in on the floor plan — if it's blank for every unit, this report will come back empty.",
+      "category": "reporting",
+      "icon": "💊",
+      "timeout": 600000,
+      "scriptPath": "./medCartReportJob.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Community Med Cart Report",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Imagine Senior Living"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"imagineseniorliving\" for imagineseniorliving.alisonline.com).",
+            "examples": ["imagineseniorliving"]
+          },
+          "communityName": {
+            "type": "string",
+            "title": "Community Name",
+            "description": "Exact name or a unique partial match — the ID is looked up for you. Give the Community ID instead if the name is ambiguous.",
+            "examples": ["Keepsake Village at Greenpoint"]
+          },
+          "communityId": {
+            "type": "string",
+            "title": "ALIS Community ID (optional)",
+            "examples": ["952"]
+          },
+          "startDate": {
+            "type": "string",
+            "title": "Start Date (YYYY-MM-DD)",
+            "description": "Start of the medication-pass activity window. ALIS caps order administration history at 3 months back.",
+            "examples": ["2026-09-25"]
+          },
+          "endDate": {
+            "type": "string",
+            "title": "End Date (YYYY-MM-DD)",
+            "examples": ["2026-10-02"]
+          },
+          "floorPlan": {
+            "type": "array",
+            "title": "Floor Plan (from ALIS's Floor Plan export)",
+            "description": "Import the .xls/.xlsx ALIS's own Floor Plan report exports (Settings → Floor Plan). Needs Unit #, Assigned To, and Default Med Cart filled in — vacant units (blank Assigned To) are ignored automatically.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "unitNumber": { "type": "string", "title": "Unit #", "examples": ["719 A"] },
+                "assignedTo": { "type": "string", "title": "Assigned To", "examples": ["Ventrone, Connie"] },
+                "defaultMedCart": { "type": "string", "title": "Default Med Cart", "examples": ["Cart 1"] }
+              }
+            }
+          }
+        },
+        "required": ["companyName", "companyHost", "startDate", "endDate", "floorPlan"]
       }
     },
     {

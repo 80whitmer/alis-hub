@@ -12,7 +12,7 @@ import CrmIdAuditDashboard from './pages/CrmIdAuditDashboard';
 import CrmIdAuditBulkReport from './pages/CrmIdAuditBulkReport';
 import AuditHistory from './pages/AuditHistory';
 import EvaluationDetail from './pages/EvaluationDetail';
-import { version } from '../package.json';
+import { version } from './version.json';
 
 // Evaluation Lookup deliberately has no top-nav entry — it's not a
 // standalone page destination anymore, it lives as a tile inside "+ New

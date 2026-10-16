@@ -16,13 +16,13 @@ import {
 export const TIER_KPI_TITLE = 'Tier KPIs';
 export const AM_KPI_TITLE = 'Tier KPIs by AM';
 
-const TIER_COLOR = { 'Tier 1': '#16a34a', 'Tier 2': '#2563eb', 'Tier 3': '#ea580c', 'Tier 4': '#dc2626', 'Tier 5': '#7c3aed', Unassigned: '#737373' };
+export const TIER_COLOR = { 'Tier 1': '#16a34a', 'Tier 2': '#2563eb', 'Tier 3': '#ea580c', 'Tier 4': '#dc2626', 'Tier 5': '#7c3aed', Unassigned: '#737373' };
 const PALETTE = ['#2563eb', '#16a34a', '#ea580c', '#7c3aed', '#dc2626', '#0891b2', '#ca8a04', '#db2777', '#4d7c0f', '#9333ea'];
 
-const usd = (cents) => (!cents ? '$0' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }));
-const count = (n) => Math.round(n || 0).toLocaleString('en-US');
+export const usd = (cents) => (!cents ? '$0' : (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }));
+export const count = (n) => Math.round(n || 0).toLocaleString('en-US');
 
-function useTierKpis(endpoint) {
+export function useTierKpis(endpoint) {
   const [state, setState] = useState({ data: null, error: '' });
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +47,7 @@ function TrendEmptyState() {
 }
 
 /** Flat {scope_key, metric_key, recorded_date, value} rows → one row per day with a column per scope key, optionally dividing by a second metric for the same day. */
-function pivot(history, numeratorKey, denominatorKey) {
+export function pivot(history, numeratorKey, denominatorKey) {
   const byDate = new Map();
   const denoms = new Map();
   for (const r of history) {
@@ -66,7 +66,7 @@ function pivot(history, numeratorKey, denominatorKey) {
   return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function TrendChart({ rows, keys, colorFor, formatValue }) {
+export function TrendChart({ rows, keys, colorFor, formatValue }) {
   const present = keys.filter((k) => rows.some((r) => r[k] != null));
   if (rows.length < 2 || present.length === 0) return <TrendEmptyState />;
   return (

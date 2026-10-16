@@ -744,4 +744,12 @@ async function applyResidentSettings(page, url, snapshot, emit = () => {}) {
 module.exports = {
   captureResidentSettings,
   applyResidentSettings,
+  // Exposed so other Settings/Compliance-backed pages (e.g. Care Items, via
+  // carePage.js) can reuse the same item-row / edit-pane mechanics instead
+  // of re-deriving them — confirmed live to be the SAME underlying
+  // #paneWrap AJAX component across categories, just with a different field
+  // set per entity type.
+  complianceItemRowByName,
+  openComplianceItemPane,
+  closeComplianceItemPane,
 };

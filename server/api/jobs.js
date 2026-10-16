@@ -126,7 +126,18 @@ router.post('/create', (req, res) => {
     // Determine item count and extract items array (varies by template)
     let itemCount = 1;
     let itemsToTrack = [];
-    if (payload.communities) {
+    if (templateId === 'care-item-assistance-level' || templateId === 'care-item-reporting-label') {
+      // This template's real unit of work is communities × items (one row
+      // per care item PER community), resolved inside the job itself
+      // (which may auto-discover communities from the host, so even a
+      // non-empty payload.communities here isn't the final list) — the job
+      // calls syncJobItems immediately to backfill the correct total and
+      // per-pair item names. Falling through to the communities/items
+      // branches below would both undercount (communities.length alone)
+      // and leave those wrong rows stuck at "pending" forever alongside
+      // the correct ones once syncJobItems adds them.
+      itemCount = 0;
+    } else if (payload.communities) {
       itemCount = payload.communities.length;
       // A community given by ID only has no name to track yet — the job
       // handler backfills its item (via syncJobItems) once it knows the label,

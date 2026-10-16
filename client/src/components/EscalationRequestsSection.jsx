@@ -1,9 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList, LineChart, Line, Legend,
 } from 'recharts';
 import { exportEscalationTickets } from '../utils/escalationTicketsExport';
+import { SECTION_SEARCH_SET_EVENT } from '../utils/sectionSearchBus';
 import PinnedNoteButton from './PinnedNote';
+
+// The SectionCard title this component renders under (see each dashboard's
+// own call site) — reused as the global search's hit title and as the
+// section-search-bus key, so a hit and this component always agree on
+// identity without a separate prop.
+export const ESCALATION_TITLE = 'Tickets: Escalation';
+
+/** For the page-level global search's "Sections with a match" dropdown — mirrors this component's own search predicate exactly. */
+export function countEscalationMatches(accounts, { includeAccountManager = false, query = '' } = {}) {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+  return flattenEscalationTickets(accounts, includeAccountManager).filter((t) =>
+    t.companyName?.toLowerCase().includes(q) ||
+    t.accountManagerName?.toLowerCase().includes(q) ||
+    t.subject?.toLowerCase().includes(q) ||
+    t.nextStep?.toLowerCase().includes(q)
+  ).length;
+}
 
 /**
  * Portfolio-wide "Escalation Tickets" section (Sep 2026) — every OPEN
@@ -353,6 +372,21 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
   // narrows to `filteredItems`.
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState(() => new Set());
+  // Multiselect AM filter pills (Sep 2026, Aaron: "add a row of account
+  // manager filter pills under the tiers... add the same pill filter set
+  // to the Escalation section") — same Set pattern as tierFilter above.
+  const [amFilter, setAmFilter] = useState(() => new Set());
+
+  // Lets the page-level global search push a query into this section's own
+  // search box (Aaron: "both of these search bars should be wired in with
+  // the global search bar").
+  useEffect(() => {
+    function handleSetSearch(e) {
+      if (e.detail?.key === ESCALATION_TITLE && typeof e.detail?.query === 'string') setSearch(e.detail.query);
+    }
+    window.addEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+    return () => window.removeEventListener(SECTION_SEARCH_SET_EVENT, handleSetSearch);
+  }, []);
 
   const items = useMemo(() => flattenEscalationTickets(accounts, includeAccountManager), [accounts, includeAccountManager]);
   const closedItems = useMemo(() => flattenClosedEscalationTickets(accounts), [accounts]);
@@ -368,10 +402,15 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
     );
   }, [items, search]);
 
-  const filteredItems = useMemo(() => {
+  const tierFilteredItems = useMemo(() => {
     if (tierFilter.size === 0) return searchFilteredItems;
     return searchFilteredItems.filter((t) => tierFilter.has(tierLabel(t.tier)));
   }, [searchFilteredItems, tierFilter]);
+
+  const filteredItems = useMemo(() => {
+    if (amFilter.size === 0) return tierFilteredItems;
+    return tierFilteredItems.filter((t) => amFilter.has(t.accountManagerName || 'Unassigned'));
+  }, [tierFilteredItems, amFilter]);
 
   const avgAgeDays = items.length
     ? Math.round(items.reduce((sum, t) => sum + (t.daysOpen || 0), 0) / items.length)
@@ -485,6 +524,36 @@ export default function EscalationRequestsSection({ accounts, includeAccountMana
           })}
           {tierFilter.size > 0 && (
             <button onClick={() => setTierFilter(new Set())} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
+              Clear filter
+            </button>
+          )}
+        </div>
+      )}
+
+      {includeAccountManager && searchFilteredItems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {[...new Set(searchFilteredItems.map((r) => r.accountManagerName || 'Unassigned'))].sort().map((am) => {
+            const amCount = searchFilteredItems.filter((r) => (r.accountManagerName || 'Unassigned') === am).length;
+            return (
+              <button
+                key={am}
+                onClick={() => setAmFilter((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(am)) next.delete(am); else next.add(am);
+                  return next;
+                })}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  amFilter.has(am)
+                    ? 'bg-accent-500 text-white border-accent-500'
+                    : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-300'
+                }`}
+              >
+                {am} ({amCount})
+              </button>
+            );
+          })}
+          {amFilter.size > 0 && (
+            <button onClick={() => setAmFilter(new Set())} className="text-xs text-neutral-400 hover:text-neutral-600 underline">
               Clear filter
             </button>
           )}

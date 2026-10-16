@@ -94,15 +94,21 @@ async function getNextOccurrenceFromLink(link) {
         calendarId, eventId: masterId, timeMin: new Date().toISOString(), maxResults: 1, showDeleted: false,
       });
       const next = data.items?.[0];
-      // instances() succeeded -- trust its verdict either way. An empty
-      // result means the series has no more future occurrences (recurrence
-      // ended), which is a real "nothing to report" case, not a reason to
-      // fall back to the stale pasted instance below.
-      const occurrence = next ? occurrenceFromEvent(next) : null;
-      return occurrence && isInFuture(occurrence) ? occurrence : null;
+      if (next) {
+        const occurrence = occurrenceFromEvent(next);
+        if (occurrence && isInFuture(occurrence)) return occurrence;
+      }
+      // Confirmed live (Sep 2026): instances() returning zero items does
+      // NOT reliably mean "recurrence has ended" -- caught a real case
+      // where a genuinely still-future occurrence (3 days out, confirmed
+      // via events.get on the exact pasted instance) came back empty from
+      // instances() for no apparent reason. So this no longer trusts an
+      // empty result on its own; it falls through to the direct get()
+      // below, which is ground truth for whether the pasted instance
+      // itself is still upcoming.
     } catch {
       // instances() itself failed (e.g. the master event looks gone) --
-      // only NOW is it worth trying the raw pasted eventId as a last resort.
+      // fall through to the raw pasted eventId as a last resort.
     }
   }
 
@@ -115,4 +121,19 @@ async function getNextOccurrenceFromLink(link) {
   }
 }
 
-module.exports = { listEvents, getNextOccurrenceFromLink };
+/**
+ * Resolves any pasted Google Calendar link (a specific instance or the
+ * master event) down to its SERIES identity — `${calendarId}::${masterId}`
+ * — for de-duping a proposed discovery against calls already on file, whose
+ * pasted link might point at a different instance of the same series.
+ * Returns null for anything unparseable (same cases parseEventLink itself
+ * bails on).
+ */
+function resolveSeriesKey(link) {
+  const parsed = parseEventLink(link);
+  if (!parsed) return null;
+  const masterId = parsed.eventId.replace(INSTANCE_ID_SUFFIX, '');
+  return `${parsed.calendarId}::${masterId}`;
+}
+
+module.exports = { listEvents, getNextOccurrenceFromLink, resolveSeriesKey };
