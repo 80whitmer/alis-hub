@@ -122,6 +122,31 @@ export default function OrganicAdd() {
   const pendingDate = review ? review.formFields.some((f) => f.needsDate || f.needsUrl) : false;
   const canOpen = review && pendingPicks === 0 && !pendingDate && pendingUnresolved === 0 && dupChecked;
 
+  // Fill the ODM form in a hub-launched browser window (never submits).
+  const [fill, setFill] = useState(null); // { status, results, error }
+  const [fillError, setFillError] = useState('');
+
+  async function startFill() {
+    setFillError('');
+    const res = await fetch('/api/organic-add/fill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: parsed }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setFillError(data.error || 'Could not start'); return; }
+    setFill({ status: 'starting', results: [] });
+    const timer = setInterval(async () => {
+      try {
+        const s = await (await fetch('/api/organic-add/fill/status')).json();
+        setFill(s);
+        if (s.status === 'done' || s.status === 'error' || s.status === 'idle') clearInterval(timer);
+      } catch { clearInterval(timer); }
+    }, 1500);
+  }
+
+  const fillBusy = fill && ['starting', 'waiting_for_login', 'filling'].includes(fill.status);
+
   const dupUrl = useMemo(() => {
     if (!review) return '#';
     const jql = `project = ODM AND statusCategory != Done AND (summary ~ "${review.community.name.replace(/"/g, '')}" OR text ~ "${review.community.crm_id}")`;
@@ -161,6 +186,11 @@ export default function OrganicAdd() {
 
   function copyValue(f) {
     if (f.dropdownKey) return (review.dropdowns[f.dropdownKey].value || []).join(', ');
+    // The form's date fields take MM/DD/YYYY, not ISO.
+    if (f.kind === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(f.value || '')) {
+      const [y, m, d] = f.value.split('-');
+      return `${m}/${d}/${y}`;
+    }
     return f.value;
   }
 
@@ -269,7 +299,34 @@ export default function OrganicAdd() {
             >
               Open the ODM form
             </button>
-            <div className="text-xs text-neutral-500">Leave Assignee as Unassigned — the PM team assigns.</div>
+            <button
+              type="button"
+              className="btn-primary ml-2"
+              disabled={!canOpen || fillBusy}
+              title={canOpen ? '' : 'Resolve picks and the completion date, acknowledge unresolved items, and confirm the duplicate check'}
+              onClick={() => { audit(crmId, 'opened_form', 'autofill'); startFill(); }}
+            >
+              Fill the ODM form
+            </button>
+            {fillError && <div className="text-red-600 text-xs">{fillError}</div>}
+            {fill && (
+              <div className="text-sm border border-neutral-200 rounded p-2 bg-neutral-50">
+                {fill.status === 'waiting_for_login' && <div className="text-amber-700">A browser window opened — sign in to Atlassian there; filling starts automatically once you&apos;re in.</div>}
+                {fill.status === 'filling' && <div>Filling the form…</div>}
+                {fill.status === 'error' && <div className="text-red-600">Fill failed: {fill.error}</div>}
+                {fill.status === 'done' && <div className="font-semibold">Filled — review the form in the browser window, then click Submit there yourself. Nothing has been submitted.</div>}
+                {fill.results?.length > 0 && (
+                  <ul className="mt-1">
+                    {fill.results.map((r) => (
+                      <li key={r.label} className={r.filled ? 'text-green-700' : 'text-red-600'}>
+                        {r.filled ? '✓' : '✗'} {r.label}{r.detail ? ` — ${r.detail}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <div className="text-xs text-neutral-500">Leave Assignee as Unassigned — the PM team assigns. The hub never submits the form.</div>
           </div>
         </>
       )}

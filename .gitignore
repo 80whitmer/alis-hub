@@ -11,6 +11,7 @@ server/.env
 # ALIS credentials / session storage
 server/auth/
 server/.alis-session/
+server/.jira-session/
 *.session.json
 credentials.json
 
