@@ -10,15 +10,13 @@ const options = require('../config/organicAddOptions.json');
  * fuzzy). A null dropdown value means a human has to choose — the review
  * carries the real option list so the UI can offer the picker.
  */
-const COMPANY_URL_RE = /^https:\/\/admin\.alisonline\.com\/Customers\/Companies\/\d+$/;
-
-const REQUIRED_TOP = ['schema_version', 'form_url', 'companyUrl', 'community', 'fields', 'flags', 'unresolved'];
+const REQUIRED_TOP = ['schema_version', 'form_url', 'community', 'fields', 'flags', 'unresolved'];
 const REQUIRED_COMMUNITY = ['name', 'crm_id', 'licensed_capacity', 'physical_capacity', 'street', 'city', 'state', 'zip'];
 const STRING_FIELDS = [
   'summary', 'project_request', 'acquisition_or_new_building', 'current_ehr', 'pharmacy_contact_info',
   'client_community_contact', 'organic_add_details_md', 'copy_settings_from', 'description_md',
 ];
-const DATE_FIELDS = ['desired_go_live_date', 'requested_completion_date'];
+const DATE_FIELDS = ['desired_go_live_date'];
 const DROPDOWN_FIELDS = {
   what_is_needed: options.whatIsNeeded,
   assessment_info: options.assessmentInfo,
@@ -54,9 +52,9 @@ function validateOrganicAddPayload(input) {
   for (const k of REQUIRED_TOP) if (!(k in p)) errors.push(`Missing key: ${k}`);
   if (errors.length) return { ok: false, errors, review: null };
 
-  if (typeof p.companyUrl !== 'string' || !COMPANY_URL_RE.test(p.companyUrl)) {
-    errors.push(`companyUrl must match https://admin.alisonline.com/Customers/Companies/<digits> (got ${JSON.stringify(p.companyUrl)})`);
-  }
+  // companyUrl (the ALIS admin company link) is optional and unvalidated — it
+  // was a hangover from another process. If present it is shown as-is.
+  if (p.companyUrl != null && typeof p.companyUrl !== 'string') errors.push('companyUrl must be a string when present');
   if (!p.community || typeof p.community !== 'object') errors.push('community must be an object');
   else for (const k of REQUIRED_COMMUNITY) {
     if (typeof p.community[k] !== 'string') errors.push(`community.${k} must be a string`);
@@ -72,6 +70,11 @@ function validateOrganicAddPayload(input) {
   for (const k of DATE_FIELDS) {
     if (f[k] == null) errors.push(`fields.${k} is required (got null)`);
     else if (!isRealIsoDate(f[k])) errors.push(`fields.${k} is not a real YYYY-MM-DD date (got ${JSON.stringify(f[k])})`);
+  }
+  // requested_completion_date may be null — the human supplies it on the
+  // review screen (a required form field the skill often can't know).
+  if (f.requested_completion_date != null && !isRealIsoDate(f.requested_completion_date)) {
+    errors.push(`fields.requested_completion_date is not a real YYYY-MM-DD date (got ${JSON.stringify(f.requested_completion_date)})`);
   }
   if (isRealIsoDate(f.desired_go_live_date) && isRealIsoDate(f.requested_completion_date)
       && f.requested_completion_date > f.desired_go_live_date) {
@@ -114,7 +117,7 @@ function validateOrganicAddPayload(input) {
       // Order matches the form top to bottom.
       formFields: [
         { label: 'Summary', value: f.summary, kind: 'text' },
-        { label: 'ALIS Company URL', value: p.companyUrl, kind: 'text' },
+        { label: 'ALIS Company URL', value: p.companyUrl || '', kind: 'text', enterOnForm: !p.companyUrl },
         { label: 'Project Request', value: f.project_request, kind: 'dropdown' },
         { label: 'What is Needed?', dropdownKey: 'what_is_needed', kind: 'dropdown' },
         { label: 'Acquisition or new building?', value: f.acquisition_or_new_building, kind: 'text' },
@@ -126,7 +129,7 @@ function validateOrganicAddPayload(input) {
         { label: 'Organic Add Details', value: f.organic_add_details_md, kind: 'markdown' },
         { label: 'Which community should we copy settings FROM?', value: f.copy_settings_from, kind: 'text' },
         { label: 'Settings Configuration Needed', dropdownKey: 'settings_configuration_needed', kind: 'dropdown' },
-        { label: 'Requested Completion Date', value: f.requested_completion_date, kind: 'date' },
+        { label: 'Requested Completion Date', value: f.requested_completion_date, kind: 'date', needsDate: f.requested_completion_date == null, maxDate: f.desired_go_live_date },
         { label: 'Assignee', value: 'Unassigned — leave as-is (PM team assigns)', kind: 'note' },
         { label: 'Description', value: f.description_md, kind: 'markdown' },
       ],
@@ -137,4 +140,4 @@ function validateOrganicAddPayload(input) {
   };
 }
 
-module.exports = { validateOrganicAddPayload, isRealIsoDate, COMPANY_URL_RE };
+module.exports = { validateOrganicAddPayload, isRealIsoDate };

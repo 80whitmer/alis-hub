@@ -44,18 +44,22 @@ test('rejects malformed JSON, bad version, missing keys', () => {
   assert.match(validateOrganicAddPayload(m).errors[0], /Missing key: flags/);
 });
 
-test('rejects bad companyUrl including [ID NEEDED]', () => {
+test('companyUrl is optional and unvalidated ([ID NEEDED] does not reject)', () => {
   const a = good(); a.companyUrl = 'https://admin.alisonline.com/Customers/Companies/[ID NEEDED]';
-  assert.equal(validateOrganicAddPayload(a).ok, false);
-  const b = good(); b.companyUrl = 'https://admin.alisonline.com/Customers/Companies/12a';
-  assert.equal(validateOrganicAddPayload(b).ok, false);
+  assert.equal(validateOrganicAddPayload(a).ok, true);
+  const b = good(); delete b.companyUrl;
+  const r = validateOrganicAddPayload(b);
+  assert.equal(r.ok, true);
+  assert.equal(r.review.formFields[1].enterOnForm, true);
 });
 
 test('date rules: real dates, non-null completion, completion <= go-live', () => {
   const a = good(); a.fields.desired_go_live_date = '2026-02-30';
   assert.equal(validateOrganicAddPayload(a).ok, false);
   const b = good(); b.fields.requested_completion_date = null;
-  assert.equal(validateOrganicAddPayload(b).ok, false);
+  const rb = validateOrganicAddPayload(b);
+  assert.equal(rb.ok, true);
+  assert.equal(rb.review.formFields.find((x) => x.needsDate).label, 'Requested Completion Date');
   const c = good(); c.fields.requested_completion_date = '2026-12-02';
   assert.match(validateOrganicAddPayload(c).errors.join(), /later than/);
 });

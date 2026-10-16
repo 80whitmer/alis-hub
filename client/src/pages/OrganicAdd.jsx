@@ -48,6 +48,7 @@ export default function OrganicAdd() {
   const [ack, setAck] = useState({}); // unresolved index -> bool
   const [dupChecked, setDupChecked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dateError, setDateError] = useState('');
 
   async function validate(payloadOrText) {
     setBusy(true);
@@ -83,12 +84,27 @@ export default function OrganicAdd() {
     await validate(next);
   }
 
+  // Human-supplied Requested Completion Date (the payload's was null). Must
+  // not be later than the go-live date; checked here so a bad pick doesn't
+  // blank the review the way a server-side rejection would.
+  async function pickDate(value, maxDate) {
+    if (value && maxDate && value > maxDate) {
+      setDateError(`Must be on or before the go-live date (${maxDate})`);
+      return;
+    }
+    setDateError('');
+    const next = { ...parsed, fields: { ...parsed.fields, requested_completion_date: value || null } };
+    setParsed(next);
+    await validate(next);
+  }
+
   const review = result?.ok ? result.review : null;
   const crmId = review?.community?.crm_id;
 
   const pendingPicks = review ? Object.values(review.dropdowns).filter((d) => d.needsPick).length : 0;
   const pendingUnresolved = review ? review.unresolved.filter((_, i) => !ack[i]).length : 0;
-  const canOpen = review && pendingPicks === 0 && pendingUnresolved === 0 && dupChecked;
+  const pendingDate = review ? review.formFields.some((f) => f.needsDate) : false;
+  const canOpen = review && pendingPicks === 0 && !pendingDate && pendingUnresolved === 0 && dupChecked;
 
   const dupUrl = useMemo(() => {
     if (!review) return '#';
@@ -97,6 +113,16 @@ export default function OrganicAdd() {
   }, [review]);
 
   function renderValue(f) {
+    if (f.needsDate) {
+      return (
+        <span>
+          <input type="date" className="border border-neutral-300 rounded px-2 py-1" max={f.maxDate} onChange={(e) => pickDate(e.target.value, f.maxDate)} />
+          <em className="text-red-600 ml-2">Choose a date (on or before {f.maxDate})</em>
+          {dateError && <div className="text-red-600 text-xs mt-1">{dateError}</div>}
+        </span>
+      );
+    }
+    if (f.enterOnForm) return <em className="text-neutral-500">Not in payload — enter on the form</em>;
     if (f.dropdownKey) {
       const d = review.dropdowns[f.dropdownKey];
       return d.needsPick ? <em className="text-red-600">Not chosen yet</em> : d.value.join(', ');
@@ -209,7 +235,7 @@ export default function OrganicAdd() {
               type="button"
               className="btn-primary"
               disabled={!canOpen}
-              title={canOpen ? '' : 'Resolve picks, acknowledge unresolved items, and confirm the duplicate check'}
+              title={canOpen ? '' : 'Resolve picks and the completion date, acknowledge unresolved items, and confirm the duplicate check'}
               onClick={() => { audit(crmId, 'opened_form'); window.open(review.formUrl, '_blank', 'noopener'); }}
             >
               Open the ODM form
