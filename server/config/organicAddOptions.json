@@ -1,0 +1,32 @@
+{
+  "_source": "Read live from the ODM form 432 (OB - Data Migration) in the browser, Oct 2026. Re-read if the form's options change.",
+  "formUrl": "https://medtelligent.atlassian.net/jira/core/projects/ODM/form/432",
+  "projectRequest": [
+    "Data Import",
+    "RET Build/Config",
+    "Settings Config",
+    "Form Markup / MIP Config",
+    "Organic Add Onboarding",
+    "Training Needed"
+  ],
+  "whatIsNeeded": {
+    "multiSelect": true,
+    "options": ["Data Import", "Training", "Settings Config", "Pharmacy Integration"]
+  },
+  "assessmentInfo": {
+    "multiSelect": false,
+    "options": ["Hook up to current RET", "New RET build", "N/A"]
+  },
+  "settingsConfigurationNeeded": {
+    "multiSelect": null,
+    "options": [
+      "Resident Settings",
+      "Compliance Settings",
+      "Care Settings",
+      "Evaluation Reasons + RET",
+      "Care Levels",
+      "Medication Settings",
+      "Billing Settings"
+    ]
+  }
+}

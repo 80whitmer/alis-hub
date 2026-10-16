@@ -12,6 +12,7 @@ import CrmIdAuditDashboard from './pages/CrmIdAuditDashboard';
 import CrmIdAuditBulkReport from './pages/CrmIdAuditBulkReport';
 import AuditHistory from './pages/AuditHistory';
 import EvaluationDetail from './pages/EvaluationDetail';
+import OrganicAdd from './pages/OrganicAdd';
 import { version } from './version.json';
 
 // Evaluation Lookup deliberately has no top-nav entry — it's not a
@@ -25,6 +26,7 @@ const nav = [
   { to: '/team-am', label: 'Team AM' },
   { to: '/jobs',    label: 'Job Board' },
   { to: '/new-job', label: '+ New Job'  },
+  { to: '/organic-add', label: 'Organic Add' },
 ];
 
 export default function App() {
@@ -77,6 +79,7 @@ export default function App() {
             <Route path="/crm-id-audit/:jobId" element={<CrmIdAuditDashboard />} />
             <Route path="/crm-id-audit-bulk/:jobId" element={<CrmIdAuditBulkReport />} />
             <Route path="/audit-history/:jobId" element={<AuditHistory />} />
+            <Route path="/organic-add"        element={<OrganicAdd />} />
             <Route path="/evaluation-detail" element={<EvaluationDetail />} />
           </Routes>
         </div>

@@ -776,6 +776,20 @@ async function initDb() {
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_internal_ticket_clicks_ticket ON internal_ticket_clicks (ticket_id);`);
 
+  // Audit trail for the Organic Add -> Jira ODM form tool (see
+  // services/organicAdd.js). Stores only the HubSpot company ID, the event,
+  // and a short label (a field NAME, never a value) — the payload carries
+  // contact emails/phones that must not land in a log.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS organic_add_runs (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      crm_id     TEXT,
+      event      TEXT NOT NULL,
+      detail     TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   // Account Truth model, ported from alis-product-ops (Aaron, Sep 2026:
   // "digging the account truth model -- could we bring it over and
   // integrate it with the team am / account health dashboards"). The
@@ -2231,6 +2245,11 @@ function recordInternalTicketClick(ticketId, target) {
   run(`INSERT INTO internal_ticket_clicks (ticket_id, target, clicked_at) VALUES (?, ?, ?)`, [String(ticketId), target || null, new Date().toISOString()]);
 }
 
+/** Audit record for the Organic Add tool — crm_id + event + short label only, never field values. */
+function recordOrganicAddRun(crmId, event, detail) {
+  run(`INSERT INTO organic_add_runs (crm_id, event, detail, created_at) VALUES (?, ?, ?, ?)`, [crmId == null ? null : String(crmId), event, detail || null, new Date().toISOString()]);
+}
+
 /** Map<ticketId, {clicks, clicks30d, lastClickedAt}>. */
 function getInternalTicketClickStats() {
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
@@ -2281,7 +2300,7 @@ module.exports = {
   updateTeamAmOccupancy, setTeamAmOccupancyError,
   findRecentKpiSnapshotsByHubspotCompanyId,
   findRecentJobSnapshotsByHubspotCompanyId, findRecentAuditHistorySnapshotsByCompanyHost,
-  recordInternalTicketClick, getInternalTicketClickStats,
+  recordInternalTicketClick, getInternalTicketClickStats, recordOrganicAddRun,
   listAlisAdminIds, getAlisAdminId, setAlisAdminId, bulkSetAlisAdminIds, deleteAlisAdminId,
   replaceEntitlementSnapshot, listEntitlementSnapshots, countEntitlementSnapshotCompanies,
   replacePortfolioUsageSnapshot, listPortfolioUsageSnapshots, countPortfolioUsageSnapshotCompanies,
