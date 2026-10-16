@@ -3,6 +3,7 @@ const { createCommunity, setCrmId }        = require('./playwright/communityPage
 const { navigateToBillingSettings, updateGLAccount, closeDetailView } = require('./playwright/billingPage');
 const { captureResidentSettings, applyResidentSettings } = require('./playwright/residentSettingsPage');
 const { navigateToCareSettings, setCareItemAssistanceLevel, setCareItemReportingLabel } = require('./playwright/carePage');
+const { listCurrentResidents, moveOutResident, nameKey } = require('./playwright/residentMoveOutPage');
 const { getSettingsDestination } = require('../services/settingsDestinations');
 const { getCommunities } = require('../services/alisApiClient');
 const { setJobStatus, setItemStatus, syncJobItems } = require('../db/database');
@@ -123,6 +124,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'moved-out-billing':
         return await runMovedOutBillingJob(jobId, payload);
+
+      case 'resident-move-out':
+        return await runResidentMoveOutJob(jobId, payload);
 
       case 'care-item-assistance-level':
         return await runCareItemAssistanceLevelJob(jobId, payload);
@@ -590,6 +594,103 @@ async function runCareItemFieldJob(jobId, payload, spec) {
   });
 }
 
+/**
+ * Run the resident-move-out job — moves out a named list of residents from one
+ * community's Current Residents tab by driving ALIS's Move Out pane (for bulk
+ * move-outs the importer can't action). Strictly sequential: these are real,
+ * hard-to-undo writes, and one browser page keeps the audit trail simple.
+ *
+ * Residents are matched by "Last, First" against the live Current tab; any
+ * name with no match (or more than one) fails its own row without touching ALIS.
+ * Every resident inherits the job-level move-out details and may override any of
+ * them (e.g. a per-person time). `dryRun` fills and verifies the form but never
+ * clicks Confirm — use it on a couple of residents first.
+ *
+ * SSE events: job_start | item_start | item_done | item_fail | job_done
+ */
+async function runResidentMoveOutJob(jobId, payload) {
+  const { companyName, companyHost, communityId, residents, dryRun = false } = payload;
+  const emit = (event, data) => broadcast(jobId, event, data);
+
+  const fail = (error) => {
+    setJobStatus(jobId, 'failed', error);
+    emit('job_error', { error });
+  };
+  if (!companyHost) return fail('ALIS Company Host is required.');
+  if (!communityId) return fail('ALIS Community ID is required.');
+  if (!Array.isArray(residents) || residents.length === 0) return fail('At least one resident (name) is required.');
+
+  // detail key -> [payload default key, label]
+  const FIELDS = {
+    physicalDate: ['physicalMoveOutDate', 'Physical Move Out Date'],
+    physicalTime: ['physicalMoveOutTime', 'Physical Move Out Time'],
+    reason: ['moveOutReason', 'Move Out Reason'],
+    destination: ['moveOutDestination', 'Move Out Destination'],
+    financialDate: ['financialMoveOutDate', 'Financial Move Out Date'],
+  };
+  for (const [, [key, label]] of Object.entries(FIELDS)) {
+    if (!payload[key] && !residents.every((r) => r[key])) {
+      return fail(`${label} is required (set it on the job, or on every resident).`);
+    }
+  }
+
+  const names = residents.map((r) => r.name);
+  syncJobItems(jobId, names);
+  setJobStatus(jobId, 'running');
+  emit('job_start', { jobId, total: names.length, company: companyName, dryRun });
+
+  let moved = 0, dry = 0, failed = 0;
+  let page;
+  try {
+    const listUrl = `https://${companyHost}.alisonline.com/Residents/${communityId}?tab=Current`;
+    page = await newPage();
+    await ensureLoggedIn(page, listUrl);
+    const current = await listCurrentResidents(page, listUrl);
+    emit('progress', { message: `Found ${current.length} current residents${dryRun ? ' (DRY RUN — nothing will be submitted)' : ''}.` });
+
+    for (const r of residents) {
+      setItemStatus(jobId, r.name, 'running');
+      emit('item_start', { name: r.name });
+      try {
+        const matches = current.filter((c) => c.key === nameKey(r.name));
+        if (matches.length === 0) throw new Error('Not on the Current Residents tab (already moved out, or name differs)');
+        if (matches.length > 1) throw new Error(`Name matches ${matches.length} current residents (rooms ${matches.map((m) => m.room).join(', ')}) — not guessing`);
+
+        const details = {};
+        for (const [k, [key]] of Object.entries(FIELDS)) details[k] = r[key] || payload[key];
+
+        const result = await moveOutResident(page, companyHost, matches[0], details, { dryRun });
+        if (result.status === 'moved-out') {
+          moved++;
+          setItemStatus(jobId, r.name, 'success', null, { outcome: 'moved-out', detail: result.summary });
+          emit('item_done', { name: r.name, status: 'moved-out', detail: result.summary });
+        } else if (result.status === 'dry-run') {
+          dry++;
+          setItemStatus(jobId, r.name, 'success', null, { outcome: 'dry-run', detail: result.summary });
+          emit('item_done', { name: r.name, status: 'dry-run', detail: result.summary });
+        } else {
+          throw new Error(result.summary);
+        }
+      } catch (err) {
+        const shot = `error_moveout_${jobId}_${r.name.replace(/[^a-z0-9]/gi, '_')}.png`;
+        await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+        failed++;
+        setItemStatus(jobId, r.name, 'failed', err.message);
+        emit('item_fail', { name: r.name, error: err.message });
+      }
+    }
+  } catch (err) {
+    setJobStatus(jobId, 'failed', `Could not load Current Residents: ${err.message}`);
+    emit('job_error', { error: `Could not load Current Residents: ${err.message}` });
+    await page?.context().close().catch(() => {});
+    return;
+  }
+
+  await page.context().close().catch(() => {});
+  setJobStatus(jobId, 'done');
+  emit('job_done', { jobId, company: companyName, total: names.length, movedOut: moved, dryRun: dry, failed });
+}
+
 function runCareItemAssistanceLevelJob(jobId, payload) {
   return runCareItemFieldJob(jobId, payload, {
     fieldName: 'Assistance Level',
@@ -622,6 +723,7 @@ module.exports = {
   runSyncGLAccountsJob,
   runSyncResidentSettingsJob,
   runKpiExportJob,
+  runResidentMoveOutJob,
   runCareItemAssistanceLevelJob,
   runCareItemReportingLabelJob,
 };

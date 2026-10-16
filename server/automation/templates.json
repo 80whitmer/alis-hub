@@ -884,6 +884,117 @@
         },
         "required": ["companyName", "companyHost"]
       }
+    },
+    {
+      "id": "resident-move-out",
+      "name": "Bulk Resident Move-Out",
+      "icon": "🚪",
+      "category": "settings",
+      "timeout": 7200000,
+      "description": "Moves out a list of residents from one community by driving ALIS's Move Out pane (profile → Move Out), for bulk move-outs the importer can't action. Sets Physical Move Out Date/Time, Reason, Destination and Financial Move Out Date, ticks all three Confirm Impact boxes, and confirms. Residents are matched by \"Last, First\" against the live Current Residents tab; unmatched or ambiguous names fail their own row without touching ALIS. Runs one resident at a time. ALWAYS start with Dry run ON for a couple of residents — it fills and verifies the form but never clicks Confirm.",
+      "inputSchema": {
+        "type": "object",
+        "title": "Bulk Resident Move-Out",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": [
+              "Leisure Care LLC"
+            ]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "e.g. \"bslc\" for bslc.alisonline.com",
+            "examples": [
+              "bslc"
+            ]
+          },
+          "communityId": {
+            "type": "string",
+            "title": "ALIS Community ID",
+            "description": "The number in /Residents/{id}?tab=Current",
+            "examples": [
+              "214"
+            ]
+          },
+          "dryRun": {
+            "type": "boolean",
+            "title": "Dry run (fill & verify, do NOT confirm)",
+            "default": true
+          },
+          "physicalMoveOutDate": {
+            "type": "string",
+            "title": "Physical Move Out Date",
+            "description": "MM/DD/YYYY",
+            "examples": [
+              "09/30/2026"
+            ]
+          },
+          "physicalMoveOutTime": {
+            "type": "string",
+            "title": "Physical Move Out Time",
+            "examples": [
+              "4:54 PM"
+            ]
+          },
+          "moveOutReason": {
+            "type": "string",
+            "title": "Move Out Reason",
+            "description": "Must match an option in ALIS",
+            "examples": [
+              "Internal Transfer- Waitlist Apartment Availability"
+            ]
+          },
+          "moveOutDestination": {
+            "type": "string",
+            "title": "Move Out Destination",
+            "examples": [
+              "Sister Community"
+            ]
+          },
+          "financialMoveOutDate": {
+            "type": "string",
+            "title": "Financial Move Out Date",
+            "description": "MM/DD/YYYY",
+            "examples": [
+              "09/30/2026"
+            ]
+          },
+          "residents": {
+            "type": "array",
+            "title": "Residents",
+            "description": "Who to move out, as \"Last, First\". Any row may override the job-level values (physicalMoveOutDate, physicalMoveOutTime, moveOutReason, moveOutDestination, financialMoveOutDate).",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Resident (Last, First)",
+                  "examples": [
+                    "Canning, Linda"
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "companyHost",
+          "communityId",
+          "residents",
+          "physicalMoveOutDate",
+          "physicalMoveOutTime",
+          "moveOutReason",
+          "moveOutDestination",
+          "financialMoveOutDate"
+        ]
+      }
     }
   ]
 }

@@ -126,7 +126,11 @@ router.post('/create', (req, res) => {
     // Determine item count and extract items array (varies by template)
     let itemCount = 1;
     let itemsToTrack = [];
-    if (templateId === 'care-item-assistance-level' || templateId === 'care-item-reporting-label') {
+    if (templateId === 'resident-move-out') {
+      // One row per resident; the job syncs them itself once it validates the payload.
+      itemCount = (payload.residents || []).length;
+      itemsToTrack = (payload.residents || []).filter((r) => r?.name);
+    } else if (templateId === 'care-item-assistance-level' || templateId === 'care-item-reporting-label') {
       // This template's real unit of work is communities × items (one row
       // per care item PER community), resolved inside the job itself
       // (which may auto-discover communities from the host, so even a
