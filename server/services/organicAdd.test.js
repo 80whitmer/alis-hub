@@ -6,7 +6,7 @@ function good() {
   return {
     schema_version: 1,
     form_url: 'https://medtelligent.atlassian.net/jira/core/projects/ODM/form/432',
-    companyUrl: 'https://admin.alisonline.com/Customers/Companies/1234',
+    companyUrl: 'thecottages.alisonline.com',
     community: { name: 'Test Place', crm_id: '555', licensed_capacity: '50', physical_capacity: '48', street: '1 Main', city: 'Provo', state: 'UT', zip: '84601' },
     fields: {
       summary: 'Organic Add - Test Place',
@@ -44,13 +44,23 @@ test('rejects malformed JSON, bad version, missing keys', () => {
   assert.match(validateOrganicAddPayload(m).errors[0], /Missing key: flags/);
 });
 
-test('companyUrl is optional and unvalidated ([ID NEEDED] does not reject)', () => {
-  const a = good(); a.companyUrl = 'https://admin.alisonline.com/Customers/Companies/[ID NEEDED]';
-  assert.equal(validateOrganicAddPayload(a).ok, true);
+test('companyUrl: real value is format-checked; missing or [ID NEEDED] needs a human entry', () => {
+  const a = good(); a.companyUrl = '[ID NEEDED]';
+  const ra = validateOrganicAddPayload(a);
+  assert.equal(ra.ok, true);
+  assert.equal(ra.review.formFields[1].needsUrl, true);
   const b = good(); delete b.companyUrl;
-  const r = validateOrganicAddPayload(b);
-  assert.equal(r.ok, true);
-  assert.equal(r.review.formFields[1].enterOnForm, true);
+  assert.equal(validateOrganicAddPayload(b).review.formFields[1].needsUrl, true);
+  for (const bad of ['https://admin.alisonline.com/Customers/Companies/12', 'viva.example.com', 'admin.alisonline.com', 'viva.alisonline.com/foo']) {
+    const c = good(); c.companyUrl = bad;
+    assert.equal(validateOrganicAddPayload(c).ok, false, bad);
+  }
+  for (const okUrl of ['viva.alisonline.com', 'https://thecottages.alisonline.com', 'thecottages.alisonline.com/']) {
+    const d = good(); d.companyUrl = okUrl;
+    const r = validateOrganicAddPayload(d);
+    assert.equal(r.ok, true, okUrl);
+    assert.equal(r.review.formFields[1].needsUrl, false);
+  }
 });
 
 test('date rules: real dates, non-null completion, completion <= go-live', () => {

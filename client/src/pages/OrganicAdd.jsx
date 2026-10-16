@@ -49,6 +49,7 @@ export default function OrganicAdd() {
   const [dupChecked, setDupChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dateError, setDateError] = useState('');
+  const [urlError, setUrlError] = useState('');
 
   async function validate(payloadOrText) {
     setBusy(true);
@@ -98,12 +99,27 @@ export default function OrganicAdd() {
     await validate(next);
   }
 
+  // Human-supplied ALIS company URL (payload's was missing/[ID NEEDED]).
+  // Format-checked here, same rule as the server, so a half-typed value
+  // doesn't blank the review.
+  async function pickUrl(value) {
+    if (!value) { setUrlError(''); return; }
+    if (!/^(https:\/\/)?(?!(admin|api|www)\.)[a-z0-9][a-z0-9-]*\.alisonline\.com\/?$/i.test(value)) {
+      setUrlError('Expected the client ALIS domain, e.g. viva.alisonline.com');
+      return;
+    }
+    setUrlError('');
+    const next = { ...parsed, companyUrl: value };
+    setParsed(next);
+    await validate(next);
+  }
+
   const review = result?.ok ? result.review : null;
   const crmId = review?.community?.crm_id;
 
   const pendingPicks = review ? Object.values(review.dropdowns).filter((d) => d.needsPick).length : 0;
   const pendingUnresolved = review ? review.unresolved.filter((_, i) => !ack[i]).length : 0;
-  const pendingDate = review ? review.formFields.some((f) => f.needsDate) : false;
+  const pendingDate = review ? review.formFields.some((f) => f.needsDate || f.needsUrl) : false;
   const canOpen = review && pendingPicks === 0 && !pendingDate && pendingUnresolved === 0 && dupChecked;
 
   const dupUrl = useMemo(() => {
@@ -122,7 +138,20 @@ export default function OrganicAdd() {
         </span>
       );
     }
-    if (f.enterOnForm) return <em className="text-neutral-500">Not in payload — enter on the form</em>;
+    if (f.needsUrl) {
+      return (
+        <span>
+          <input
+            type="text"
+            className="border border-neutral-300 rounded px-2 py-1 w-full"
+            placeholder="client.alisonline.com"
+            onChange={(e) => pickUrl(e.target.value.trim())}
+          />
+          <em className="text-red-600 text-xs">Required — enter the client&apos;s ALIS domain</em>
+          {urlError && <div className="text-red-600 text-xs mt-1">{urlError}</div>}
+        </span>
+      );
+    }
     if (f.dropdownKey) {
       const d = review.dropdowns[f.dropdownKey];
       return d.needsPick ? <em className="text-red-600">Not chosen yet</em> : d.value.join(', ');

@@ -10,6 +10,11 @@ const options = require('../config/organicAddOptions.json');
  * fuzzy). A null dropdown value means a human has to choose — the review
  * carries the real option list so the UI can offer the picker.
  */
+// The form's "ALIS Company URL" is the client's own ALIS domain, e.g.
+// viva.alisonline.com or https://thecottages.alisonline.com (scheme optional,
+// no path). admin./api. are ALIS's own hosts, never a client domain.
+const COMPANY_URL_RE = /^(https:\/\/)?(?!(admin|api|www)\.)[a-z0-9][a-z0-9-]*\.alisonline\.com\/?$/i;
+
 const REQUIRED_TOP = ['schema_version', 'form_url', 'community', 'fields', 'flags', 'unresolved'];
 const REQUIRED_COMMUNITY = ['name', 'crm_id', 'licensed_capacity', 'physical_capacity', 'street', 'city', 'state', 'zip'];
 const STRING_FIELDS = [
@@ -52,9 +57,13 @@ function validateOrganicAddPayload(input) {
   for (const k of REQUIRED_TOP) if (!(k in p)) errors.push(`Missing key: ${k}`);
   if (errors.length) return { ok: false, errors, review: null };
 
-  // companyUrl (the ALIS admin company link) is optional and unvalidated — it
-  // was a hangover from another process. If present it is shown as-is.
-  if (p.companyUrl != null && typeof p.companyUrl !== 'string') errors.push('companyUrl must be a string when present');
+  // companyUrl feeds the form's required "ALIS Company URL" field. Missing or
+  // a placeholder = the human supplies it on the review screen; any real
+  // value must be a client ALIS domain.
+  const companyUrlNeeded = !p.companyUrl || (typeof p.companyUrl === 'string' && /\[ID NEEDED\]|\bTBD\b/i.test(p.companyUrl));
+  if (!companyUrlNeeded && (typeof p.companyUrl !== 'string' || !COMPANY_URL_RE.test(p.companyUrl.trim()))) {
+    errors.push(`companyUrl must be the client's ALIS domain like viva.alisonline.com (got ${JSON.stringify(p.companyUrl)})`);
+  }
   if (!p.community || typeof p.community !== 'object') errors.push('community must be an object');
   else for (const k of REQUIRED_COMMUNITY) {
     if (typeof p.community[k] !== 'string') errors.push(`community.${k} must be a string`);
@@ -117,7 +126,7 @@ function validateOrganicAddPayload(input) {
       // Order matches the form top to bottom.
       formFields: [
         { label: 'Summary', value: f.summary, kind: 'text' },
-        { label: 'ALIS Company URL', value: p.companyUrl || '', kind: 'text', enterOnForm: !p.companyUrl },
+        { label: 'ALIS Company URL', value: companyUrlNeeded ? null : p.companyUrl, kind: 'text', needsUrl: companyUrlNeeded },
         { label: 'Project Request', value: f.project_request, kind: 'dropdown' },
         { label: 'What is Needed?', dropdownKey: 'what_is_needed', kind: 'dropdown' },
         { label: 'Acquisition or new building?', value: f.acquisition_or_new_building, kind: 'text' },
@@ -140,4 +149,4 @@ function validateOrganicAddPayload(input) {
   };
 }
 
-module.exports = { validateOrganicAddPayload, isRealIsoDate };
+module.exports = { validateOrganicAddPayload, isRealIsoDate, COMPANY_URL_RE };
