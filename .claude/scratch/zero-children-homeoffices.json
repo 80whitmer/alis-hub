@@ -1,0 +1,677 @@
+[
+  {
+    "id": "10519583556",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2023-01-02T21:46:16.371Z",
+      "hs_lastmodifieddate": "2026-07-23T21:25:54.179Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "10519583556",
+      "name": "Poinciana Gardens Senior Living Key West"
+    },
+    "createdAt": "2023-01-02T21:46:16.371Z",
+    "updatedAt": "2026-07-23T21:25:54.179Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/10519583556"
+  },
+  {
+    "id": "10519639934",
+    "properties": {
+      "account_manager": "49052011",
+      "createdate": "2023-01-02T21:46:16.397Z",
+      "hs_lastmodifieddate": "2026-07-18T00:41:18.430Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "10519639934",
+      "name": "Red Oak Estates"
+    },
+    "createdAt": "2023-01-02T21:46:16.397Z",
+    "updatedAt": "2026-07-18T00:41:18.430Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/10519639934"
+  },
+  {
+    "id": "10519612038",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2023-01-02T22:24:47.081Z",
+      "hs_lastmodifieddate": "2026-09-24T18:24:39.217Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "10519612038",
+      "name": "12 Oaks Senior Living"
+    },
+    "createdAt": "2023-01-02T22:24:47.081Z",
+    "updatedAt": "2026-09-24T18:24:39.217Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/10519612038"
+  },
+  {
+    "id": "10519724984",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2023-01-02T22:24:47.083Z",
+      "hs_lastmodifieddate": "2026-09-24T18:12:35.564Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "10519724984",
+      "name": "Juniper Communities"
+    },
+    "createdAt": "2023-01-02T22:24:47.083Z",
+    "updatedAt": "2026-09-24T18:12:35.564Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/10519724984"
+  },
+  {
+    "id": "33123937951",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2023-01-03T01:07:49.077Z",
+      "hs_lastmodifieddate": "2026-09-25T21:20:11.024Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "33123937951",
+      "name": "ALIS"
+    },
+    "createdAt": "2023-01-03T01:07:49.077Z",
+    "updatedAt": "2026-09-25T21:20:11.024Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/33123937951"
+  },
+  {
+    "id": "15344134205",
+    "properties": {
+      "account_manager": "49052011",
+      "createdate": "2023-03-30T20:28:04.057Z",
+      "hs_lastmodifieddate": "2026-07-10T07:21:44.584Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "15344134205",
+      "name": "The Cottages Senior Living"
+    },
+    "createdAt": "2023-03-30T20:28:04.057Z",
+    "updatedAt": "2026-07-10T07:21:44.584Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/15344134205"
+  },
+  {
+    "id": "15344070448",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2023-03-30T20:28:04.058Z",
+      "hs_lastmodifieddate": "2026-07-17T10:45:29.835Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "15344070448",
+      "name": "Twin Cedar"
+    },
+    "createdAt": "2023-03-30T20:28:04.058Z",
+    "updatedAt": "2026-07-17T10:45:29.835Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/15344070448"
+  },
+  {
+    "id": "15344060204",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2023-03-30T20:28:04.059Z",
+      "hs_lastmodifieddate": "2026-07-16T19:58:54.923Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "15344060204",
+      "name": "Woodcrest Care"
+    },
+    "createdAt": "2023-03-30T20:28:04.059Z",
+    "updatedAt": "2026-07-16T19:58:54.923Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/15344060204"
+  },
+  {
+    "id": "15498791181",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2023-04-18T20:29:19.318Z",
+      "hs_lastmodifieddate": "2026-09-23T22:08:24.663Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "15498791181",
+      "name": "Discovery Senior Living"
+    },
+    "createdAt": "2023-04-18T20:29:19.318Z",
+    "updatedAt": "2026-09-23T22:08:24.663Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/15498791181"
+  },
+  {
+    "id": "15638430878",
+    "properties": {
+      "account_manager": "49052011",
+      "createdate": "2023-05-02T19:02:02.206Z",
+      "hs_lastmodifieddate": "2026-07-18T03:54:23.185Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "15638430878",
+      "name": "The Artesian of Ojai"
+    },
+    "createdAt": "2023-05-02T19:02:02.206Z",
+    "updatedAt": "2026-07-18T03:54:23.185Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/15638430878"
+  },
+  {
+    "id": "17473291667",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2023-09-26T15:14:20.337Z",
+      "hs_lastmodifieddate": "2026-07-16T20:28:10.560Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "17473291667",
+      "name": "Spring Village at Summerhill"
+    },
+    "createdAt": "2023-09-26T15:14:20.337Z",
+    "updatedAt": "2026-07-16T20:28:10.560Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/17473291667"
+  },
+  {
+    "id": "18979841159",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2024-02-05T17:22:15.560Z",
+      "hs_lastmodifieddate": "2026-08-12T14:11:10.821Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "18979841159",
+      "name": "Spring Village Dover"
+    },
+    "createdAt": "2024-02-05T17:22:15.560Z",
+    "updatedAt": "2026-08-12T14:11:10.821Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/18979841159"
+  },
+  {
+    "id": "19685970734",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2024-03-25T20:08:32.817Z",
+      "hs_lastmodifieddate": "2026-07-07T06:06:02.480Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "19685970734",
+      "name": "Silver Linings"
+    },
+    "createdAt": "2024-03-25T20:08:32.817Z",
+    "updatedAt": "2026-07-07T06:06:02.480Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/19685970734"
+  },
+  {
+    "id": "20601236637",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2024-05-02T21:22:45.299Z",
+      "hs_lastmodifieddate": "2026-07-17T09:40:13.846Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "20601236637",
+      "name": "Rose Anna Hughes Home"
+    },
+    "createdAt": "2024-05-02T21:22:45.299Z",
+    "updatedAt": "2026-07-17T09:40:13.846Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/20601236637"
+  },
+  {
+    "id": "20601347931",
+    "properties": {
+      "account_manager": "",
+      "createdate": "2024-05-02T21:25:15.638Z",
+      "hs_lastmodifieddate": "2026-07-17T08:43:13.388Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "20601347931",
+      "name": "Cedar Creek Assisted Living"
+    },
+    "createdAt": "2024-05-02T21:25:15.638Z",
+    "updatedAt": "2026-07-17T08:43:13.388Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/20601347931"
+  },
+  {
+    "id": "21401945404",
+    "properties": {
+      "account_manager": "",
+      "createdate": "2024-06-12T20:08:54.413Z",
+      "hs_lastmodifieddate": "2026-09-22T20:29:02.577Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "21401945404",
+      "name": "King's Bridge Assisted Living"
+    },
+    "createdAt": "2024-06-12T20:08:54.413Z",
+    "updatedAt": "2026-09-22T20:29:02.577Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/21401945404"
+  },
+  {
+    "id": "57348008468",
+    "properties": {
+      "account_manager": "49052011",
+      "createdate": "2024-08-16T14:58:13.868Z",
+      "hs_lastmodifieddate": "2026-09-25T18:44:27.762Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57348008468",
+      "name": "Western States Lodging"
+    },
+    "createdAt": "2024-08-16T14:58:13.868Z",
+    "updatedAt": "2026-09-25T18:44:27.762Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57348008468"
+  },
+  {
+    "id": "23898690084",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2024-10-16T21:47:52.868Z",
+      "hs_lastmodifieddate": "2026-09-15T04:30:13.500Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "23898690084",
+      "name": "Hickory Senior Living"
+    },
+    "createdAt": "2024-10-16T21:47:52.868Z",
+    "updatedAt": "2026-09-15T04:30:13.500Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/23898690084"
+  },
+  {
+    "id": "25306586145",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2024-10-31T13:41:43.713Z",
+      "hs_lastmodifieddate": "2026-09-22T12:06:46.344Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "25306586145",
+      "name": "Wesley SecureCare"
+    },
+    "createdAt": "2024-10-31T13:41:43.713Z",
+    "updatedAt": "2026-09-22T12:06:46.344Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/25306586145"
+  },
+  {
+    "id": "27593194526",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2024-12-23T20:00:01.149Z",
+      "hs_lastmodifieddate": "2026-07-16T18:45:05.462Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "27593194526",
+      "name": "River Valley"
+    },
+    "createdAt": "2024-12-23T20:00:01.149Z",
+    "updatedAt": "2026-07-16T18:45:05.462Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/27593194526"
+  },
+  {
+    "id": "32698866054",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2025-04-28T21:15:54.998Z",
+      "hs_lastmodifieddate": "2026-07-16T16:17:13.246Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "32698866054",
+      "name": "The Madison Assisted Living, Inc"
+    },
+    "createdAt": "2025-04-28T21:15:54.998Z",
+    "updatedAt": "2026-07-16T16:17:13.246Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/32698866054"
+  },
+  {
+    "id": "32807387770",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2025-04-29T16:34:17.595Z",
+      "hs_lastmodifieddate": "2026-08-19T05:51:40.415Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "32807387770",
+      "name": "The Family Tree Assisted Living"
+    },
+    "createdAt": "2025-04-29T16:34:17.595Z",
+    "updatedAt": "2026-08-19T05:51:40.415Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/32807387770"
+  },
+  {
+    "id": "33606224993",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2025-05-16T21:03:09.138Z",
+      "hs_lastmodifieddate": "2026-08-26T16:09:34.974Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "33606224993",
+      "name": "Kirkwood by the River"
+    },
+    "createdAt": "2025-05-16T21:03:09.138Z",
+    "updatedAt": "2026-08-26T16:09:34.974Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/33606224993"
+  },
+  {
+    "id": "34372761391",
+    "properties": {
+      "account_manager": "474571664",
+      "createdate": "2025-05-29T22:10:54.655Z",
+      "hs_lastmodifieddate": "2026-07-17T19:04:13.847Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "34372761391",
+      "name": "Horizon Independent Living Home Office"
+    },
+    "createdAt": "2025-05-29T22:10:54.655Z",
+    "updatedAt": "2026-07-17T19:04:13.847Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/34372761391"
+  },
+  {
+    "id": "34879063924",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2025-06-09T15:37:51.987Z",
+      "hs_lastmodifieddate": "2026-07-17T10:58:55.955Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "34879063924",
+      "name": "Elder Outreach"
+    },
+    "createdAt": "2025-06-09T15:37:51.987Z",
+    "updatedAt": "2026-07-17T10:58:55.955Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/34879063924"
+  },
+  {
+    "id": "38389418925",
+    "properties": {
+      "account_manager": "77259229",
+      "createdate": "2025-08-20T16:22:12.631Z",
+      "hs_lastmodifieddate": "2026-07-16T22:33:10.700Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "38389418925",
+      "name": "Amazing Grace Care LLC"
+    },
+    "createdAt": "2025-08-20T16:22:12.631Z",
+    "updatedAt": "2026-07-16T22:33:10.700Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/38389418925"
+  },
+  {
+    "id": "38962502181",
+    "properties": {
+      "account_manager": "2558500",
+      "createdate": "2025-09-01T16:28:11.265Z",
+      "hs_lastmodifieddate": "2026-07-17T22:09:28.381Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "38962502181",
+      "name": "LighthouseRAL, Inc."
+    },
+    "createdAt": "2025-09-01T16:28:11.265Z",
+    "updatedAt": "2026-07-17T22:09:28.381Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/38962502181"
+  },
+  {
+    "id": "39482281796",
+    "properties": {
+      "account_manager": "49052011",
+      "createdate": "2025-09-15T18:05:32.908Z",
+      "hs_lastmodifieddate": "2026-07-18T00:57:46.932Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "39482281796",
+      "name": "Havenly"
+    },
+    "createdAt": "2025-09-15T18:05:32.908Z",
+    "updatedAt": "2026-07-18T00:57:46.932Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/39482281796"
+  },
+  {
+    "id": "40587156387",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2025-09-30T17:26:58.037Z",
+      "hs_lastmodifieddate": "2026-07-16T15:06:42.699Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "40587156387",
+      "name": "12 Oaks Senior Living"
+    },
+    "createdAt": "2025-09-30T17:26:58.037Z",
+    "updatedAt": "2026-07-16T15:06:42.699Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/40587156387"
+  },
+  {
+    "id": "44785879048",
+    "properties": {
+      "account_manager": "280699315",
+      "createdate": "2025-11-17T16:39:46.071Z",
+      "hs_lastmodifieddate": "2026-09-17T23:24:35.647Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "44785879048",
+      "name": "Elan Capital"
+    },
+    "createdAt": "2025-11-17T16:39:46.071Z",
+    "updatedAt": "2026-09-17T23:24:35.647Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/44785879048"
+  },
+  {
+    "id": "46562938904",
+    "properties": {
+      "account_manager": "2558500",
+      "createdate": "2025-12-03T21:01:40.514Z",
+      "hs_lastmodifieddate": "2026-07-17T23:22:33.771Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "46562938904",
+      "name": "V Smith Healthcare LLC"
+    },
+    "createdAt": "2025-12-03T21:01:40.514Z",
+    "updatedAt": "2026-07-17T23:22:33.771Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/46562938904"
+  },
+  {
+    "id": "49349430062",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-01-19T20:30:17.332Z",
+      "hs_lastmodifieddate": "2026-08-26T18:12:30.445Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "49349430062",
+      "name": "Wheatlands Health Care Center"
+    },
+    "createdAt": "2026-01-19T20:30:17.332Z",
+    "updatedAt": "2026-08-26T18:12:30.445Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/49349430062"
+  },
+  {
+    "id": "52910887587",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-03-12T17:54:07.402Z",
+      "hs_lastmodifieddate": "2026-07-24T14:16:36.406Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "52910887587",
+      "name": "AbiliT Holdings (Manning) LLC dba Manning"
+    },
+    "createdAt": "2026-03-12T17:54:07.402Z",
+    "updatedAt": "2026-07-24T14:16:36.406Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/52910887587"
+  },
+  {
+    "id": "53161212456",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-03-23T19:27:18.727Z",
+      "hs_lastmodifieddate": "2026-09-18T18:48:26.748Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "53161212456",
+      "name": "1019 Senior Living"
+    },
+    "createdAt": "2026-03-23T19:27:18.727Z",
+    "updatedAt": "2026-09-18T18:48:26.748Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/53161212456"
+  },
+  {
+    "id": "54646459819",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-04-30T21:37:08.625Z",
+      "hs_lastmodifieddate": "2026-09-03T04:07:05.298Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "54646459819",
+      "name": "Shepherd's Inn"
+    },
+    "createdAt": "2026-04-30T21:37:08.625Z",
+    "updatedAt": "2026-09-03T04:07:05.298Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/54646459819"
+  },
+  {
+    "id": "55476913195",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-06-05T22:00:24.313Z",
+      "hs_lastmodifieddate": "2026-09-03T17:28:15.202Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "55476913195",
+      "name": "Riverstone Senior Living at Danville"
+    },
+    "createdAt": "2026-06-05T22:00:24.313Z",
+    "updatedAt": "2026-09-03T17:28:15.202Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/55476913195"
+  },
+  {
+    "id": "55866420094",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-06-22T20:40:12.094Z",
+      "hs_lastmodifieddate": "2026-06-25T17:18:34.957Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "55866420094",
+      "name": "Aspen Leaf Assisted Living"
+    },
+    "createdAt": "2026-06-22T20:40:12.094Z",
+    "updatedAt": "2026-06-25T17:18:34.957Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/55866420094"
+  },
+  {
+    "id": "56767892062",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-07-20T17:56:43.868Z",
+      "hs_lastmodifieddate": "2026-09-09T18:29:24.930Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "56767892062",
+      "name": "Redwood Family Care Network"
+    },
+    "createdAt": "2026-07-20T17:56:43.868Z",
+    "updatedAt": "2026-09-09T18:29:24.930Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/56767892062"
+  },
+  {
+    "id": "57804911749",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-08-27T20:20:43.376Z",
+      "hs_lastmodifieddate": "2026-08-31T13:45:36.533Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57804911749",
+      "name": "Paintbrush"
+    },
+    "createdAt": "2026-08-27T20:20:43.376Z",
+    "updatedAt": "2026-08-31T13:45:36.533Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57804911749"
+  },
+  {
+    "id": "57790038861",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-08-27T20:20:43.582Z",
+      "hs_lastmodifieddate": "2026-08-31T13:45:28.693Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57790038861",
+      "name": "Palm Beach Memory Care"
+    },
+    "createdAt": "2026-08-27T20:20:43.582Z",
+    "updatedAt": "2026-08-31T13:45:28.693Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57790038861"
+  },
+  {
+    "id": "57791437118",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-08-27T20:20:43.583Z",
+      "hs_lastmodifieddate": "2026-08-31T13:46:12.646Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57791437118",
+      "name": "The Legacy at Highwoods Preserve"
+    },
+    "createdAt": "2026-08-27T20:20:43.583Z",
+    "updatedAt": "2026-08-31T13:46:12.646Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57791437118"
+  },
+  {
+    "id": "57815132543",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-08-27T20:20:43.583Z",
+      "hs_lastmodifieddate": "2026-08-31T13:45:32.673Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57815132543",
+      "name": "Park Place Camarillo"
+    },
+    "createdAt": "2026-08-27T20:20:43.583Z",
+    "updatedAt": "2026-08-31T13:45:32.673Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57815132543"
+  },
+  {
+    "id": "57830867222",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-08-27T20:20:43.587Z",
+      "hs_lastmodifieddate": "2026-08-31T13:46:31.598Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57830867222",
+      "name": "Kokoro Assisted Living"
+    },
+    "createdAt": "2026-08-27T20:20:43.587Z",
+    "updatedAt": "2026-08-31T13:46:31.598Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57830867222"
+  },
+  {
+    "id": "57814964616",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-08-27T20:20:43.867Z",
+      "hs_lastmodifieddate": "2026-08-31T13:46:14.239Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "57814964616",
+      "name": "Tequesta Terrace"
+    },
+    "createdAt": "2026-08-27T20:20:43.867Z",
+    "updatedAt": "2026-08-31T13:46:14.239Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/57814964616"
+  },
+  {
+    "id": "58511109683",
+    "properties": {
+      "account_manager": null,
+      "createdate": "2026-09-21T23:40:04.957Z",
+      "hs_lastmodifieddate": "2026-09-22T00:20:45.905Z",
+      "hs_num_child_companies": "0",
+      "hs_object_id": "58511109683",
+      "name": "Catalina Foothills Adult Care"
+    },
+    "createdAt": "2026-09-21T23:40:04.957Z",
+    "updatedAt": "2026-09-22T00:20:45.905Z",
+    "archived": false,
+    "url": "https://app.hubspot.com/contacts/5340932/record/0-2/58511109683"
+  }
+]

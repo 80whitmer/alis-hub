@@ -1,0 +1,282 @@
+<title>ALIS Hub Setup</title>
+<meta name="description" content="A friendly, step-by-step guide to installing and configuring the shared ALIS Hub dashboards on Windows or Mac.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --orange: rgb(241,96,34);
+    --orange-dark: rgb(206,74,13);
+    --orange-tint: rgb(253,245,239);
+    --ink: rgb(45,48,57);
+    --ink-soft: rgb(92,100,119);
+    --line: rgb(221,225,232);
+    --paper: rgb(255,255,255);
+    --canvas: rgb(249,250,251);
+    --success: rgb(40,143,78);
+    --success-tint: rgb(242,252,245);
+    --info-tint: rgb(239,248,255);
+    --info: rgb(38,116,217);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: rgb(236,239,243);
+      --ink-soft: rgb(177,185,200);
+      --line: rgb(74,98,131);
+      --paper: rgb(31,34,43);
+      --canvas: rgb(22,24,31);
+      --orange-tint: rgb(68,40,27);
+      --success-tint: rgb(24,58,38);
+      --info-tint: rgb(31,59,111);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: rgb(236,239,243);
+    --ink-soft: rgb(177,185,200);
+    --line: rgb(74,98,131);
+    --paper: rgb(31,34,43);
+    --canvas: rgb(22,24,31);
+    --orange-tint: rgb(68,40,27);
+    --success-tint: rgb(24,58,38);
+    --info-tint: rgb(31,59,111);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    line-height: 1.55;
+    margin: 0;
+    padding-block: 40px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding-inline: 20px; }
+
+  h1, h2, h3 { font-family: "Figtree", "Inter", Arial, sans-serif; color: var(--ink); text-wrap: balance; }
+  h1 { font-size: 30px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 0 0 12px; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+  p { margin: 0 0 12px; }
+  a { color: var(--orange-dark); }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--orange-dark);
+    background: var(--orange-tint);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  header.hero { margin-bottom: 24px; }
+  header.hero .sub { color: var(--ink-soft); font-size: 15px; }
+
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 20px;
+  }
+
+  .checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .checklist li { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; }
+  .checklist .dot {
+    flex: none; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--success-tint); color: var(--success);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; margin-top: 1px;
+  }
+
+  .step { display: flex; gap: 18px; }
+  .step + .step { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+  .num {
+    flex: none; width: 34px; height: 34px; border-radius: 10px;
+    background: var(--orange); color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Figtree", sans-serif; font-weight: 700; font-size: 15px;
+  }
+  .step-body { flex: 1; min-width: 0; }
+  .step-body p:last-child { margin-bottom: 0; }
+
+  .note {
+    background: var(--info-tint); border-left: 3px solid var(--info);
+    border-radius: 0 10px 10px 0; padding: 10px 14px; font-size: 13.5px; color: var(--ink);
+    margin-top: 10px;
+  }
+  .note.warn { background: var(--orange-tint); border-left-color: var(--orange); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-soft); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
+  code {
+    background: var(--canvas); border: 1px solid var(--line); border-radius: 5px;
+    padding: 1px 6px; font-family: Consolas, "SFMono-Regular", Menlo, monospace; font-size: 12.5px;
+  }
+
+  /* OS switch */
+  .os-switch {
+    position: sticky; top: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    display: flex; gap: 6px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+    padding: 5px; margin-bottom: 24px;
+  }
+  .os-switch button {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
+    font: inherit; font-family: "Figtree", sans-serif; font-weight: 600; font-size: 13.5px;
+    color: var(--ink-soft); background: transparent; border: none; border-radius: 8px;
+    padding: 9px 10px; cursor: pointer;
+  }
+  .os-switch button[aria-pressed="true"] { background: var(--orange); color: white; }
+  .os-switch svg { width: 15px; height: 15px; flex: none; }
+
+  [data-os] { display: none; }
+  body[data-active-os="win"] [data-os="win"] { display: block; }
+  body[data-active-os="mac"] [data-os="mac"] { display: block; }
+  body[data-active-os="win"] span[data-os="win"],
+  body[data-active-os="mac"] span[data-os="mac"] { display: inline; }
+
+  footer { text-align: center; color: var(--ink-soft); font-size: 13px; margin-top: 36px; }
+</style>
+
+<body data-active-os="win">
+<div class="wrap">
+
+  <div class="os-switch" role="tablist" aria-label="Choose your computer">
+    <button id="btn-win" role="tab" aria-pressed="true" onclick="setOS('win')">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.3 4.4v7H3zm0 13-.1-7h7.4v8.1zM11.3 4.3 21 3v8.4H11.3zm0 8.5H21V21l-9.7-1.3z"/></svg>
+      Windows
+    </button>
+    <button id="btn-mac" role="tab" aria-pressed="false" onclick="setOS('mac')">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.05 12.5c-.03-2.6 2.13-3.85 2.23-3.92-1.22-1.78-3.11-2.02-3.78-2.05-1.61-.16-3.14.95-3.96.95-.82 0-2.08-.93-3.42-.9-1.76.03-3.39 1.02-4.29 2.6-1.83 3.17-.47 7.86 1.31 10.43.87 1.26 1.92 2.67 3.29 2.62 1.32-.05 1.82-.85 3.42-.85s2.05.85 3.44.83c1.42-.03 2.32-1.29 3.19-2.55.72-1.07 1.02-1.79 1.59-3.1-4.19-1.6-3.98-4.71-4.02-6.06zM14.6 4.7C15.33 3.83 15.83 2.6 15.69 1.4c-1.05.04-2.32.7-3.07 1.57-.68.77-1.28 2.01-1.12 3.2 1.16.09 2.35-.6 3.1-1.47z"/></svg>
+      Mac
+    </button>
+  </div>
+
+  <header class="hero">
+    <span class="eyebrow">ALIS Hub · Share Edition</span>
+    <h1>Getting Started with ALIS Hub</h1>
+    <p class="sub">This will get the Account Health and Team AM dashboards running on your computer. About 10 minutes, most of it just waiting for a one-time install. No technical background needed — just follow along in order.</p>
+    <p class="sub">Stuck anywhere? Stop and message Aaron rather than guessing — happy to hop on a quick call.</p>
+  </header>
+
+  <div class="card">
+    <h2>Before you start</h2>
+    <ul class="checklist">
+      <li><span class="dot">1</span><span><strong>Your own ALIS login</strong> — the email/username and password you already use. This is personal to you, nothing to share.</span></li>
+      <li><span class="dot">2</span><span><strong>A HubSpot token from Aaron</strong> — ask him directly (Slack or in person, not email). You'll paste it in once during setup.</span></li>
+      <li><span class="dot">3</span><span><strong>The zip file Aaron sent you</strong> — <code>alis-hub.zip</code>. Save it somewhere you'll find it, like your Desktop or Downloads.</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Setup steps</h2>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div class="step-body">
+        <h3>Install Node.js <span style="font-weight:400;color:var(--ink-soft)">(one-time, ~2 min)</span></h3>
+        <p>This is the engine the app runs on.</p>
+        <p>Go to <a href="https://nodejs.org">nodejs.org</a>, download the button labeled <strong>LTS</strong>, and run the installer <span data-os="win">— click Next through the defaults</span><span data-os="mac">— open the .pkg and click Continue through the defaults</span>. Already have Node.js? Skip this.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="step-body">
+        <h3>Unzip the app folder</h3>
+        <div data-os="win">
+          <p>On your Desktop, create a new folder named <strong>ALIS Hub</strong> <em>(right-click an empty spot → New → Folder)</em>. Move <code>alis-hub.zip</code> into it, then right-click the zip and choose <strong>Extract All</strong> — make sure it extracts <em>into</em> that same ALIS Hub folder, not somewhere else.</p>
+          <div class="note">Keeping everything in one folder means the app's files won't end up scattered loose across your Desktop.</div>
+        </div>
+        <div data-os="mac">
+          <p>Move <code>alis-hub.zip</code> to wherever you want the app to live (Desktop is fine), then double-click it. macOS unzips it automatically into a new <strong>alis-hub</strong> folder right next to the zip — that folder is the app.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">3</div>
+      <div class="step-body">
+        <h3 data-os="win">Double-click <code>start.bat</code></h3>
+        <h3 data-os="mac">Open <code>start.command</code></h3>
+        <div data-os="win">
+          <p>Inside the ALIS Hub folder, double-click <code>start.bat</code>. A window will pop up.</p>
+        </div>
+        <div data-os="mac">
+          <p>Inside the alis-hub folder, <strong>right-click <code>start.command</code> and choose Open</strong> (just this first time — macOS blocks double-clicking a file downloaded from the internet until you approve it once). Click <strong>Open</strong> again in the popup. A Terminal window appears.</p>
+          <div class="note warn"><strong>Why right-click the first time:</strong> macOS calls this "Gatekeeper" — it flags anything not from the App Store. Opening it this one way tells your Mac to trust this file going forward; every time after this, a normal double-click works fine.</div>
+        </div>
+        <p>The first time, it will install a few things it needs <em>(can take a few minutes — text scrolling by is normal)</em>, then ask you a handful of questions one at a time, then start the app and open your browser automatically.</p>
+
+        <table>
+          <thead><tr><th>It asks for…</th><th>What to enter</th></tr></thead>
+          <tbody>
+            <tr><td>ALIS login email/username</td><td>Your normal ALIS login</td></tr>
+            <tr><td>ALIS password</td><td>Your normal ALIS password</td></tr>
+            <tr><td>HubSpot Private App Token</td><td>The token Aaron gave you</td></tr>
+            <tr><td>"Which of these is you?"</td><td>Pick your name from the numbered list it shows you</td></tr>
+          </tbody>
+        </table>
+
+        <div class="note">Not on the name list yet? Choose the last option and Aaron can tell you your HubSpot Owner ID.</div>
+
+        <p style="margin-top:14px;">You'll only answer these questions <strong>once</strong>. Every time after this, opening <code data-os="win">start.bat</code><code data-os="mac">start.command</code> just starts the app.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">4</div>
+      <div class="step-body">
+        <h3>You're in</h3>
+        <p>Your browser opens on its own to the dashboard. If it doesn't, go to <code>http://localhost:5173</code> yourself.</p>
+        <p data-os="win">A second window titled <strong>"ALIS Hub"</strong> stays open in the background — leave it running. Close it when you're done for the day to stop the app.</p>
+        <p data-os="mac">The Terminal window stays open in the background — leave it running. Close it when you're done for the day to stop the app.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Day to day</h2>
+    <ul class="checklist">
+      <li><span class="dot">↻</span><span data-os="win">Start again later: double-click <code>start.bat</code> — no questions this time.</span><span data-os="mac">Start again later: double-click <code>start.command</code> — no questions this time.</span></li>
+      <li><span class="dot">■</span><span data-os="win">Stop the app: close the "ALIS Hub" window.</span><span data-os="mac">Stop the app: close the Terminal window.</span></li>
+      <li><span class="dot">⟳</span><span>Nothing loads automatically — click <strong>Refresh</strong> on a dashboard to pull the latest data.</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>If something goes wrong</h2>
+    <div class="note warn"><strong>"Node.js doesn't seem to be installed"</strong> — go back to Step 1.</div>
+    <div class="note warn" style="margin-top:10px;" data-os="win"><strong>Nothing happens when you double-click start.bat</strong> — try right-click → Run as administrator.</div>
+    <div class="note warn" style="margin-top:10px;" data-os="mac"><strong>macOS says the file "cannot be opened" or "is from an unidentified developer"</strong> — that's Gatekeeper again. Right-click <code>start.command</code> → Open → Open, same as Step 3.</div>
+    <div class="note warn" style="margin-top:10px;"><strong>A dashboard section is empty</strong> — normal on first use, click Refresh.</div>
+    <p style="margin-top:14px;">Anything else — copy the exact message you're seeing and send it to Aaron. Screenshots help a lot.</p>
+  </div>
+
+  <footer>Welcome aboard 👋</footer>
+
+</div>
+
+<script>
+  function setOS(os) {
+    document.body.setAttribute('data-active-os', os);
+    document.getElementById('btn-win').setAttribute('aria-pressed', os === 'win');
+    document.getElementById('btn-mac').setAttribute('aria-pressed', os === 'mac');
+    try { localStorage.setItem('alis-hub-os', os); } catch (e) {}
+  }
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem('alis-hub-os'); } catch (e) {}
+    if (saved === 'win' || saved === 'mac') { setOS(saved); return; }
+    var isMac = /Mac|iPhone|iPad/.test(navigator.userAgent || navigator.platform || '');
+    setOS(isMac ? 'mac' : 'win');
+  })();
+</script>
+</body>

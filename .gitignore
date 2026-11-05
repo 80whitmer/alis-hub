@@ -64,3 +64,7 @@ Thumbs.db
 # OS
 desktop.ini
 .DS_Store
+
+# Move-out job payloads (resident names) and Playwright failure screenshots (ALIS UI with resident data) — never commit
+tmp/moveout-*.json
+server/error_*.png
