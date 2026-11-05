@@ -995,6 +995,52 @@
           "financialMoveOutDate"
         ]
       }
+    },
+    {
+      "id": "resident-photos",
+      "name": "Resident Photo Export",
+      "icon": "📷",
+      "category": "reporting",
+      "timeout": 900000,
+      "description": "Downloads the profile photo of every resident on one community's Current Residents tab into a .zip (full-size originals named Last_First_residentId.jpg, plus a manifest.csv with name, room and status). Residents with no photo on file are listed in the manifest as no-photo rather than saved as a generic placeholder. Photos are PHI-adjacent — files stay on this machine and are only served through the job download.",
+      "inputSchema": {
+        "type": "object",
+        "title": "Resident Photo Export",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": [
+              "Medtelligent"
+            ]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "e.g. \"medtelligent\" for medtelligent.alisonline.com",
+            "examples": [
+              "medtelligent"
+            ]
+          },
+          "communityId": {
+            "type": "string",
+            "title": "ALIS Community ID",
+            "description": "The number in /Residents/{id}?tab=Current",
+            "examples": [
+              "844"
+            ]
+          },
+          "communityName": {
+            "type": "string",
+            "title": "Community Name (optional, used in the zip filename)"
+          }
+        },
+        "required": [
+          "companyName",
+          "companyHost",
+          "communityId"
+        ]
+      }
     }
   ]
 }

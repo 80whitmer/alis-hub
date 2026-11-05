@@ -19,6 +19,7 @@ const { runAuditHistoryJob }               = require('./auditHistoryJob');
 const { runAcuityHistoryJob }              = require('./acuityHistoryJob');
 const { runMedCartReportJob }              = require('./medCartReportJob');
 const { runMovedOutBillingJob }            = require('./movedOutBillingJob');
+const { runResidentPhotosJob }             = require('./residentPhotosJob');
 
 /**
  * Run the create-communities job.
@@ -127,6 +128,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'resident-move-out':
         return await runResidentMoveOutJob(jobId, payload);
+
+      case 'resident-photos':
+        return await runResidentPhotosJob(jobId, payload);
 
       case 'care-item-assistance-level':
         return await runCareItemAssistanceLevelJob(jobId, payload);
