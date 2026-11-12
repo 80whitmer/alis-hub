@@ -190,6 +190,7 @@ function buildAbstCrosswalkWorkbook(report) {
   const orphans = [];
   for (const r of report.residents) {
     for (const it of r.unassignedAbstItems) orphans.push({ values: [r.name, it.name, it.schedule, it.minutesPerOccurrence ?? '', 'ABST item not mapped to any of the 22 elements (edit the element config to place it)'] });
+    for (const it of r.ambiguousDuplicateItems || []) orphans.push({ values: [r.name, it.name, it.schedule, it.minutesPerOccurrence ?? '', 'Name exists in two Care Settings categories and the plan row is at 0 minutes: treated as the older non-ABST copy, not counted'] });
     for (const it of r.itemsNotInCatalog) orphans.push({ values: [r.name, it.name, it.schedule, it.minutesPerOccurrence ?? '', 'Care item not found in the Care Settings catalog'] });
   }
   addTable(

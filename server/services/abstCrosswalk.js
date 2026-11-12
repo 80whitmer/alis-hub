@@ -314,11 +314,16 @@ async function buildAbstCrosswalk(host, opts = {}) {
       const sch = scheduleInfo(p);
       const minutes = p.estimatedTime == null ? null : Number(p.estimatedTime);
       const weekly = !sch.prn && sch.perWeek != null && minutes != null ? round1(minutes * sch.perWeek) : null;
+      // The plan export carries only the item NAME. When a name exists in two categories (ABST copy with minutes,
+      // older copy at 0) and the plan row has 0 minutes, it is the older non-ABST copy — HQ leaves these out too
+      // (reconciled against the HQ roster, Nov 2026). With minutes > 0 it can only be the ABST copy.
+      const ambiguousZero = !!hit?.abst && hit.duplicate && !(minutes > 0);
       return {
         carePlanItemId: p.carePlanItemId,
         name: p.careItemName,
         inCatalog: !!hit,
-        isAbst: !!hit?.abst,
+        isAbst: !!hit?.abst && !ambiguousZero,
+        ambiguousZero,
         category: hit?.abst?.category ?? hit?.entries[0]?.category ?? null,
         label: hit?.abst?.label ?? hit?.entries[0]?.label ?? null,
         identifier: hit?.abst?.identifier ?? hit?.entries[0]?.identifier ?? null,
@@ -430,6 +435,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
 
     const unassigned = planItems.filter((it) => it.isAbst && !it.assigned);
     const notInCatalog = planItems.filter((it) => !it.inCatalog);
+    const ambiguous = planItems.filter((it) => it.ambiguousZero);
 
     outResidents.push({
       residentId: res.residentId,
@@ -444,6 +450,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
       elements,
       weeklyCaregiverMinutes: round1(elements.reduce((s, e) => s + e.weeklyMinutes, 0)),
       unassignedAbstItems: unassigned.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
+      ambiguousDuplicateItems: ambiguous.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
       itemsNotInCatalog: notInCatalog.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
     });
   }
