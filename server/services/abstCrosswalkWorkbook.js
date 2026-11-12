@@ -153,7 +153,7 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
   addTable(
     wb.addWorksheet('Resident totals'),
     report,
-    'Weekly caregiver minutes by resident (Staff time items only; PRN not multiplied)',
+    'Weekly caregiver minutes by resident (Staff time items only; minutes are per day x days per week; PRN and times-per-day not multiplied)',
     [
       { header: 'Resident', width: 26 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 18 }, { header: 'Care plan published', width: 12 },

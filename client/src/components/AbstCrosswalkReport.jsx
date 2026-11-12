@@ -95,7 +95,7 @@ function ResidentSheet({ meta, resident, pageBreak }) {
           </tr>
         ))}
         <tr className="font-bold bg-neutral-50">
-          <td className="p-1 border border-neutral-300" colSpan={2}>Weekly caregiver minutes (Staff time only; PRN not multiplied)</td>
+          <td className="p-1 border border-neutral-300" colSpan={2}>Weekly caregiver minutes (Staff time only; care item minutes are per day × days per week; PRN and times-per-day not multiplied)</td>
           <td className="p-1 border border-neutral-300 text-right">{resident.weeklyCaregiverMinutes}</td>
           <td className="p-1 border border-neutral-300" />
         </tr>

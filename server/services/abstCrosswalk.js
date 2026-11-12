@@ -205,22 +205,23 @@ function dayList(v) {
 }
 
 /**
- * Weekly minutes = minutes per occurrence × scheduled occurrences per week.
- * Verified against the HQ "Resident Roster with Care Plan Items" export (Touchmark, Nov 2026):
- *   daily × N times/day -> 7·N, weekdays -> (#days)·N. PRN is NOT multiplied (shown per occurrence).
+ * Weekly minutes = care item minutes (treated as the minutes for the DAY) × scheduled days per week.
+ * A "times per day" quantity (x2, x3 …) is NOT multiplied in: daily -> 7 days, weekdays -> number of days,
+ * every-N-days -> 7/N. (HQ multiplies the quantity in too, which overstates minutes — decision with Aaron, Nov 2026.)
+ * PRN is NOT multiplied (shown per occurrence).
  * days_of_month (the API doesn't return which days) is shown per occurrence only.
  */
 function scheduleInfo(p) {
   const perDay = Math.max(Number(p.intervalsHours) || 1, 1);
   const f = p.schedulingFrequency;
   if (f === 'prn') return { label: 'PRN', prn: true, perWeek: null };
-  if (f === 'daily') return { label: perDay > 1 ? `Daily x${perDay}` : 'Daily', perWeek: 7 * perDay };
+  if (f === 'daily') return { label: perDay > 1 ? `Daily (x${perDay}, minutes are per day)` : 'Daily', perWeek: 7 };
   if (f === 'weekdays') {
     const days = dayList(p.daysOfWeek);
-    return { label: days.map((d) => DAY_ABBR[d.toLowerCase()] || d).join(', ') + (perDay > 1 ? ` x${perDay}` : ''), perWeek: days.length * perDay };
+    return { label: days.map((d) => DAY_ABBR[d.toLowerCase()] || d).join(', ') + (perDay > 1 ? ` (x${perDay}, minutes are per day)` : ''), perWeek: days.length };
   }
   if (f === 'ndays' && p.nDaysInterval > 0) {
-    return { label: `Every ${p.nDaysInterval} days`, perWeek: (7 / p.nDaysInterval) * perDay, averaged: true };
+    return { label: `Every ${p.nDaysInterval} days`, perWeek: 7 / p.nDaysInterval, averaged: true };
   }
   if (f === 'days_of_month') return { label: 'Monthly (specific days)', perWeek: null, periodic: true };
   return { label: f || 'Unknown schedule', perWeek: null, unknown: true };
