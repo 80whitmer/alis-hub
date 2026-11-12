@@ -59,7 +59,24 @@ function answerSummary(el) {
   return el.questions.flatMap((q) => q.answers.map((a) => a.answer)).join(' | ');
 }
 
-function buildAbstCrosswalkWorkbook(report) {
+/** Drops residents of the given product types and recomputes the per-element summary so counts stay consistent. */
+function filterReport(report, { excludeProductTypes = [] } = {}) {
+  if (!excludeProductTypes.length) return report;
+  const residents = report.residents.filter((r) => !excludeProductTypes.includes(r.productType));
+  const summary = report.summary.map((s) => {
+    const counts = Object.fromEntries(Object.keys(s.counts).map((k) => [k, 0]));
+    for (const r of residents) counts[r.elements.find((e) => e.id === s.id).status]++;
+    return { ...s, counts, total: residents.length };
+  });
+  return { ...report, residents, summary, meta: { ...report.meta, residentCount: residents.length } };
+}
+
+/**
+ * surveyor = true: the survey-facing export — one row per resident per element, no care plan item
+ * columns or care-item-level sheets (a missing care item usually just means Independent or an outside
+ * provider, both fine at 0 minutes). The full internal workbook keeps the care item detail.
+ */
+function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ALIS Hub';
   wb.created = new Date(report.meta.generatedAt);
@@ -68,6 +85,14 @@ function buildAbstCrosswalkWorkbook(report) {
   const detail = [];
   for (const r of report.residents) {
     for (const el of r.elements) {
+      if (surveyor) {
+        detail.push({
+          values: [r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? '', el.id, el.name,
+            el.questions.filter((q) => q.answered).map((q) => q.text).join('; '), answerSummary(el), el.statusLabel, el.weeklyMinutes],
+          fill: FLAG_FILL[el.status],
+        });
+        continue;
+      }
       const base = [
         r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? '', r.carePlanPublishDate ?? '',
         el.id, el.name, el.questions.filter((q) => q.answered).map((q) => q.text).join('; '), answerSummary(el),
@@ -94,7 +119,12 @@ function buildAbstCrosswalkWorkbook(report) {
     wb.addWorksheet('Resident x Element'),
     report,
     'Oregon ABST crosswalk, one row per resident per element',
-    [
+    surveyor ? [
+      { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
+      { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 },
+      { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 34 }, { header: 'Assessment question(s)', width: 38 },
+      { header: 'Assessment answer(s)', width: 60 }, { header: 'Status', width: 32 }, { header: 'Weekly caregiver minutes', width: 12 },
+    ] : [
       { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 }, { header: 'Care plan published', width: 12 },
       { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 30 }, { header: 'Assessment question(s)', width: 34 },
@@ -140,6 +170,8 @@ function buildAbstCrosswalkWorkbook(report) {
       ],
     }))
   );
+
+  if (surveyor) return wb;
 
   // 4. HQ roster format, for reconciliation with "Resident Roster with Care Plan Items" in ALIS HQ
   const hq = [];
@@ -206,4 +238,4 @@ function buildAbstCrosswalkWorkbook(report) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-module.exports = { buildAbstCrosswalkWorkbook };
+module.exports = { buildAbstCrosswalkWorkbook, filterReport };

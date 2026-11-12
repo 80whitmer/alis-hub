@@ -51,33 +51,20 @@ function HeaderBlock({ meta, resident }) {
   );
 }
 
-function CareItemLine({ it }) {
+function ResidentSheet({ meta, resident, pageBreak }) {
   return (
-    <li className="leading-snug">
-      {it.name} <span className="text-neutral-500">[{it.category || '?'}]</span> · {it.schedule}
-      · {it.minutesPerOccurrence ?? '—'} min{it.prn ? '/occurrence' : ''}
-      {!it.prn && it.weeklyMinutes != null ? ` · ${it.countsAsCaregiver ? it.weeklyMinutes : 0} min/wk` : ''}
-      {it.periodic ? ' · monthly, per occurrence only' : ''}
-      {it.excludedReason ? <span className="text-purple-700"> · not caregiver time</span> : null}
-    </li>
-  );
-}
-
-function ResidentSheet({ meta, resident }) {
-  return (
-    <table className="w-full text-xs border-collapse">
+    <table className="w-full text-xs border-collapse" style={pageBreak ? { pageBreakAfter: 'always' } : undefined}>
       <thead>
         <tr>
-          <th colSpan={5} className="text-left font-normal pb-2 border-b border-neutral-300">
+          <th colSpan={4} className="text-left font-normal pb-2 border-b border-neutral-300">
             <HeaderBlock meta={meta} resident={resident} />
           </th>
         </tr>
         <tr className="bg-neutral-100 text-left">
-          <th className="p-1 border border-neutral-300 w-[17%]">Care element</th>
-          <th className="p-1 border border-neutral-300 w-[27%]">Assessment answer</th>
-          <th className="p-1 border border-neutral-300 w-[33%]">Care plan items (ABST)</th>
-          <th className="p-1 border border-neutral-300 w-[6%]">Wkly min</th>
-          <th className="p-1 border border-neutral-300 w-[17%]">Status</th>
+          <th className="p-1 border border-neutral-300 w-[24%]">Care element</th>
+          <th className="p-1 border border-neutral-300 w-[46%]">Assessment answer</th>
+          <th className="p-1 border border-neutral-300 w-[8%]">Wkly min</th>
+          <th className="p-1 border border-neutral-300 w-[22%]">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -95,30 +82,20 @@ function ResidentSheet({ meta, resident }) {
                   </div>
                 ))
               )}
-            </td>
-            <td className="p-1 border border-neutral-300">
-              {el.subTypes ? (
-                <ul className="space-y-1">
-                  {el.subTypes.map((s) => (
-                    <li key={s.name}>
-                      <b>{s.name}</b>: <StatusBadge status={s.status} label={s.statusLabel} />
-                      {s.careItems.length > 0 && <ul className="list-disc list-inside ml-2">{s.careItems.map((it) => <CareItemLine key={it.carePlanItemId} it={it} />)}</ul>}
-                    </li>
+              {el.subTypes && (
+                <div className="mt-1 space-y-0.5">
+                  {el.subTypes.map((sub) => (
+                    <div key={sub.name}><b>{sub.name}</b>: <StatusBadge status={sub.status} label={sub.statusLabel} /></div>
                   ))}
-                </ul>
-              ) : el.careItems.length ? (
-                <ul className="list-disc list-inside">{el.careItems.map((it) => <CareItemLine key={it.carePlanItemId} it={it} />)}</ul>
-              ) : (
-                <span className="text-neutral-500">None on care plan</span>
+                </div>
               )}
-              {el.notes.length > 0 && <p className="mt-1 text-amber-800">{el.notes.join(' ')}</p>}
             </td>
             <td className="p-1 border border-neutral-300 text-right">{el.weeklyMinutes}</td>
             <td className="p-1 border border-neutral-300"><StatusBadge status={el.status} label={el.statusLabel} /></td>
           </tr>
         ))}
         <tr className="font-bold bg-neutral-50">
-          <td className="p-1 border border-neutral-300" colSpan={3}>Weekly caregiver minutes (Staff time items only; PRN not multiplied)</td>
+          <td className="p-1 border border-neutral-300" colSpan={2}>Weekly caregiver minutes (Staff time only; PRN not multiplied)</td>
           <td className="p-1 border border-neutral-300 text-right">{resident.weeklyCaregiverMinutes}</td>
           <td className="p-1 border border-neutral-300" />
         </tr>
@@ -134,6 +111,8 @@ export default function AbstCrosswalkReport({ jobId }) {
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [allSheets, setAllSheets] = useState(null);
+  const [loadingAll, setLoadingAll] = useState(false);
 
   useEffect(() => {
     fetch(`/api/abst-crosswalk/${jobId}`)
@@ -163,15 +142,31 @@ export default function AbstCrosswalkReport({ jobId }) {
   );
   const products = useMemo(() => (data ? [...new Set(data.residents.map((r) => r.productType))].sort() : []), [data]);
 
-  async function download() {
+  async function printAll() {
+    setLoadingAll(true);
+    try {
+      const res = await fetch(`/api/abst-crosswalk/${jobId}/residents?excludeIndependent=1`);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `Failed to load (${res.status})`);
+      setSelectedId('');
+      setAllSheets(d);
+      setTimeout(() => window.print(), 400);
+    } catch (e) {
+      alert(`Could not load residents: ${e.message}`);
+    } finally {
+      setLoadingAll(false);
+    }
+  }
+
+  async function download(excludeIndependent = false) {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/abst-crosswalk/${jobId}/download`);
+      const res = await fetch(`/api/abst-crosswalk/${jobId}/download${excludeIndependent ? '?excludeIndependent=1' : ''}`);
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Download failed (${res.status})`);
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = url;
-      a.download = data.filename;
+      a.download = excludeIndependent ? data.filename.replace(/\.xlsx$/i, ' - excl Independent.xlsx') : data.filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -205,9 +200,14 @@ export default function AbstCrosswalkReport({ jobId }) {
             </p>
           )}
         </div>
-        <button onClick={download} disabled={downloading} className="btn btn-accent shrink-0 disabled:opacity-50">
-          {downloading ? '⏳ Downloading…' : '📥 Excel (all residents)'}
-        </button>
+        <div className="flex flex-col gap-2 shrink-0">
+          <button onClick={() => download(true)} disabled={downloading} className="btn btn-accent disabled:opacity-50">
+            {downloading ? '⏳ Downloading…' : '📥 Excel: all residents (excl. Independent)'}
+          </button>
+          <button onClick={() => download(false)} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
+            📥 Excel: full detail (internal)
+          </button>
+        </div>
       </div>
 
       <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white">
@@ -244,7 +244,7 @@ export default function AbstCrosswalkReport({ jobId }) {
         </label>
         <label className="text-xs grow min-w-[260px]">
           <span className="block text-neutral-500 mb-1">Resident ({residents.length})</span>
-          <select className="border border-neutral-300 rounded p-1 text-sm w-full" value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
+          <select className="border border-neutral-300 rounded p-1 text-sm w-full" value={selectedId} onChange={(e) => { setAllSheets(null); setSelectedId(e.target.value); }}>
             <option value="">Select a resident…</option>
             {residents.map((r) => (
               <option key={r.residentId} value={r.residentId}>
@@ -254,10 +254,24 @@ export default function AbstCrosswalkReport({ jobId }) {
           </select>
         </label>
         <button className="btn btn-secondary disabled:opacity-50" disabled={!detail} onClick={() => window.print()}>🖨️ Print / save as PDF</button>
+        <button className="btn btn-secondary disabled:opacity-50" disabled={loadingAll} onClick={printAll}>
+          {loadingAll ? '⏳ Loading…' : '🖨️ Print all residents (excl. Independent)'}
+        </button>
       </div>
 
+      {allSheets && (
+        <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white space-y-6">
+          <p className="abst-no-print text-xs text-neutral-500">
+            {allSheets.residents.length} resident pages (Independent-living residents excluded). Use Print to save as PDF.{' '}
+            <button className="underline" onClick={() => window.print()}>Print again</button> ·{' '}
+            <button className="underline" onClick={() => setAllSheets(null)}>Close</button>
+          </p>
+          {allSheets.residents.map((r) => <ResidentSheet key={r.residentId} meta={allSheets.meta} resident={r} pageBreak />)}
+        </div>
+      )}
+
       {selectedId && !detail && <p className="abst-no-print text-sm text-neutral-400">Loading resident…</p>}
-      {detail && (
+      {detail && !allSheets && (
         <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white">
           <ResidentSheet meta={detail.meta} resident={detail.resident} />
         </div>

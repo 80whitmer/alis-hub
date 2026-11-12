@@ -4,6 +4,7 @@ const path = require('path');
 const router = express.Router();
 
 const { REPORTS_ROOT } = require('../automation/abstCrosswalkJob');
+const { buildAbstCrosswalkWorkbook, filterReport } = require('../services/abstCrosswalkWorkbook');
 
 /** jobIds are UUIDs — reject anything else before it touches the filesystem. */
 function jobDir(jobId) {
@@ -56,11 +57,39 @@ router.get('/:jobId/resident/:residentId', (req, res) => {
   }
 });
 
-// GET /api/abst-crosswalk/:jobId/download — the .xlsx
-router.get('/:jobId/download', (req, res) => {
+// GET /api/abst-crosswalk/:jobId/residents?excludeIndependent=1 — every resident's full page (care item detail stripped; the printed crosswalk doesn't show it)
+router.get('/:jobId/residents', (req, res) => {
   try {
     const report = readReport(req.params.jobId);
     if (!report) return res.status(404).json({ error: 'No ABST crosswalk report found for this job.' });
+    const filtered = req.query.excludeIndependent === '1' ? filterReport(report, { excludeProductTypes: ['Independent'] }) : report;
+    res.json({
+      meta: filtered.meta,
+      residents: filtered.residents.map((r) => ({
+        ...r,
+        elements: r.elements.map(({ careItems, ...el }) => el),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/abst-crosswalk/:jobId/download — the .xlsx
+//   (no params)            full internal workbook, every resident, care item detail
+//   ?excludeIndependent=1  survey-facing workbook: Independent-living residents removed, no care item columns
+router.get('/:jobId/download', async (req, res) => {
+  try {
+    const report = readReport(req.params.jobId);
+    if (!report) return res.status(404).json({ error: 'No ABST crosswalk report found for this job.' });
+    if (req.query.excludeIndependent === '1') {
+      const wb = buildAbstCrosswalkWorkbook(filterReport(report, { excludeProductTypes: ['Independent'] }), { surveyor: true });
+      const name = report.filename.replace(/\.xlsx$/i, ' - excl Independent.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+      await wb.xlsx.write(res);
+      return res.end();
+    }
     const file = path.join(jobDir(req.params.jobId), path.basename(report.filename));
     if (!fs.existsSync(file)) return res.status(404).json({ error: 'Workbook file is missing on disk.' });
     res.download(file, report.filename);
