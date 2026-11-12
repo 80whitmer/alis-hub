@@ -1,0 +1,2430 @@
+{
+ "_readme": "Care Settings care item catalog (Care Category, Care Item, Assessment Care Identifier, Reporting Label, Estimated Time) exported from ALIS Care Settings for community 489 on 2026-11-12. The ALIS export API has no Care Settings endpoint, so re-export 'Care Categories and Items' from ALIS and regenerate this file when care items change. No resident data.",
+ "communityId": 489,
+ "communityName": "Ackerly at Reed's Crossing",
+ "exportedOn": "2026-11-12",
+ "items": [
+  {
+   "category": "ABST",
+   "name": "Activity Participation - Escorts 1x Weekly",
+   "identifier": "Activity Participation - Escorts 1x Weekly",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Activity Participation - Escorts 3x Weekly",
+   "identifier": "Activity Participation - Escorts 3x Weekly",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Activity Participation - Escorts Daily",
+   "identifier": "Activity Participation - Escorts Daily",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Activity Participation - Prompting/Cueing",
+   "identifier": "Activity Participation - Prompting/Cueing",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Activity Participation - Reminders",
+   "identifier": "Activity Participation - Reminders",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Activity Participation - Standby/Physical Assistance",
+   "identifier": "Activity Participation - Standby/Physical Assistance",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Additional Housekeeping Services",
+   "identifier": "Additional Housekeeping Services",
+   "label": "ABST",
+   "minutes": 20.0
+  },
+  {
+   "category": "ABST",
+   "name": "Additional Linen Laundry Services",
+   "identifier": "Additional Linen Laundry Services",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Additional Personal Laundry Services",
+   "identifier": "Personal Laundry Services",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Ambulation - Cueing/Standby Assistance",
+   "identifier": "Ambulation - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Ambulation - Device Reminder",
+   "identifier": "Ambulation - Device Reminder",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Ambulation - Physical Assistance",
+   "identifier": "Ambulation - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Ambulation - Reminders",
+   "identifier": "Ambulation - Reminders",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Ambulation - Setup Assistance",
+   "identifier": "Ambulation - Setup Assistance",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Ambulation - Two Staff Assistance",
+   "identifier": "Ambulation - Physical Assistance 2 Staff",
+   "label": "ABST",
+   "minutes": 20.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Additional Time",
+   "identifier": "Bathing/Showering - Additional Time",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 1x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 1x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 2x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 2x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 3x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 3x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 4x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 4x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 5x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 5x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 6x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 6x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Physical Assistance 7x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 1 Staff 7x Per Week",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Reminders/Cueing",
+   "identifier": "Bathing/Showering - Reminders",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 1x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 1x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 2x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 2x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 3x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 3x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 4x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 4x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 5x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 5x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 6x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 6x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bathing - Two Staff Assistance 7x Per Week",
+   "identifier": "Bathing/Showering - Physical Assistance 2 Staff 7x Per Week",
+   "label": "ABST",
+   "minutes": 60.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bed Making Services",
+   "identifier": "Bed Making Services",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bed Mobility - Cueing/Standby Assistance",
+   "identifier": "Bed Mobility - Cueing/Standby Assistance",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bed Mobility - Physical Assistance",
+   "identifier": "Bed Mobility - Physical Assistance",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bed Mobility - Reminders",
+   "identifier": "Bed Mobility - Reminders",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bed Mobility - Setup Assistance",
+   "identifier": "Bed Mobility - Setup Assistance",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Bed Mobility - Two Staff Assistance",
+   "identifier": "Bed Mobility - Two Staff Assistance",
+   "label": "ABST",
+   "minutes": 8.0
+  },
+  {
+   "category": "ABST",
+   "name": "Behavioral Conditions Monitoring",
+   "identifier": "Behavioral Conditions - Monitoring",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Breathing Treatments",
+   "identifier": "Breathing Treatments",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Call Pendant Use",
+   "identifier": "Call Pendant Use",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Communication Assistance - Moderate",
+   "identifier": "Communication - Moderate Difficulty",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Communication Assistance - Severe",
+   "identifier": "Communication - Severe Difficulty",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Denture Care - Cueing/Standby Assistance",
+   "identifier": "Dentures - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Denture Care - Physical Assistance",
+   "identifier": "Dentures - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Denture Care - Reminders",
+   "identifier": "Dentures - Reminders",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Denture Care - Setup Assistance",
+   "identifier": "Dentures - Reminders/Setup",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Constant Supervision",
+   "identifier": "Dining - Constant Supervision",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Cueing/Standby Assistance",
+   "identifier": "Dining - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Escorts/Meal Tray Delivery 1x Daily",
+   "identifier": "Meal Escorts / Meal Tray Delivery - Escorts / Meal Delivery 1x Daily",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Escorts/Meal Tray Delivery 2x Daily",
+   "identifier": "Meal Escorts / Meal Tray Delivery - Escorts / Meal Delivery 2x Daily",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Escorts/Meal Tray Delivery 3x Daily",
+   "identifier": "Meal Escorts / Meal Tray Delivery - Escorts / Meal Delivery 3x Daily",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Meal Order Assistance",
+   "identifier": "Dining - Meal Order",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Meal Preparation",
+   "identifier": "Dining - Meal Preparation",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Minimal Supervision",
+   "identifier": "Dining - Minimal Supervision",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Physical Assistance",
+   "identifier": "Dining Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Reminders",
+   "identifier": "Dining - Reminders",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dining - Setup Assistance",
+   "identifier": "Dining - Setup",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dressing - Compression Hose Assistance",
+   "identifier": "Dressing - Compression Hose",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dressing - Cueing/Standby Assistance",
+   "identifier": "Dressing - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 16.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dressing - Physical Assistance",
+   "identifier": "Dressing - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 24.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dressing - Reminders",
+   "identifier": "Dressing - Reminders",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dressing - Setup Assistance",
+   "identifier": "Dressing - Setup Assistance",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Dressing - Two Staff Assistance",
+   "identifier": "Dressing - Physical Assistance 2 Staff",
+   "label": "ABST",
+   "minutes": 48.0
+  },
+  {
+   "category": "ABST",
+   "name": "Drops - Nurse Assistance",
+   "identifier": "Drops - Nurse Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Drops - Staff Assistance",
+   "identifier": "Drops - Staff Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Fall Risk Safety Checks",
+   "identifier": "Fall Risk Safety Checks",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Glasses - Cueing/Standby Assistance",
+   "identifier": "Vision - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Glasses - Physical Assistance",
+   "identifier": "Vision - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Glasses - Reminders",
+   "identifier": "Vision - Reminders",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Grooming - Cueing/Standby Assistance",
+   "identifier": "Grooming - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Grooming - Physical Assistance",
+   "identifier": "Grooming - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 20.0
+  },
+  {
+   "category": "ABST",
+   "name": "Grooming - Reminders",
+   "identifier": "Grooming - Reminders",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Grooming - Setup Assistance",
+   "identifier": "Grooming - Reminders/Setup",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hearing Aid/Amplifier - Cueing/Standby Assistance",
+   "identifier": "Hearing - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hearing Aid/Amplifier - Physical Assistance",
+   "identifier": "Hearing - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hearing Aid/Amplifier - Reminders",
+   "identifier": "Hearing - Reminders",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hygiene - Cueing/Standby Assistance",
+   "identifier": "Hygiene - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hygiene - Physical Assistance",
+   "identifier": "Hygiene - Physical Assistance",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hygiene - Reminders",
+   "identifier": "Hygiene - Reminders",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Hygiene - Setup Assistance",
+   "identifier": "Hygiene - Reminders/Setup",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Inhaler - Nurse Assistance",
+   "identifier": "Inhaler - Nurse Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Inhaler - Staff Assistance",
+   "identifier": "Inhaler - Staff Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Insulin Injections - Nurse Administration",
+   "identifier": "Insulin Injections - Nurse Administration",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Insulin Injections - Nurse Cueing Assistance",
+   "identifier": "Insulin Injections - Nurse Cueing Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Insulin Injections - Staff Administration",
+   "identifier": "Insulin Injections - Staff Administration",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Insulin Injections - Staff Cueing Assistance",
+   "identifier": "Insulin Injections - Staff Cueing Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Non-Drug Interventions for Behaviors - Mild",
+   "identifier": "Non-Pharmacological Intervention for Behaviors - Mild",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Non-Drug Interventions for Behaviors - Moderate",
+   "identifier": "Non-Pharmacological Intervention for Behaviors - Moderate",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Non-Drug Interventions for Behaviors - Severe",
+   "identifier": "Non-Pharmacological Intervention for Behaviors - Severe",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Non-Drug Pain Interventions",
+   "identifier": "Non-Pharmacological Interventions",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Oral Medications - 4x Daily",
+   "identifier": "Oral Medications - 4x Daily",
+   "label": "ABST",
+   "minutes": 20.0
+  },
+  {
+   "category": "ABST",
+   "name": "Oral Medications - 5x or More Daily",
+   "identifier": "Oral Medications - 5x or More Daily",
+   "label": "ABST",
+   "minutes": 25.0
+  },
+  {
+   "category": "ABST",
+   "name": "Oral Medications - Up to 3x Daily",
+   "identifier": "Oral Medications - Up to 3x Daily",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Personal Laundry Services",
+   "identifier": "Personal Laundry Services",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Pet Care Assistance",
+   "identifier": "Pet Care Assistance",
+   "label": "ABST",
+   "minutes": 12.0
+  },
+  {
+   "category": "ABST",
+   "name": "Physical Conditions Monitoring",
+   "identifier": "Physical Conditions - Monitoring",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Repositioning Assistance",
+   "identifier": "Repositioning - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Shaving - Cueing/Standby Assistance",
+   "identifier": "Shaving - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Shaving - Physical Assistance",
+   "identifier": "Shaving - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Shaving - Reminders",
+   "identifier": "Shaving - Reminders",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Shaving - Setup Assistance",
+   "identifier": "Shaving - Reminders/Setup",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Skin Monitoring - Nurse",
+   "identifier": "Skin Care - Monitoring Nurse",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Skin Monitoring - Staff",
+   "identifier": "Skin Care - Monitoring UAP",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "ABST",
+   "name": "Smoking Assistance",
+   "identifier": "Smoking Assistance",
+   "label": "ABST",
+   "minutes": 20.0
+  },
+  {
+   "category": "ABST",
+   "name": "Smoking Escort and Assistance",
+   "identifier": "Smoking Escort and Assistance",
+   "label": "ABST",
+   "minutes": 20.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting - Nightly Cueing/Standby Assistance",
+   "identifier": "Toileting - Nightly Cueing/Standby",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting - Nightly Reminders",
+   "identifier": "Toileting - Nightly Reminders",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting Assistance - Empty Commode",
+   "identifier": "Toileting - Empty Commode",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting Assistance - Empty Urinal",
+   "identifier": "Toileting - Empty Urinal",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting/Continence Care - Cueing/Standby Assistance",
+   "identifier": "Toileting/Incontinence - Cueing/Standby",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting/Continence Care - Physical Assistance",
+   "identifier": "Toileting/Incontinence - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting/Continence Care - Reminders",
+   "identifier": "Toileting/Incontinence - Reminders",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Toileting/Continence Care - Two Staff Assistance",
+   "identifier": "Toileting/Incontinence - Physical Assistance 2 Staff",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Topical Meds - Nurse Assistance",
+   "identifier": "Topical Meds - Nurse Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Topical Meds - Staff Assistance",
+   "identifier": "Topical Meds - Staff Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Transfers - Cueing/Standby Assistance",
+   "identifier": "Transfers - Cueing",
+   "label": "ABST",
+   "minutes": 6.0
+  },
+  {
+   "category": "ABST",
+   "name": "Transfers - Physical Assistance",
+   "identifier": "Transfers - Physical Assistance 1 Staff",
+   "label": "ABST",
+   "minutes": 15.0
+  },
+  {
+   "category": "ABST",
+   "name": "Transfers - Reminders",
+   "identifier": "Transfers - Reminders",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Transfers - Setup Assistance",
+   "identifier": "Transfers - Setup Assistance",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "ABST",
+   "name": "Transfers - Two Staff Assistance",
+   "identifier": "Transfers - Physical Assistance 2 Staff",
+   "label": "ABST",
+   "minutes": 30.0
+  },
+  {
+   "category": "ABST",
+   "name": "Trash Removal",
+   "identifier": "Trash Removal",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ABST",
+   "name": "Wellness Checks",
+   "identifier": "Wellness Checks",
+   "label": "ABST",
+   "minutes": 16.0
+  },
+  {
+   "category": "ABST",
+   "name": "Wound Care - Coordination of Care",
+   "identifier": "Wound Care - Coordination of Care",
+   "label": "ABST",
+   "minutes": 0.0
+  },
+  {
+   "category": "ABST",
+   "name": "Wound Observation - Nurse Assistance",
+   "identifier": "Wound Observation - Nurse",
+   "label": "ABST",
+   "minutes": 2.0
+  },
+  {
+   "category": "ABST",
+   "name": "Wound Observation - Staff Assistance",
+   "identifier": "Wound Observation - UAP",
+   "label": "ABST",
+   "minutes": 4.0
+  },
+  {
+   "category": "Activities",
+   "name": "Activities - Escorts",
+   "identifier": "Activities - Escorts",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Activities",
+   "name": "Activities - Physical Assistance",
+   "identifier": "Activities - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Activities",
+   "name": "Activities - Prompting/Cueing",
+   "identifier": "Activities - Prompting/Cueing",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Activities",
+   "name": "Activities - Reminders",
+   "identifier": "Activities - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Activities",
+   "name": "Activities Assistance",
+   "identifier": "Activities Assistance",
+   "label": "Activities",
+   "minutes": 0.0
+  },
+  {
+   "category": "Activities",
+   "name": "Activities Preference",
+   "identifier": "Activities Preference",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Activities",
+   "name": "Spiritual/Cultural/Traditions Preferences",
+   "identifier": "Spiritual/Cultural/Traditions Preferences",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Ambulation - Cueing/Standby Assistance",
+   "identifier": "Ambulation - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Ambulation - Device Reminder",
+   "identifier": "Ambulation - Device Reminder",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Ambulation - Physical Assistance",
+   "identifier": "Ambulation - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Ambulation - Setup Assistance",
+   "identifier": "Ambulation - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Ambulation - Two Staff Assistance",
+   "identifier": "Ambulation - Two Staff Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Assistive Braces - Standby/Physical Assistance",
+   "identifier": "Assistive Braces - Standby/Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Assistive Device w/ Restraining Property Information",
+   "identifier": "Assistive Device w/ Restraining Property Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bathing - Additional Time",
+   "identifier": "Bathing - Additional Time",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bathing - Reminders/Cueing",
+   "identifier": "Bathing - Reminders/Cueing",
+   "label": "Shower",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bathing - Standby/Physical Assistance",
+   "identifier": "Bathing - Standby/Physical Assistance",
+   "label": "Shower",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bathing - Two Staff Assistance",
+   "identifier": "Bathing - Two Staff Assistance",
+   "label": "Shower",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bathing Preferences",
+   "identifier": "Bathing Preferences",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility - Cueing/Standby Assistance",
+   "identifier": "Bed Mobility - Cueing/Standby Assistance",
+   "label": "Shower",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility - Physical Assistance",
+   "identifier": "Bed Mobility - Physical Assistance",
+   "label": "Shower",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility - Reminders",
+   "identifier": "Bed Mobility - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility - Setup Assistance",
+   "identifier": "Bed Mobility - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility - Two Staff Assistance",
+   "identifier": "Bed Mobility - Two Staff Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility Device - Bed Cane",
+   "identifier": "Bed Mobility Device - Bed Cane",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility Device - Bed Rails",
+   "identifier": "Bed Mobility Device - Bed Rails",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility Device - Fall Pad",
+   "identifier": "Bed Mobility Device - Fall Pad",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility Device - Float Heels",
+   "identifier": "Bed Mobility Device - Float Heels",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Bed Mobility Requirements",
+   "identifier": "Bed Mobility Requirements",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Blood Pressure Monitoring - Daily",
+   "identifier": "Blood Pressure Monitoring - Daily",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Blood Pressure Monitoring - Twice Monthly",
+   "identifier": "Blood Pressure Monitoring - Twice Monthly",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Blood Pressure Monitoring - Weekly",
+   "identifier": "Blood Pressure Monitoring - Weekly",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Denture Care - Cueing/Standby Assistance",
+   "identifier": "Denture Care - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Denture Care - Physical Assistance",
+   "identifier": "Denture Care - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Denture Care - Reminders",
+   "identifier": "Denture Care - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Denture Care - Setup Assistance",
+   "identifier": "Denture Care - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing - Compression Hose Assistance",
+   "identifier": "Dressing - Compression Hose Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing - Cueing/Standby Assistance",
+   "identifier": "Dressing - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing - Physical Assistance",
+   "identifier": "Dressing - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing - Reminders",
+   "identifier": "Dressing - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing - Setup Assistance",
+   "identifier": "Dressing - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing - Two Staff Assistance",
+   "identifier": "Dressing - Two Staff Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Dressing Assistive Device Information",
+   "identifier": "Dressing Assistive Device Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Electric Razor w. Anticoagulant Therapy",
+   "identifier": "Electric Razor w/ Anticoagulant Therapy",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Glasses - Cueing/Standby Assistance",
+   "identifier": "Glasses - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Glasses - Physical Assistance",
+   "identifier": "Glasses - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Glasses - Reminders",
+   "identifier": "Glasses - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Hearing Aid/Amplifier - Battery Replacement",
+   "identifier": "Hearing Aid/Amplifier - Battery Replacement",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Hearing Aid/Amplifier - Cueing/Standby Assistance",
+   "identifier": "Hearing Aid/Amplifier - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Hearing Aid/Amplifier - Physical Assistance",
+   "identifier": "Hearing Aid/Amplifier - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Hearing Aid/Amplifier - Reminders",
+   "identifier": "Hearing Aid/Amplifier - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Hearing Device Battery Assistance",
+   "identifier": "Hearing Device Battery Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Mobility Assistance",
+   "identifier": "Mobility Assistance",
+   "label": "Escort",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Mobility Device Information",
+   "identifier": "Mobile Device Informational",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Monthly Vitals",
+   "identifier": "Monthly Vitals",
+   "label": null,
+   "minutes": 15.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Nail Care - Physical Assistance",
+   "identifier": "Nail Care - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Nail Care - Physical Assistance from Nurse",
+   "identifier": "Nail Care - Physical Assistance from Nurse",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Nail Care - Reminders",
+   "identifier": "Nail Care - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Nail Care - Setup Assistance",
+   "identifier": "Nail Care - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Oxygen Assistance",
+   "identifier": "Oxygen Assistance",
+   "label": "Nurse Tasks",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Oxygen Saturation Monitoring - Daily",
+   "identifier": "Oxygen Saturation Monitoring - Daily",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Oxygen Saturation Monitoring - Twice Monthly",
+   "identifier": "Oxygen Saturation Monitoring - Twice Monthly",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Oxygen Saturation Monitoring - Weekly",
+   "identifier": "Oxygen Saturation Monitoring - Weekly",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Routine Lotions Information",
+   "identifier": "Routine Lotions Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Shaving - Cueing/Standby Assistance",
+   "identifier": "Shaving - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Shaving - Physical Assistance",
+   "identifier": "Shaving - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Shaving - Reminders",
+   "identifier": "Shaving - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Shaving - Setup Assistance",
+   "identifier": "Shaving - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Skin Condition Information",
+   "identifier": "Skin Condition Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Specialty Device Information",
+   "identifier": "Specialty Device Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Support System Information",
+   "identifier": "Support System Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Telephone - Assistance",
+   "identifier": "Telephone - Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Telephone - Infrequent Assistance",
+   "identifier": "Telephone - Infrequent Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Transfers - Cueing/Standby Assistance",
+   "identifier": "Transfers - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Transfers - Physical Assistance",
+   "identifier": "Transfers - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Transfers - Reminders",
+   "identifier": "Transfers - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Transfers - Setup Assistance",
+   "identifier": "Transfers - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Transfers - Two Staff Assistance",
+   "identifier": "Transfers - Two Staff Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Transfers Assistance",
+   "identifier": "Transfers Assistance",
+   "label": "Escort",
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Turning Schedule",
+   "identifier": "Turning Schedule",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Weight Monitoring - Daily",
+   "identifier": "Weight Monitoring - Daily",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Weight Monitoring - Twice Monthly",
+   "identifier": "Weight Monitoring - Twice Monthly",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "ADLs",
+   "name": "Weight Monitoring - Weekly",
+   "identifier": "Weight Monitoring - Weekly",
+   "label": "Monitoring",
+   "minutes": 5.0
+  },
+  {
+   "category": "Diet",
+   "name": "Assistive Dining Device",
+   "identifier": "Assistive Dining Device",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Chewing Concerns",
+   "identifier": "Chewing Concerns",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dietary Preferences and Requirements Information",
+   "identifier": "Dietary Preferences and Requirements Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Cueing/Standby Assistance",
+   "identifier": "Dining - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Escorts/Meal Tray Delivery",
+   "identifier": "Dining - Escorts/Meal Tray Delivery",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Meal Order Assistance",
+   "identifier": "Dining - Meal Order Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Meal Preparation",
+   "identifier": "Dining - Meal Preparation",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Physical Assistance",
+   "identifier": "Dining - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Reminders",
+   "identifier": "Dining - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Dining - Setup Assistance",
+   "identifier": "Dining - Setup Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Hydration Tracking",
+   "identifier": "Hydration Tracking",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Hydration Tracking",
+   "identifier": "Hydration Tracking",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Hydration/Nutrition Planning",
+   "identifier": "Hydration/Nutrition Planning",
+   "label": "ABST",
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Meal Assistance",
+   "identifier": "Meal Assistance",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Meal Escorts - Reminders",
+   "identifier": "Meal Escorts - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Meal Tracking",
+   "identifier": "Meal Tracking",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Meal Tracking",
+   "identifier": "Meal Tracking",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Diet",
+   "name": "Swallowing Concerns",
+   "identifier": "Swallowing Concerns",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Hygiene",
+   "name": "Grooming Assistance",
+   "identifier": "Grooming Assistance",
+   "label": "ADL",
+   "minutes": 0.0
+  },
+  {
+   "category": "Hygiene",
+   "name": "Nail Assistance",
+   "identifier": "Nail Assistance",
+   "label": "ADL",
+   "minutes": 0.0
+  },
+  {
+   "category": "Hygiene",
+   "name": "Oral Care",
+   "identifier": "Oral Care",
+   "label": "ADL",
+   "minutes": 0.0
+  },
+  {
+   "category": "Hygiene",
+   "name": "Showering Assistance",
+   "identifier": "Showering Assistance",
+   "label": "Shower",
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications",
+   "name": "AL AM MED TECH 1",
+   "identifier": "",
+   "label": "Medications",
+   "minutes": 5.0
+  },
+  {
+   "category": "Medications",
+   "name": "Medication Assistance",
+   "identifier": "Medication Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Blood Pressure Monitoring - Daily",
+   "identifier": "Blood Pressure Monitoring - Daily",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Blood Pressure Monitoring - Twice Monthly",
+   "identifier": "Blood Pressure Monitoring - Twice Monthly",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Blood Pressure Monitoring - Weekly",
+   "identifier": "Blood Pressure Monitoring - Weekly",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Daily Pain Management - Nurse Assistance",
+   "identifier": "Daily Pain Management - Nurse",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Daily Pain Management - Staff Assistance",
+   "identifier": "Daily Pain Management - UAP",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Medication Assistance",
+   "identifier": "Medication Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Monthly Vital Signs",
+   "identifier": "Monthly Vital Signs",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Pacemaker - Assistance",
+   "identifier": "Pacemaker - Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Pain Management Information",
+   "identifier": "Pain Management Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Rx Treatments Information",
+   "identifier": "Rx Treatments Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Weight Monitoring - Daily",
+   "identifier": "Weight Monitoring - Daily",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Medications/Treatments",
+   "name": "Weight Monitoring - Twice Monthly",
+   "identifier": "Weight Monitoring - Twice Monthly",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Agency Services Provider",
+   "identifier": "Agency Services Provider",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Antibiotic Monitoring",
+   "identifier": "Antibiotic Monitoring",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Behavior Intervention",
+   "identifier": "Behavior Intervention",
+   "label": "Behaviors",
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Behavior Monitoring",
+   "identifier": "Behavior Monitoring",
+   "label": "Behaviors",
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "CPAP/BiPAP - Nurse Assistance",
+   "identifier": "CPAP/BiPAP Use - LICENSED NURSE",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "CPAP/BiPAP - Staff Assistance",
+   "identifier": "CPAP/BiPAP Use - UAP",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "CPAP/BiPAP Maintenance - Nurse Assistance",
+   "identifier": "CPAP/BiPAP Maintenance - LICENSED NURSE",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "CPAP/BiPAP Maintenance - Staff Assistance",
+   "identifier": "CPAP/BiPAP Maintenance - UAP",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "New Admission Monitoring",
+   "identifier": "New Admission Monitoring",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "New Medication Monitoring",
+   "identifier": "New Medication Monitoring",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Other",
+   "identifier": "Other",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Pacemaker - Nurse Assistance",
+   "identifier": "Pacemaker - Nurse Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Pet Information",
+   "identifier": "Pet Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Physician Ordered Lab Monitoring",
+   "identifier": "Physician Ordered Lab Monitoring",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Skin Monitoring - Nurse",
+   "identifier": "Skin Monitoring - Nurse",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Skin Monitoring - Staff",
+   "identifier": "Skin Monitoring - Staff",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Verbalize/Signal Pain Information",
+   "identifier": "Verbalize/Signal Pain Information",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Wound Care",
+   "identifier": "Wound Care",
+   "label": "Nurse Tasks",
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Wound Care - Coordination of Care",
+   "identifier": "Wound Care - Coordination of Care",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Wound Care - Nurse Assistance",
+   "identifier": "Wound Care - Licensed Nurse",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Wound Care - Staff Assistance",
+   "identifier": "Wound Care - UAP",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Wound Observation - Nurse Assistance",
+   "identifier": "Wound Observation - Nurse Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "PRN",
+   "name": "Wound Observation - Staff Assistance",
+   "identifier": "Wound Observation - Staff Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Alcohol - Safety Monitoring",
+   "identifier": "Alcohol - Safety Monitoring",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Communication - Moderate Difficulty",
+   "identifier": "Communication - Moderate Difficulty",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Communication - Severe Difficulty",
+   "identifier": "Communication - Severe Difficulty",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Daily Pain Management",
+   "identifier": "Daily Pain Management",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Escort",
+   "identifier": "Escort",
+   "label": "Escort",
+   "minutes": 10.0
+  },
+  {
+   "category": "Safety",
+   "name": "Evacuation - Cueing/Standby Assistance",
+   "identifier": "Evacuation - Cueing/Standby/Escorts",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Evacuation - Physical Assistance",
+   "identifier": "Evacuation - Escort/Physical Assistance 1 Staff",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Evacuation - Two Staff Assistance",
+   "identifier": "Evacuation - Transfer/Escort/Physical Assistance 2 Staff",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Exit-Seeking - Redirection Assistance",
+   "identifier": "Exit-Seeking - Redirection Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Fall Risk Assistance - Interventions",
+   "identifier": "Fall Risk Assistance - Interventions",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Fall Risk Assistance - Monitoring",
+   "identifier": "Fall Risk Assistance - Monitoring",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Fall Risk Intervention",
+   "identifier": "Fall Risk Intervention",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Fall Risk Safety Checks",
+   "identifier": "Fall Risk Safety Checks",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Orientation Behaviors - Frequent Assistance",
+   "identifier": "Orientation Behaviors - Frequent Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Orientation Behaviors - Moderate Assistance",
+   "identifier": "Orientation Behaviors - Moderate Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Orientation Behaviors - Occasional Assistance",
+   "identifier": "Orientation Behaviors - Occasional Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Other Behaviors - Redirection",
+   "identifier": "Other Behaviors - Redirection",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Psychosocial Assistance",
+   "identifier": "Psychosocial Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Recreational Drugs - Safety Monitoring",
+   "identifier": "Recreational Drugs - Safety Monitoring",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Redirection and Reasoning - Exceptional Assistance",
+   "identifier": "Redirection and Reasoning - Exceptional Assistance",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "Safety",
+   "name": "Redirection and Reasoning - Partial Independence",
+   "identifier": "Redirection and Reasoning - Partial Independence",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "Safety",
+   "name": "Redirection and Reasoning - Staff Assistance",
+   "identifier": "Redirection and Reasoning - Staff Assistance",
+   "label": "ABST",
+   "minutes": 1.0
+  },
+  {
+   "category": "Safety",
+   "name": "Responsive Behaviors",
+   "identifier": "Responsive Behaviors",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Safety Checks",
+   "identifier": "Safety Checks",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Smoking - Storage Assistance",
+   "identifier": "Smoking - Storage Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Smoking - Supervision",
+   "identifier": "Smoking - Supervision",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Smoking - Supervision/Storage Assistance",
+   "identifier": "Smoking - Supervision/Storage Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Socially Inappropriate Behaviors - Frequent Redirection",
+   "identifier": "Socially Inappropriate Behaviors - Frequent Redirection",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Socially Inappropriate Behaviors - Occasional Redirection",
+   "identifier": "Socially Inappropriate Behaviors - Occasional Redirection",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Spot Checks",
+   "identifier": "Spot Checks",
+   "label": "Spot Checks",
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Supervision Outside of Community",
+   "identifier": "Supervision Outside of Community",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wander Assistance - Intervention",
+   "identifier": "Wander Assistance - Intervention",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wander Assistance - Low",
+   "identifier": "Wander Assistance - Low",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wander Assistance - Monitoring",
+   "identifier": "Wander Assistance - Monitoring",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wandering - Occasional Redirection",
+   "identifier": "Wandering - Occasional Redirection",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wandering Behaviors",
+   "identifier": "Wandering Behaviors",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wandering/Exit-Seeking - Cueing/Redirection",
+   "identifier": "Wandering/Exit-Seeking - Cueing/Redirection",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Safety",
+   "name": "Wellness Checks",
+   "identifier": "Wellness Checks",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Additional Housekeeping Services",
+   "identifier": "Additional Housekeeping Services",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Additional Linen Laundry Services",
+   "identifier": "Additional Linen Laundry Services",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Bed Making Services",
+   "identifier": "Bed Making Services",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Monthly Vitals",
+   "identifier": "Monthly Vitals",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Nebulizer Assistance",
+   "identifier": "Nebulizer Assistance",
+   "label": "Nurse Tasks",
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Outside Agency Coordination",
+   "identifier": "Outside Agency Coordination",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Personal Laundry Services",
+   "identifier": "Personal Laundry Services",
+   "label": "Laundry",
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Pet Care Assistance",
+   "identifier": "Pet Care Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Shopping - Assistance",
+   "identifier": "Shopping - Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Transportation - Assistance",
+   "identifier": "Transportation - Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Special Services",
+   "name": "Trash Removal",
+   "identifier": "Trash Removal",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Bladder Output",
+   "identifier": "Bladder Output",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "BM Tracking",
+   "identifier": "BM Tracking",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "BM Tracking",
+   "identifier": "BM Tracking",
+   "label": "Monitoring",
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Bowel Output",
+   "identifier": "Bowel Output",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter - Assistance w/ Bag Changes",
+   "identifier": "Catheter - Assistance w/ Bag Changes",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter - Assistance w/ Emptying",
+   "identifier": "Catheter - Assistance w/ Emptying",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter - Coordination of Care",
+   "identifier": "Catheter - Coordination of Care",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter Assistance",
+   "identifier": "Catheter Assistance",
+   "label": "Toileting",
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter Care - Coordination of Care",
+   "identifier": "Catheter Care - Coordination of Care",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter Care - Light Assistance",
+   "identifier": "Catheter Care - Light Assistance",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Catheter Care - Physical Assistance",
+   "identifier": "Catheter Care - Physical Assistance",
+   "label": "ABST",
+   "minutes": 10.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Continence Products - Community",
+   "identifier": "Continence Products - Community",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Continence Products - Hospice",
+   "identifier": "Continence Products - Hospice",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Incontinence - Bladder",
+   "identifier": "Incontinence - Bladder",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Incontinence - Bowel",
+   "identifier": "Incontinence - Bowel",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Incontinence Assistance",
+   "identifier": "Incontinence Assistance",
+   "label": "Toileting",
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Ostomy/Ileostomy - Assistance",
+   "identifier": "Ostomy/Ileostomy - Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Ostomy/Ileostomy - Coordination of Care",
+   "identifier": "Ostomy/Ileostomy - Coordination of Care",
+   "label": "ABST",
+   "minutes": 5.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Ostomy/Ileostomy Care - Physical Assistance",
+   "identifier": "Ostomy/Ileostomy Care - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting - Bowel Output",
+   "identifier": "Toileting - Output Bowel",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting - Cueing/Standby Assistance at Night Only",
+   "identifier": "Toileting - Cueing/Standby Assistance at Night Only",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting - Output Bladder",
+   "identifier": "Toileting - Output Bladder",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting - Reminders at Night Only",
+   "identifier": "Toileting - Reminders at Night Only",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting Assistance",
+   "identifier": "Toileting Assistance",
+   "label": "Toileting",
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting Assistance - Empty Commode",
+   "identifier": "Toileting Assistance - Empty Commode",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting Assistance - Empty Urinal",
+   "identifier": "Toileting Assistance - Empty Urinal",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting/Continence Care - Cueing/Standby Assistance",
+   "identifier": "Toileting/Continence Care - Cueing/Standby Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting/Continence Care - Physical Assistance",
+   "identifier": "Toileting/Continence Care - Physical Assistance",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting/Continence Care - Reminders",
+   "identifier": "Toileting/Continence Care - Reminders",
+   "label": null,
+   "minutes": 0.0
+  },
+  {
+   "category": "Toileting",
+   "name": "Toileting/Continence Care - Two Staff Assistance",
+   "identifier": "Toileting/Continence Care - Two Staff Assistance",
+   "label": null,
+   "minutes": 0.0
+  }
+ ]
+}

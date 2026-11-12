@@ -853,6 +853,52 @@
       }
     },
     {
+      "id": "abst-crosswalk",
+      "name": "Oregon ABST Crosswalk (per resident)",
+      "description": "Read-only. For every current resident of an Oregon community, shows all 22 ODHS ABST care elements (OAR 411-054-0037(3)): the answer on the latest completed assessment, the published ABST care plan items, minutes, and a status (Staff time / Independent / Nurse task / Outside provider / Does not apply / minutes not yet configured / Not assessed). Includes a printable one-resident view, a community summary, and an Excel export. Supplements the Oregon ABST report in ALIS HQ. Contains resident PHI: stays inside the authenticated app. Needs the community's Care Settings catalog (Care Categories and Items export) because the ALIS API doesn't expose ABST labels; community 489 is built in.",
+      "category": "reporting",
+      "icon": "📋",
+      "timeout": 600000,
+      "scriptPath": "./abstCrosswalkJob.js",
+      "inputSchema": {
+        "type": "object",
+        "title": "Oregon ABST Crosswalk (per resident)",
+        "properties": {
+          "companyName": { "type": "string", "title": "Company / Account Name", "examples": ["Leisure Care"] },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "description": "The subdomain root of this company's ALIS admin URL (e.g. \"leisurecare\" for leisurecare.alisonline.com).",
+            "examples": ["leisurecare"]
+          },
+          "communityId": { "type": "string", "title": "ALIS Community ID", "examples": ["489"] },
+          "retName": {
+            "type": "string",
+            "title": "RET (assessment) name (optional)",
+            "description": "Defaults to the RET named in server/config/abstCrosswalk/oregon-elements.json.",
+            "examples": ["Leisure Care Assessment - Oregon"]
+          },
+          "footnote": { "type": "string", "title": "Footnote (optional)", "description": "Printed under the header on every page. Empty by default." },
+          "careItems": {
+            "type": "array",
+            "title": "Care Items (optional, from ALIS Care Settings export)",
+            "description": "Only needed for communities without a saved catalog (489 has one). Import ALIS's \"Care Categories and Items\" export: needs Care Category, Care Item, Assessment Care Identifier, Reporting Label, Estimated Time (min).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "careCategory": { "type": "string", "title": "Care Category" },
+                "careItem": { "type": "string", "title": "Care Item" },
+                "assessmentCareIdentifier": { "type": "string", "title": "Assessment Care Identifier" },
+                "reportingLabel": { "type": "string", "title": "Reporting Label" },
+                "estimatedTime": { "type": "string", "title": "Estimated Time (min)" }
+              }
+            }
+          }
+        },
+        "required": ["companyName", "companyHost", "communityId"]
+      }
+    },
+    {
       "id": "moved-out-billing",
       "name": "Moved-Out Residents With Open Billing",
       "description": "Flags moved-out residents who still have billing activity in ALIS so communities can wrap it up: a recurring charge still scheduled (open-ended or past move-out), an open invoice balance, or a charge that ran past the move-out date. Runs for a whole company in one go, broken out by community and prioritized High/Medium/Low. Proxy report: ALIS's \"Resident still has billing enabled\" banner is not in the export API, so a resident with the banner but no live charges or open invoices will not appear.",

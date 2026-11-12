@@ -18,6 +18,7 @@ const { runCrmIdAuditBulkJob }             = require('./crmIdAuditBulk');
 const { runAuditHistoryJob }               = require('./auditHistoryJob');
 const { runAcuityHistoryJob }              = require('./acuityHistoryJob');
 const { runMedCartReportJob }              = require('./medCartReportJob');
+const { runAbstCrosswalkJob }              = require('./abstCrosswalkJob');
 const { runMovedOutBillingJob }            = require('./movedOutBillingJob');
 const { runResidentPhotosJob }             = require('./residentPhotosJob');
 
@@ -122,6 +123,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'med-cart-report':
         return await runMedCartReportJob(jobId, payload);
+
+      case 'abst-crosswalk':
+        return await runAbstCrosswalkJob(jobId, payload);
 
       case 'moved-out-billing':
         return await runMovedOutBillingJob(jobId, payload);

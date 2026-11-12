@@ -5,6 +5,7 @@ import { generateGLSyncCSV, downloadCSV, generateFilename } from '../utils/csvEx
 import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
 import MedCartReportSummary from '../components/MedCartReportSummary';
+import AbstCrosswalkReport from '../components/AbstCrosswalkReport';
 import ResidentPhotosSummary from '../components/ResidentPhotosSummary';
 import MovedOutBillingSummary from '../components/MovedOutBillingSummary';
 
@@ -489,6 +490,13 @@ export default function JobDetail() {
         <div className="card mt-6">
           <h3 className="font-semibold text-primary-900 mb-4">Med Cart Report</h3>
           <MedCartReportSummary jobId={job.id} />
+        </div>
+      )}
+
+      {job.type === 'abst-crosswalk' && job.status === 'done' && (
+        <div className="card mt-6">
+          <h3 className="font-semibold text-primary-900 mb-4">Oregon ABST Crosswalk</h3>
+          <AbstCrosswalkReport jobId={job.id} />
         </div>
       )}
 
