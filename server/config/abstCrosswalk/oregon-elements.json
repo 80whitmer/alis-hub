@@ -24,8 +24,10 @@
       "questions": [ { "domain": "Mobility and Transfers", "text": "Transfers" } ],
       "careItemPrefixes": ["Transfers"] },
     { "id": 7, "name": "Repositioning",
-      "questions": [ { "domain": "Mobility and Transfers", "text": "Repositioning" } ],
-      "careItemPrefixes": ["Repositioning"] },
+      "questions": [
+        { "domain": "Mobility and Transfers", "text": "Repositioning" },
+        { "domain": "Mobility and Transfers", "text": "Bed Mobility" } ],
+      "careItemPrefixes": ["Repositioning", "Bed Mobility"] },
     { "id": 8, "name": "Ambulation",
       "questions": [ { "domain": "Mobility and Transfers", "text": "Ambulation" } ],
       "careItemPrefixes": ["Ambulation"] },
