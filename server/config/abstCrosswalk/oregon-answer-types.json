@@ -1,5 +1,5 @@
 {
- "_readme": "Answer option -> status type, from Leisure_Care_Oregon_RET_ABST_Build_List_v3 (tab 4). Types: staff | nurse | outside | notApplicable | independent. Keyed by RET domain + normalized question text + normalized answer text (lowercase, numbering stripped). Edit or regenerate when the RET changes; answers not listed fall back to wording-based rules and are flagged in the report.",
+ "_readme": "Answer option -> status type, from Leisure_Care_Oregon_RET_ABST_Build_List_v3 (tab 4). Types: staff | nurse | outside | notApplicable | independent. Keyed by RET domain + normalized question text + normalized answer text (lowercase, numbering stripped). Edit or regenerate when the RET changes; answers not listed fall back to wording-based rules and are flagged in the report. Corrections to v3 (marked correctedFrom): the four \"No assistance with ... is needed\" medication answers are notApplicable; \"Independent with oxygen use\" is independent; oxygen equipment/descriptor answers are informational (they do not drive status). Bathing Preferences answers are informational (preferences, not assistance).",
  "entries": [
   {
    "element": 1,
@@ -7,7 +7,8 @@
    "question": "hygiene",
    "answer": "resident is independent with hygiene tasks including but not limited to brushing teeth, etc",
    "type": "independent",
-   "careIdentifier": "Hygiene - Independent"
+   "careIdentifier": "Hygiene - Independent",
+   "need": "Hygiene - Independent"
   },
   {
    "element": 1,
@@ -17,7 +18,8 @@
    "type": "staff",
    "careItem": "Hygiene - Reminders",
    "careIdentifier": "Hygiene - Reminders",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Hygiene - Reminders"
   },
   {
    "element": 1,
@@ -27,7 +29,8 @@
    "type": "staff",
    "careItem": "Hygiene - Setup Assistance",
    "careIdentifier": "Hygiene - Reminders/Setup",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Hygiene - Reminders/Setup"
   },
   {
    "element": 1,
@@ -37,7 +40,8 @@
    "type": "staff",
    "careItem": "Hygiene - Cueing/Standby Assistance",
    "careIdentifier": "Hygiene - Cueing/Standby",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Hygiene - Cueing/Standby"
   },
   {
    "element": 1,
@@ -47,7 +51,8 @@
    "type": "staff",
    "careItem": "Hygiene - Physical Assistance",
    "careIdentifier": "Hygiene - Physical Assistance",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Hygiene - Physical Assistance 1 Staff"
   },
   {
    "element": 1,
@@ -55,7 +60,8 @@
    "question": "hygiene",
    "answer": "resident requires assistance from outside provider to complete hygiene tasks",
    "type": "outside",
-   "careIdentifier": "Hygiene - Outside Provider"
+   "careIdentifier": "Hygiene - Outside Provider",
+   "need": "Hygiene - Outside Provider"
   },
   {
    "element": 2,
@@ -63,7 +69,8 @@
    "question": "grooming",
    "answer": "resident is independent with grooming tasks",
    "type": "independent",
-   "careIdentifier": "Grooming - Independent"
+   "careIdentifier": "Grooming - Independent",
+   "need": "Grooming - Independent"
   },
   {
    "element": 2,
@@ -73,7 +80,8 @@
    "type": "staff",
    "careItem": "Grooming - Reminders",
    "careIdentifier": "Grooming - Reminders",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Grooming - Reminders"
   },
   {
    "element": 2,
@@ -83,7 +91,8 @@
    "type": "staff",
    "careItem": "Grooming - Setup Assistance",
    "careIdentifier": "Grooming - Reminders/Setup",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Grooming - Setup Assistance"
   },
   {
    "element": 2,
@@ -93,7 +102,8 @@
    "type": "staff",
    "careItem": "Grooming - Cueing/Standby Assistance",
    "careIdentifier": "Grooming - Cueing/Standby",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Grooming - Cueing/Standby"
   },
   {
    "element": 2,
@@ -103,7 +113,8 @@
    "type": "staff",
    "careItem": "Grooming - Physical Assistance",
    "careIdentifier": "Grooming - Physical Assistance 1 Staff",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Grooming - Physical Assistance 1 Staff"
   },
   {
    "element": 2,
@@ -111,7 +122,8 @@
    "question": "grooming",
    "answer": "resident requires assistance from outside provider to complete grooming tasks",
    "type": "outside",
-   "careIdentifier": "Grooming - Outside Provider"
+   "careIdentifier": "Grooming - Outside Provider",
+   "need": "Grooming - Outside Provider"
   },
   {
    "element": 3,
@@ -119,7 +131,8 @@
    "question": "dressing",
    "answer": "resident is independent with dressing",
    "type": "independent",
-   "careIdentifier": "Dressing - Independent"
+   "careIdentifier": "Dressing - Independent",
+   "need": "Dressing - Independent"
   },
   {
    "element": 3,
@@ -129,7 +142,8 @@
    "type": "staff",
    "careItem": "Dressing - Reminders",
    "careIdentifier": "Dressing - Reminders",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Dressing - Reminders"
   },
   {
    "element": 3,
@@ -139,7 +153,8 @@
    "type": "staff",
    "careItem": "Dressing - Setup Assistance",
    "careIdentifier": "Dressing - Setup Assistance",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Dressing - Setup Assistance"
   },
   {
    "element": 3,
@@ -149,7 +164,8 @@
    "type": "staff",
    "careItem": "Dressing - Cueing/Standby Assistance",
    "careIdentifier": "Dressing - Cueing/Standby",
-   "minutes": 16
+   "minutes": 16,
+   "need": "Dressing - Cueing/Standby"
   },
   {
    "element": 3,
@@ -159,7 +175,8 @@
    "type": "staff",
    "careItem": "Dressing - Physical Assistance",
    "careIdentifier": "Dressing - Physical Assistance 1 Staff",
-   "minutes": 24
+   "minutes": 24,
+   "need": "Dressing - Physical Assistance 1 Staff"
   },
   {
    "element": 3,
@@ -169,7 +186,8 @@
    "type": "staff",
    "careItem": "Dressing - Two Staff Assistance",
    "careIdentifier": "Dressing - Physical Assistance 2 Staff",
-   "minutes": 48
+   "minutes": 48,
+   "need": "Dressing - Physical Assistance 2 Staff"
   },
   {
    "element": 3,
@@ -179,7 +197,8 @@
    "type": "staff",
    "careItem": "Dressing - Compression Hose Assistance",
    "careIdentifier": "Dressing - Compression Hose",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Dressing - Compression Hose"
   },
   {
    "element": 3,
@@ -187,7 +206,8 @@
    "question": "dressing",
    "answer": "resident requires assistance from outside provider with all dressing tasks",
    "type": "outside",
-   "careIdentifier": "Dressing - Outside Provider"
+   "careIdentifier": "Dressing - Outside Provider",
+   "need": "Dressing - Outside Provider"
   },
   {
    "element": 4,
@@ -195,7 +215,8 @@
    "question": "toileting / incontinence management",
    "answer": "resident is independent with toileting / incontinence management",
    "type": "independent",
-   "careIdentifier": "Toileting/Incontinence - Independent"
+   "careIdentifier": "Toileting/Incontinence - Independent",
+   "need": "Toileting/Incontinence - Independent"
   },
   {
    "element": 4,
@@ -205,7 +226,8 @@
    "type": "staff",
    "careItem": "Toileting/Continence Care - Reminders",
    "careIdentifier": "Toileting/Incontinence - Reminders",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Toileting/Incontinence - Reminders"
   },
   {
    "element": 4,
@@ -215,7 +237,8 @@
    "type": "staff",
    "careItem": "Toileting/Continence Care - Cueing/Standby Assistance",
    "careIdentifier": "Toileting/Incontinence - Cueing/Standby",
-   "minutes": 15
+   "minutes": 15,
+   "need": "Toileting/Incontinence - Cueing/Standby"
   },
   {
    "element": 4,
@@ -225,7 +248,8 @@
    "type": "staff",
    "careItem": "Toileting/Continence Care - Physical Assistance",
    "careIdentifier": "Toileting/Incontinence - Physical Assistance 1 Staff",
-   "minutes": 15
+   "minutes": 15,
+   "need": "Toileting/Incontinence - Physical Assistance 1 Staff"
   },
   {
    "element": 4,
@@ -235,7 +259,8 @@
    "type": "staff",
    "careItem": "Toileting/Continence Care - Two Staff Assistance",
    "careIdentifier": "Toileting/Incontinence - Physical Assistance 2 Staff",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Toileting/Incontinence - Physical Assistance 2 Staff"
   },
   {
    "element": 4,
@@ -245,7 +270,8 @@
    "type": "staff",
    "careItem": "Toileting - Output Bladder",
    "careIdentifier": "Toileting - Output Bladder",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Toileting - Output Bladder"
   },
   {
    "element": 4,
@@ -255,7 +281,8 @@
    "type": "staff",
    "careItem": "Toileting - Bowel Output",
    "careIdentifier": "Toileting - Output Bowel",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Toileting - Output Bowel"
   },
   {
    "element": 4,
@@ -265,7 +292,8 @@
    "type": "staff",
    "careItem": "Toileting Assistance - Empty Urinal",
    "careIdentifier": "Toileting - Empty Urinal",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Toileting - Empty Urinal"
   },
   {
    "element": 4,
@@ -275,7 +303,8 @@
    "type": "staff",
    "careItem": "Toileting Assistance - Empty Commode",
    "careIdentifier": "Toileting - Empty Commode",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Toileting - Empty Commode"
   },
   {
    "element": 4,
@@ -285,7 +314,8 @@
    "type": "staff",
    "careItem": "Toileting - Nightly Reminders",
    "careIdentifier": "Toileting - Nightly Reminders",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Toileting - Nightly Reminders"
   },
   {
    "element": 4,
@@ -295,7 +325,8 @@
    "type": "staff",
    "careItem": "Toileting - Nightly Cueing/Standby Assistance",
    "careIdentifier": "Toileting - Nightly Cueing/Standby",
-   "minutes": 15
+   "minutes": 15,
+   "need": "Toileting - Nightly Cueing/Standby"
   },
   {
    "element": 4,
@@ -310,7 +341,8 @@
    "question": "bathing/showering frequency",
    "answer": "resident is independent with bathing/showering",
    "type": "independent",
-   "careIdentifier": "Bathing/Showering - Independent"
+   "careIdentifier": "Bathing/Showering - Independent",
+   "need": "Bathing/Showering - Independent"
   },
   {
    "element": 5,
@@ -320,7 +352,8 @@
    "type": "staff",
    "careItem": "Bathing - Reminders/Cueing",
    "careIdentifier": "Bathing/Showering - Reminders",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Reminders"
   },
   {
    "element": 5,
@@ -330,7 +363,8 @@
    "type": "staff",
    "careItem": "Bathing - Additional Time",
    "careIdentifier": "Bathing/Showering - Additional Time",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Additional Time"
   },
   {
    "element": 5,
@@ -338,7 +372,8 @@
    "question": "bathing/showering frequency",
    "answer": "resident requires outside provider assistance with bathing/showering",
    "type": "outside",
-   "careIdentifier": "Bathing/Showering - Third Party Provider"
+   "careIdentifier": "Bathing/Showering - Third Party Provider",
+   "need": "Bathing/Showering - Third Party Provider"
   },
   {
    "element": 5,
@@ -346,7 +381,8 @@
    "question": "bathing/showering - 1x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 1x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 1x Per Week",
+   "need": "Bathing/Showering - Reminders 1x Per Week"
   },
   {
    "element": 5,
@@ -356,7 +392,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 1x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 1x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 1x Per Week"
   },
   {
    "element": 5,
@@ -366,7 +403,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 1x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 1x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 1x Per Week"
   },
   {
    "element": 5,
@@ -374,7 +412,8 @@
    "question": "bathing/showering - 2x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 2x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 2x Per Week",
+   "need": "Bathing/Showering - Reminders 2x Per Week"
   },
   {
    "element": 5,
@@ -384,7 +423,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 2x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 2x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 2x Per Week"
   },
   {
    "element": 5,
@@ -394,7 +434,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 2x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 2x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 2x Per Week"
   },
   {
    "element": 5,
@@ -402,7 +443,8 @@
    "question": "bathing/showering - 3x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 3x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 3x Per Week",
+   "need": "Bathing/Showering - Reminders 3x Per Week"
   },
   {
    "element": 5,
@@ -412,7 +454,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 3x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 3x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 3x Per Week"
   },
   {
    "element": 5,
@@ -422,7 +465,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 3x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 3x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 3x Per Week"
   },
   {
    "element": 5,
@@ -430,7 +474,8 @@
    "question": "bathing/showering - 4x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 4x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 4x Per Week",
+   "need": "Bathing/Showering - Reminders 4x Per Week"
   },
   {
    "element": 5,
@@ -440,7 +485,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 4x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 4x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 4x Per Week"
   },
   {
    "element": 5,
@@ -450,7 +496,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 4x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 4x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 4x Per Week"
   },
   {
    "element": 5,
@@ -458,7 +505,8 @@
    "question": "bathing/showering - 5x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 5x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 5x Per Week",
+   "need": "Bathing/Showering - Reminders 5x Per Week"
   },
   {
    "element": 5,
@@ -468,7 +516,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 5x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 5x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 5x Per Week"
   },
   {
    "element": 5,
@@ -478,7 +527,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 5x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 5x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 5x Per Week"
   },
   {
    "element": 5,
@@ -486,7 +536,8 @@
    "question": "bathing/showering - 6x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 6x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 6x Per Week",
+   "need": "Bathing/Showering - Reminders 6x Per Week"
   },
   {
    "element": 5,
@@ -496,7 +547,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 6x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 6x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 6x Per Week"
   },
   {
    "element": 5,
@@ -506,7 +558,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 6x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 6x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 6x Per Week"
   },
   {
    "element": 5,
@@ -514,7 +567,8 @@
    "question": "bathing/showering - 7x per week",
    "answer": "resident requires reminders to complete bathing/showering tasks",
    "type": "staff",
-   "careIdentifier": "Bathing/Showering - Reminders 7x Per Week"
+   "careIdentifier": "Bathing/Showering - Reminders 7x Per Week",
+   "need": "Bathing/Showering - Reminders 7x Per Week"
   },
   {
    "element": 5,
@@ -524,7 +578,8 @@
    "type": "staff",
    "careItem": "Bathing - Physical Assistance 7x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 1 Staff 7x Per Week",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Bathing/Showering - Physical Assistance 1 Staff 7x Per Week"
   },
   {
    "element": 5,
@@ -534,7 +589,8 @@
    "type": "staff",
    "careItem": "Bathing - Two Staff Assistance 7x Per Week",
    "careIdentifier": "Bathing/Showering - Physical Assistance 2 Staff 7x Per Week",
-   "minutes": 60
+   "minutes": 60,
+   "need": "Bathing/Showering - Physical Assistance 2 Staff 7x Per Week"
   },
   {
    "element": 5,
@@ -544,57 +600,74 @@
    "type": "notApplicable",
    "careItem": "Bathing Preferences",
    "careIdentifier": "Bathing Preferences",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Bathing Preferences",
+   "informational": true
   },
   {
    "element": 5,
    "domain": "ADLs",
    "question": "bathing preferences",
    "answer": "resident prefers showers",
-   "type": "staff",
+   "type": "notApplicable",
    "careItem": "Bathing Preferences",
    "careIdentifier": "Bathing Preferences",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Bathing Preferences",
+   "informational": true,
+   "correctedFrom": "staff (a preference, not assistance; care item is an informational 0-minute ADLs item)"
   },
   {
    "element": 5,
    "domain": "ADLs",
    "question": "bathing preferences",
    "answer": "resident prefers baths",
-   "type": "staff",
+   "type": "notApplicable",
    "careItem": "Bathing Preferences",
    "careIdentifier": "Bathing Preferences",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Bathing Preferences",
+   "informational": true,
+   "correctedFrom": "staff (a preference, not assistance; care item is an informational 0-minute ADLs item)"
   },
   {
    "element": 5,
    "domain": "ADLs",
    "question": "bathing preferences",
    "answer": "resident prefers whirlpool baths",
-   "type": "staff",
+   "type": "notApplicable",
    "careItem": "Bathing Preferences",
    "careIdentifier": "Bathing Preferences",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Bathing Preferences",
+   "informational": true,
+   "correctedFrom": "staff (a preference, not assistance; care item is an informational 0-minute ADLs item)"
   },
   {
    "element": 5,
    "domain": "ADLs",
    "question": "bathing preferences",
    "answer": "resident prefers bed bath/sponge bath",
-   "type": "staff",
+   "type": "notApplicable",
    "careItem": "Bathing Preferences",
    "careIdentifier": "Bathing Preferences",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Bathing Preferences",
+   "informational": true,
+   "correctedFrom": "staff (a preference, not assistance; care item is an informational 0-minute ADLs item)"
   },
   {
    "element": 5,
    "domain": "ADLs",
    "question": "bathing preferences",
    "answer": "resident has religions affiliations or practices that impact their bathing frequency or routine",
-   "type": "staff",
+   "type": "notApplicable",
    "careItem": "Bathing Preferences",
    "careIdentifier": "Bathing Preferences",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Bathing Preferences",
+   "informational": true,
+   "correctedFrom": "staff (a preference, not assistance; care item is an informational 0-minute ADLs item)"
   },
   {
    "element": 6,
@@ -602,7 +675,8 @@
    "question": "transfers",
    "answer": "resident is independent with transfers",
    "type": "independent",
-   "careIdentifier": "Transfers - Independent"
+   "careIdentifier": "Transfers - Independent",
+   "need": "Transfers - Independent"
   },
   {
    "element": 6,
@@ -612,7 +686,8 @@
    "type": "staff",
    "careItem": "Transfers - Reminders",
    "careIdentifier": "Transfers - Reminders",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Transfers - Reminders"
   },
   {
    "element": 6,
@@ -622,7 +697,8 @@
    "type": "staff",
    "careItem": "Transfers - Setup Assistance",
    "careIdentifier": "Transfers - Setup Assistance",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Transfers - Setup"
   },
   {
    "element": 6,
@@ -632,7 +708,8 @@
    "type": "staff",
    "careItem": "Transfers - Cueing/Standby Assistance",
    "careIdentifier": "Transfers - Cueing",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Transfers - Cueing"
   },
   {
    "element": 6,
@@ -642,7 +719,8 @@
    "type": "staff",
    "careItem": "Transfers - Physical Assistance",
    "careIdentifier": "Transfers - Physical Assistance 1 Staff",
-   "minutes": 15
+   "minutes": 15,
+   "need": "Transfers - Physical Assistance 1 Staff"
   },
   {
    "element": 6,
@@ -652,7 +730,8 @@
    "type": "staff",
    "careItem": "Transfers - Two Staff Assistance",
    "careIdentifier": "Transfers - Physical Assistance 2 Staff",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Transfers - Physical Assistance 2 Staff"
   },
   {
    "element": 6,
@@ -660,7 +739,8 @@
    "question": "transfers",
    "answer": "resident requires assistance from outside provider",
    "type": "outside",
-   "careIdentifier": "Transfers - Outside Provider"
+   "careIdentifier": "Transfers - Outside Provider",
+   "need": "Transfers - Outside Provider"
   },
   {
    "element": 7,
@@ -670,7 +750,8 @@
    "type": "staff",
    "careItem": "Repositioning Assistance",
    "careIdentifier": "Repositioning - Physical Assistance 1 Staff",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Repositioning - Physical Assistance 1 Staff"
   },
   {
    "element": 7,
@@ -685,7 +766,8 @@
    "question": "ambulation",
    "answer": "resident is independent with ambulation",
    "type": "independent",
-   "careIdentifier": "Ambulation - Independent"
+   "careIdentifier": "Ambulation - Independent",
+   "need": "Ambulation - Independent"
   },
   {
    "element": 8,
@@ -695,7 +777,8 @@
    "type": "staff",
    "careItem": "Ambulation - Reminders",
    "careIdentifier": "Ambulation - Reminders",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Ambulation - Reminders"
   },
   {
    "element": 8,
@@ -705,7 +788,8 @@
    "type": "staff",
    "careItem": "Ambulation - Setup Assistance",
    "careIdentifier": "Ambulation - Setup Assistance",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Ambulation - Setup Assistance"
   },
   {
    "element": 8,
@@ -715,7 +799,8 @@
    "type": "staff",
    "careItem": "Ambulation - Cueing/Standby Assistance",
    "careIdentifier": "Ambulation - Cueing/Standby",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Ambulation - Cueing/Standby"
   },
   {
    "element": 8,
@@ -725,7 +810,8 @@
    "type": "staff",
    "careItem": "Ambulation - Physical Assistance",
    "careIdentifier": "Ambulation - Physical Assistance 1 Staff",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Ambulation - Physical Assistance 1 Staff"
   },
   {
    "element": 8,
@@ -735,7 +821,8 @@
    "type": "staff",
    "careItem": "Ambulation - Two Staff Assistance",
    "careIdentifier": "Ambulation - Physical Assistance 2 Staff",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Ambulation - Physical Assistance 2 Staff"
   },
   {
    "element": 8,
@@ -743,14 +830,16 @@
    "question": "ambulation",
    "answer": "resident requires assistance from outside provider with all ambulation",
    "type": "outside",
-   "careIdentifier": "Ambulation - Outside Provider"
+   "careIdentifier": "Ambulation - Outside Provider",
+   "need": "Ambulation - Outside Provider"
   },
   {
    "element": 8,
    "domain": "Mobility and Transfers",
    "question": "ambulation",
    "answer": "unable to ambulate",
-   "type": "staff"
+   "type": "staff",
+   "need": "Ambulation - Non-Ambulatory"
   },
   {
    "element": 9,
@@ -758,7 +847,8 @@
    "question": "dining",
    "answer": "resident is independent with all dining needs",
    "type": "independent",
-   "careIdentifier": "Dining - Independent"
+   "careIdentifier": "Dining - Independent",
+   "need": "Dining - Independent"
   },
   {
    "element": 9,
@@ -768,7 +858,8 @@
    "type": "staff",
    "careItem": "Dining - Reminders",
    "careIdentifier": "Dining - Reminders",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Dining - Reminders"
   },
   {
    "element": 9,
@@ -778,7 +869,8 @@
    "type": "staff",
    "careItem": "Dining - Setup Assistance",
    "careIdentifier": "Dining - Setup",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Dining - Setup"
   },
   {
    "element": 9,
@@ -788,7 +880,8 @@
    "type": "staff",
    "careItem": "Dining - Cueing/Standby Assistance",
    "careIdentifier": "Dining - Cueing/Standby",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Dining - Cueing/Standby"
   },
   {
    "element": 9,
@@ -798,7 +891,8 @@
    "type": "staff",
    "careItem": "Dining - Physical Assistance",
    "careIdentifier": "Dining Physical Assistance 1 Staff",
-   "minutes": 15
+   "minutes": 15,
+   "need": "Dining Physical Assistance 1 Staff"
   },
   {
    "element": 9,
@@ -808,7 +902,8 @@
    "type": "staff",
    "careItem": "Dining - Meal Order Assistance",
    "careIdentifier": "Dining - Meal Order",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Dining - Meal Order"
   },
   {
    "element": 9,
@@ -818,7 +913,8 @@
    "type": "staff",
    "careItem": "Dining - Meal Preparation",
    "careIdentifier": "Dining - Meal Preparation",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Dining - Meal Preparation"
   },
   {
    "element": 10,
@@ -839,35 +935,41 @@
    "domain": "Medication Assistance",
    "question": "prescription, herbal, and/or over the counter medications",
    "answer": "community to assist with all medication management",
-   "type": "staff"
+   "type": "staff",
+   "need": "Medication Administration - Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "prescription, herbal, and/or over the counter medications",
    "answer": "outside provider sets up all medications; resident takes medications independently",
-   "type": "outside"
+   "type": "outside",
+   "need": "Medication Administration - Outside Provider"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "prescription, herbal, and/or over the counter medications",
    "answer": "outside provider administers all medications to resident",
-   "type": "outside"
+   "type": "outside",
+   "need": "Medication Administration - Outside Provider"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "prescription, herbal, and/or over the counter medications",
    "answer": "community assists with part of medication management (resident can self administer some meds)",
-   "type": "staff"
+   "type": "staff",
+   "need": "Medication Administration - Self-Admin and Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "oral medications",
    "answer": "no assistance with oral medications is needed",
-   "type": "staff"
+   "type": "notApplicable",
+   "need": "No assistance needed",
+   "correctedFrom": "staff (build list v3 had no Need mapped)"
   },
   {
    "element": 10,
@@ -877,7 +979,8 @@
    "type": "staff",
    "careItem": "Oral Medications - Up to 3x Daily",
    "careIdentifier": "Oral Medications - Up to 3x Daily",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Oral Medications - Staff Assistance Up to 3x Daily"
   },
   {
    "element": 10,
@@ -887,7 +990,8 @@
    "type": "staff",
    "careItem": "Oral Medications - 4x Daily",
    "careIdentifier": "Oral Medications - 4x Daily",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Oral Medications - Staff Assistance 4x Daily"
   },
   {
    "element": 10,
@@ -897,7 +1001,8 @@
    "type": "staff",
    "careItem": "Oral Medications - 5x or More Daily",
    "careIdentifier": "Oral Medications - 5x or More Daily",
-   "minutes": 25
+   "minutes": 25,
+   "need": "Oral Medications - Staff Assistance 5x or More Daily"
   },
   {
    "element": 10,
@@ -907,7 +1012,8 @@
    "type": "nurse",
    "careItem": "Oral Medications - Up to 3x Daily",
    "careIdentifier": "Oral Medications - Up to 3x Daily",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Oral Medications - Nurse Assistance Up to 3x Daily"
   },
   {
    "element": 10,
@@ -917,7 +1023,8 @@
    "type": "nurse",
    "careItem": "Oral Medications - 4x Daily",
    "careIdentifier": "Oral Medications - 4x Daily",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Oral Medications - Nurse Assistance 4x Daily"
   },
   {
    "element": 10,
@@ -927,28 +1034,33 @@
    "type": "nurse",
    "careItem": "Oral Medications - 5x or More Daily",
    "careIdentifier": "Oral Medications - 5x or More Daily",
-   "minutes": 25
+   "minutes": 25,
+   "need": "Oral Medications - Nurse Assistance 5x or More Daily"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "oral medications",
    "answer": "prn assistance with oral medications",
-   "type": "staff"
+   "type": "staff",
+   "need": "Oral Medications - PRN Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "oral medications",
    "answer": "outside provider assists with oral medications",
-   "type": "outside"
+   "type": "outside",
+   "need": "Oral Medications - Outside Provider"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "inhalers (mdi and nasal sprays)",
    "answer": "no assistance with inhaled medications is needed",
-   "type": "staff"
+   "type": "notApplicable",
+   "need": "No assistance needed",
+   "correctedFrom": "staff (build list v3 had no Need mapped)"
   },
   {
    "element": 10,
@@ -958,7 +1070,8 @@
    "type": "staff",
    "careItem": "Inhaler - Staff Assistance",
    "careIdentifier": "Inhaler - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Staff Assistance"
   },
   {
    "element": 10,
@@ -968,7 +1081,8 @@
    "type": "staff",
    "careItem": "Inhaler - Staff Assistance",
    "careIdentifier": "Inhaler - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Staff Assistance"
   },
   {
    "element": 10,
@@ -978,7 +1092,8 @@
    "type": "staff",
    "careItem": "Inhaler - Staff Assistance",
    "careIdentifier": "Inhaler - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Staff Assistance"
   },
   {
    "element": 10,
@@ -988,7 +1103,8 @@
    "type": "staff",
    "careItem": "Inhaler - Staff Assistance",
    "careIdentifier": "Inhaler - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Staff Assistance"
   },
   {
    "element": 10,
@@ -998,7 +1114,8 @@
    "type": "nurse",
    "careItem": "Inhaler - Nurse Assistance",
    "careIdentifier": "Inhaler - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1008,7 +1125,8 @@
    "type": "nurse",
    "careItem": "Inhaler - Nurse Assistance",
    "careIdentifier": "Inhaler - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1018,7 +1136,8 @@
    "type": "nurse",
    "careItem": "Inhaler - Nurse Assistance",
    "careIdentifier": "Inhaler - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1028,7 +1147,8 @@
    "type": "nurse",
    "careItem": "Inhaler - Nurse Assistance",
    "careIdentifier": "Inhaler - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1038,7 +1158,8 @@
    "type": "staff",
    "careItem": "Inhaler - Staff Assistance",
    "careIdentifier": "Inhaler - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - PRN Assistance"
   },
   {
    "element": 10,
@@ -1048,14 +1169,17 @@
    "type": "outside",
    "careItem": "Inhaler - Staff Assistance",
    "careIdentifier": "Inhaler - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Inhaler - Outside Provider"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "topical medications",
    "answer": "no assistance with topical medications is needed topical medications",
-   "type": "staff"
+   "type": "notApplicable",
+   "need": "No assistance needed",
+   "correctedFrom": "staff (build list v3 had no Need mapped)"
   },
   {
    "element": 10,
@@ -1065,7 +1189,8 @@
    "type": "staff",
    "careItem": "Topical Meds - Staff Assistance",
    "careIdentifier": "Topical Meds - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Topical Meds - Staff Assistance"
   },
   {
    "element": 10,
@@ -1075,7 +1200,8 @@
    "type": "staff",
    "careItem": "Topical Meds - Staff Assistance",
    "careIdentifier": "Topical Meds - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Topical Meds - Staff Assistance"
   },
   {
    "element": 10,
@@ -1085,7 +1211,8 @@
    "type": "staff",
    "careItem": "Topical Meds - Staff Assistance",
    "careIdentifier": "Topical Meds - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Topical Meds - Staff Assistance"
   },
   {
    "element": 10,
@@ -1095,35 +1222,40 @@
    "type": "staff",
    "careItem": "Topical Meds - Staff Assistance",
    "careIdentifier": "Topical Meds - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Topical Meds - Staff Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "topical medications",
    "answer": "nurse: topical 1 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Topical Meds - Nurse Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "topical medications",
    "answer": "nurse: topical 2 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Topical Meds - Nurse Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "topical medications",
    "answer": "nurse: topical 3 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Topical Meds - Nurse Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "topical medications",
    "answer": "nurse: topical 4 or more x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Topical Meds - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1133,7 +1265,8 @@
    "type": "staff",
    "careItem": "Topical Meds - Staff Assistance",
    "careIdentifier": "Topical Meds - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Topical Meds - PRN Assistance"
   },
   {
    "element": 10,
@@ -1143,14 +1276,17 @@
    "type": "outside",
    "careItem": "Topical Meds - Staff Assistance",
    "careIdentifier": "Topical Meds - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Topical Meds - Outside Provider"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "medication drops",
    "answer": "no assistance with eye or ear drop is needed",
-   "type": "staff"
+   "type": "notApplicable",
+   "need": "No assistance needed",
+   "correctedFrom": "staff (build list v3 had no Need mapped)"
   },
   {
    "element": 10,
@@ -1160,7 +1296,8 @@
    "type": "staff",
    "careItem": "Drops - Staff Assistance",
    "careIdentifier": "Drops - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Staff Assistance"
   },
   {
    "element": 10,
@@ -1170,7 +1307,8 @@
    "type": "staff",
    "careItem": "Drops - Staff Assistance",
    "careIdentifier": "Drops - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Staff Assistance"
   },
   {
    "element": 10,
@@ -1180,7 +1318,8 @@
    "type": "staff",
    "careItem": "Drops - Staff Assistance",
    "careIdentifier": "Drops - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Staff Assistance"
   },
   {
    "element": 10,
@@ -1190,7 +1329,8 @@
    "type": "staff",
    "careItem": "Drops - Staff Assistance",
    "careIdentifier": "Drops - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Staff Assistance"
   },
   {
    "element": 10,
@@ -1200,7 +1340,8 @@
    "type": "nurse",
    "careItem": "Drops - Nurse Assistance",
    "careIdentifier": "Drops - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1210,7 +1351,8 @@
    "type": "nurse",
    "careItem": "Drops - Nurse Assistance",
    "careIdentifier": "Drops - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1220,7 +1362,8 @@
    "type": "nurse",
    "careItem": "Drops - Nurse Assistance",
    "careIdentifier": "Drops - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1230,7 +1373,8 @@
    "type": "nurse",
    "careItem": "Drops - Nurse Assistance",
    "careIdentifier": "Drops - Nurse Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Nurse Assistance"
   },
   {
    "element": 10,
@@ -1240,7 +1384,8 @@
    "type": "staff",
    "careItem": "Drops - Staff Assistance",
    "careIdentifier": "Drops - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - PRN Assistance"
   },
   {
    "element": 10,
@@ -1250,7 +1395,8 @@
    "type": "outside",
    "careItem": "Drops - Staff Assistance",
    "careIdentifier": "Drops - Staff Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Drops - Outside Provider"
   },
   {
    "element": 10,
@@ -1264,119 +1410,136 @@
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin cue 1 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin cue 2 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin cue 3 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin cue 4 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin admin 1 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin admin 2 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin admin 3 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "uap: insulin admin 4 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Insulin Injections - Staff Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin cue 1 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin cue 2 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin cue 3 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin cue 4 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Cueing Assistance"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin admin 1 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin admin 2 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin admin 3 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Administration"
   },
   {
    "element": 10,
    "domain": "Medication Assistance",
    "question": "insulin injections",
    "answer": "nurse: insulin admin 4 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Insulin Injections - Nurse Administration"
   },
   {
    "element": 11,
    "domain": "Medication Assistance",
    "question": "non-pharmacological interventions for pain management",
    "answer": "resident does not have any non-pharmacological interventions for pain management",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Non-Pharmacological Interventions - Does Not Apply"
   },
   {
    "element": 11,
@@ -1386,7 +1549,8 @@
    "type": "staff",
    "careItem": "Non-Drug Pain Interventions",
    "careIdentifier": "Non-Pharmacological Interventions",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Non-Pharmacological Interventions"
   },
   {
    "element": 12,
@@ -1396,7 +1560,8 @@
    "type": "staff",
    "careItem": "Wound Care - Coordination of Care",
    "careIdentifier": "Wound Care - Coordination of Care",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Wound Care - Coordination of Care"
   },
   {
    "element": 12,
@@ -1406,7 +1571,8 @@
    "type": "staff",
    "careItem": "Wound Observation - Staff Assistance",
    "careIdentifier": "Wound Observation - UAP",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Wound Observation - UAP"
   },
   {
    "element": 12,
@@ -1416,7 +1582,8 @@
    "type": "nurse",
    "careItem": "Wound Observation - Nurse Assistance",
    "careIdentifier": "Wound Observation - Nurse",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Wound Observation - Nurse"
   },
   {
    "element": 12,
@@ -1426,7 +1593,8 @@
    "type": "staff",
    "careItem": "Wound Care - Staff Assistance",
    "careIdentifier": "Wound Care - UAP",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Wound Care - UAP"
   },
   {
    "element": 12,
@@ -1436,14 +1604,16 @@
    "type": "nurse",
    "careItem": "Wound Care - Nurse Assistance",
    "careIdentifier": "Wound Care - Licensed Nurse",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Wound Care - Licensed Nurse"
   },
   {
    "element": 12,
    "domain": "ADLs",
    "question": "catheter care",
    "answer": "n/a; resident does not have a catheter",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Catheter Care - Does Not Apply"
   },
   {
    "element": 12,
@@ -1451,7 +1621,8 @@
    "question": "catheter care",
    "answer": "resident is independent with catheter care needs including bag changes",
    "type": "independent",
-   "careIdentifier": "Catheter Care - Independent"
+   "careIdentifier": "Catheter Care - Independent",
+   "need": "Catheter Care - Independent"
   },
   {
    "element": 12,
@@ -1461,7 +1632,8 @@
    "type": "staff",
    "careItem": "Catheter Care - Light Assistance",
    "careIdentifier": "Catheter Care - Light Assistance",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Catheter Care - Light Assistance"
   },
   {
    "element": 12,
@@ -1471,7 +1643,8 @@
    "type": "staff",
    "careItem": "Catheter Care - Physical Assistance",
    "careIdentifier": "Catheter Care - Physical Assistance",
-   "minutes": 10
+   "minutes": 10,
+   "need": "Catheter Care - Physical Assistance"
   },
   {
    "element": 12,
@@ -1481,14 +1654,16 @@
    "type": "staff",
    "careItem": "Catheter Care - Coordination of Care",
    "careIdentifier": "Catheter Care - Coordination of Care",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Catheter Care - Coordination of Care"
   },
   {
    "element": 12,
    "domain": "ADLs",
    "question": "ostomy / ileostomy care",
    "answer": "n/a; resident does not have an ostomy/ileostomy",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Ostomy/Ileostomy Care - Does Not Apply"
   },
   {
    "element": 12,
@@ -1496,7 +1671,8 @@
    "question": "ostomy / ileostomy care",
    "answer": "resident is independent with ostomy/ileotomy care needs",
    "type": "independent",
-   "careIdentifier": "Ostomy/Ileostomy Care - Independent"
+   "careIdentifier": "Ostomy/Ileostomy Care - Independent",
+   "need": "Ostomy/Ileostomy Care - Independent"
   },
   {
    "element": 12,
@@ -1506,7 +1682,8 @@
    "type": "staff",
    "careItem": "Ostomy/Ileostomy Care - Physical Assistance",
    "careIdentifier": "Ostomy/Ileostomy Care - Physical Assistance",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Ostomy/Ileostomy Care - Physical Assistance"
   },
   {
    "element": 12,
@@ -1514,174 +1691,199 @@
    "question": "ostomy / ileostomy care",
    "answer": "resident requires coordination of care with home health, hospice or agency providing osotmy/ileosotmy maintenance",
    "type": "staff",
-   "careIdentifier": "Ostomy/Ileostomy Care - Coordination of Care"
+   "careIdentifier": "Ostomy/Ileostomy Care - Coordination of Care",
+   "need": "Ostomy/Ileostomy Care - Coordination of Care"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "uap: assist breathing tx 1 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Breathing Treatments - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "uap: assist breathing tx 2 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Breathing Treatments - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "uap: assist breathing tx 3x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Breathing Treatments - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "uap: assist breathing tx 4 x daily",
-   "type": "staff"
+   "type": "staff",
+   "need": "Breathing Treatments - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "uap: assist breathing tx as needed",
-   "type": "staff"
+   "type": "staff",
+   "need": "Breathing Treatments - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "nurse: assist breathing tx 1 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Breathing Treatments - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "nurse: assist breathing tx 2 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Breathing Treatments - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "nurse: assist breathing tx 3x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Breathing Treatments - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "nurse: assist breathing tx 4 x daily",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Breathing Treatments - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "breathing treatments",
    "answer": "nurse: assist breathing tx as needed",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Breathing Treatments - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "independent with oxygen use",
-   "type": "staff"
+   "type": "independent",
+   "need": "Oxygen - Independent",
+   "correctedFrom": "staff (build list v3 had no Need mapped)"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "oxygen provided by (name of oxygen supplier)",
-   "type": "staff",
-   "informational": true
+   "type": "notApplicable",
+   "informational": true,
+   "correctedFrom": "staff (equipment/descriptor answer, no Need mapped)"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "oxygen tanks",
-   "type": "staff",
-   "informational": true
+   "type": "notApplicable",
+   "informational": true,
+   "correctedFrom": "staff (equipment/descriptor answer, no Need mapped)"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "oxygen concentrator",
-   "type": "staff",
-   "informational": true
+   "type": "notApplicable",
+   "informational": true,
+   "correctedFrom": "staff (equipment/descriptor answer, no Need mapped)"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "liquid oxygen (as allowed by fire marshal)",
-   "type": "staff",
-   "informational": true
+   "type": "notApplicable",
+   "informational": true,
+   "correctedFrom": "staff (equipment/descriptor answer, no Need mapped)"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "other oxygen",
-   "type": "staff",
-   "informational": true
+   "type": "notApplicable",
+   "informational": true,
+   "correctedFrom": "staff (equipment/descriptor answer, no Need mapped)"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "uap: 02 safety check (required)",
-   "type": "staff"
+   "type": "staff",
+   "need": "Oxygen - Staff Safety Check"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "nurse: 02 safety check (required)",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Oxygen - Nurse Safety Check"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "uap: needs/receives assistance with use of oxygen",
-   "type": "staff"
+   "type": "staff",
+   "need": "Oxygen - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "nurse: needs/receives assistance with use of oxygen",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Oxygen - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "uap: needs/receives assistance filling portable oxygen tank",
-   "type": "staff"
+   "type": "staff",
+   "need": "Oxygen - Staff Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "nurse: needs/receives assistance filling portable oxygen tank",
-   "type": "nurse"
+   "type": "nurse",
+   "need": "Oxygen - Nurse Assistance"
   },
   {
    "element": 12,
    "domain": "Medication Assistance",
    "question": "oxygen therapy",
    "answer": "resident requires breathing treatment",
-   "type": "staff",
-   "informational": true
+   "type": "notApplicable",
+   "informational": true,
+   "correctedFrom": "staff (equipment/descriptor answer, no Need mapped)"
   },
   {
    "element": 13,
@@ -1689,7 +1891,8 @@
    "question": "cognition / orientation",
    "answer": "n/a: resident is cooperative and alert to person, place and time",
    "type": "notApplicable",
-   "careIdentifier": "Redirection and Reasoning - Independent"
+   "careIdentifier": "Redirection and Reasoning - Independent",
+   "need": "Redirection and Reasoning - Independent"
   },
   {
    "element": 13,
@@ -1699,7 +1902,8 @@
    "type": "staff",
    "careItem": "Redirection and Reasoning - Partial Independence",
    "careIdentifier": "Redirection and Reasoning - Partial Independence",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Redirection and Reasoning - Partial Independence"
   },
   {
    "element": 13,
@@ -1709,7 +1913,8 @@
    "type": "staff",
    "careItem": "Redirection and Reasoning - Staff Assistance",
    "careIdentifier": "Redirection and Reasoning - Staff Assistance",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Redirection and Reasoning - Staff Assistance"
   },
   {
    "element": 13,
@@ -1719,7 +1924,8 @@
    "type": "staff",
    "careItem": "Redirection and Reasoning - Exceptional Assistance",
    "careIdentifier": "Redirection and Reasoning - Exceptional Assistance",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Redirection and Reasoning - Exceptional Assistance"
   },
   {
    "element": 13,
@@ -1727,7 +1933,8 @@
    "question": "cognition / orientation",
    "answer": "resident requires assistance from outside provider for redirection / orientation assistance",
    "type": "outside",
-   "careIdentifier": "Redirection and Reasoning - Outside Provider"
+   "careIdentifier": "Redirection and Reasoning - Outside Provider",
+   "need": "Redirection and Reasoning - Outside Provider"
   },
   {
    "element": 14,
@@ -1737,7 +1944,8 @@
    "type": "staff",
    "careItem": "Non-Drug Interventions for Behaviors - Mild",
    "careIdentifier": "Non-Pharmacological Intervention for Behaviors - Mild",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Non-Pharmacological Intervention for Behaviors - Mild"
   },
   {
    "element": 14,
@@ -1747,7 +1955,8 @@
    "type": "staff",
    "careItem": "Non-Drug Interventions for Behaviors - Moderate",
    "careIdentifier": "Non-Pharmacological Intervention for Behaviors - Moderate",
-   "minutes": 15
+   "minutes": 15,
+   "need": "Non-Pharmacological Intervention for Behaviors - Moderate"
   },
   {
    "element": 14,
@@ -1757,7 +1966,8 @@
    "type": "staff",
    "careItem": "Non-Drug Interventions for Behaviors - Severe",
    "careIdentifier": "Non-Pharmacological Intervention for Behaviors - Severe",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Non-Pharmacological Intervention for Behaviors - Severe"
   },
   {
    "element": 15,
@@ -1765,7 +1975,8 @@
    "question": "activity participation",
    "answer": "resident is independent with activity participation and selection",
    "type": "independent",
-   "careIdentifier": "Activity Participation - Independent"
+   "careIdentifier": "Activity Participation - Independent",
+   "need": "Activity Participation - Independent"
   },
   {
    "element": 15,
@@ -1775,7 +1986,8 @@
    "type": "staff",
    "careItem": "Activity Participation - Reminders",
    "careIdentifier": "Activity Participation - Reminders",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Activity Participation - Reminders"
   },
   {
    "element": 15,
@@ -1785,7 +1997,8 @@
    "type": "staff",
    "careItem": "Activity Participation - Prompting/Cueing",
    "careIdentifier": "Activity Participation - Prompting/Cueing",
-   "minutes": 2
+   "minutes": 2,
+   "need": "Activity Participation - Prompting/Cueing"
   },
   {
    "element": 15,
@@ -1795,7 +2008,8 @@
    "type": "staff",
    "careItem": "Activity Participation - Escorts 1x Weekly",
    "careIdentifier": "Activity Participation - Escorts 1x Weekly",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Activity Participation - Escorts 1x Weekly"
   },
   {
    "element": 15,
@@ -1805,7 +2019,8 @@
    "type": "staff",
    "careItem": "Activity Participation - Escorts 3x Weekly",
    "careIdentifier": "Activity Participation - Escorts 3x Weekly",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Activity Participation - Escorts 3x Weekly"
   },
   {
    "element": 15,
@@ -1815,7 +2030,8 @@
    "type": "staff",
    "careItem": "Activity Participation - Escorts Daily",
    "careIdentifier": "Activity Participation - Escorts Daily",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Activity Participation - Escorts Daily"
   },
   {
    "element": 15,
@@ -1825,21 +2041,24 @@
    "type": "staff",
    "careItem": "Activity Participation - Standby/Physical Assistance",
    "careIdentifier": "Activity Participation - Standby/Physical Assistance",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Activity Participation - Standby/Physical Assistance"
   },
   {
    "element": 15,
    "domain": "Activities: Social & Recreational",
    "question": "activity participation",
    "answer": "resident requires assistance from outside provider to attend activities",
-   "type": "outside"
+   "type": "outside",
+   "need": "Activity Participation - Outside Provider"
   },
   {
    "element": 16,
    "domain": "General Information",
    "question": "monitoring physical conditions or symptoms",
    "answer": "no",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Physical Conditions - Does Not Apply"
   },
   {
    "element": 16,
@@ -1849,14 +2068,16 @@
    "type": "staff",
    "careItem": "Physical Conditions Monitoring",
    "careIdentifier": "Physical Conditions - Monitoring",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Physical Conditions - Monitoring"
   },
   {
    "element": 17,
    "domain": "General Information",
    "question": "monitoring behavioral conditions or symptoms",
    "answer": "no",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Behavioral Conditions - Does Not Apply"
   },
   {
    "element": 17,
@@ -1866,7 +2087,8 @@
    "type": "staff",
    "careItem": "Behavioral Conditions Monitoring",
    "careIdentifier": "Behavioral Conditions - Monitoring",
-   "minutes": 4
+   "minutes": 4,
+   "need": "Behavioral Conditions - Monitoring"
   },
   {
    "element": 18,
@@ -1874,7 +2096,8 @@
    "question": "communication",
    "answer": "resident is able to effectively communicate their needs/wishes",
    "type": "independent",
-   "careIdentifier": "Communication - Independent"
+   "careIdentifier": "Communication - Independent",
+   "need": "Communication - Independent"
   },
   {
    "element": 18,
@@ -1882,7 +2105,8 @@
    "question": "communication",
    "answer": "resident requires assistance; has moderate difficulty with communication and is not always able to effectively express their selves and/or make their needs/wishes known due to physical or cognitive impairment",
    "type": "staff",
-   "careIdentifier": "Communication Assistance - Moderate Difficulty"
+   "careIdentifier": "Communication Assistance - Moderate Difficulty",
+   "need": "Communication Assistance - Moderate Difficulty"
   },
   {
    "element": 18,
@@ -1890,14 +2114,16 @@
    "question": "communication",
    "answer": "resident requires assistance; has severe difficulty with communication and is not able to effectively express their selves and/or make their needs/wishes known due to physical or cognitive impairment",
    "type": "staff",
-   "careIdentifier": "Communication Assistance - Severe Difficulty"
+   "careIdentifier": "Communication Assistance - Severe Difficulty",
+   "need": "Communication Assistance - Severe Difficulty"
   },
   {
    "element": 19,
    "domain": "Safety and Risk",
    "question": "does the resident use a call pendant or have a call light system?",
    "answer": "no",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Call Pendant - Does Not Use"
   },
   {
    "element": 19,
@@ -1907,21 +2133,24 @@
    "type": "staff",
    "careItem": "Call Pendant Use",
    "careIdentifier": "Call Pendant Use",
-   "minutes": 1
+   "minutes": 1,
+   "need": "Call Pendant Use"
   },
   {
    "element": 19,
    "domain": "Safety and Risk",
    "question": "has the resident been educated on call pendant/call light system usage?",
    "answer": "yes",
-   "type": "staff"
+   "type": "staff",
+   "need": "Call Pendant Education"
   },
   {
    "element": 20,
    "domain": "Safety and Risk",
    "question": "safety checks",
    "answer": "resident does not require safety checks",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Safety Check - Does Not Apply"
   },
   {
    "element": 20,
@@ -1931,7 +2160,8 @@
    "type": "staff",
    "careItem": "Safety Checks",
    "careIdentifier": "Safety Checks",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Safety Check"
   },
   {
    "element": 20,
@@ -1941,7 +2171,8 @@
    "type": "staff",
    "careItem": "Safety Checks",
    "careIdentifier": "Safety Checks",
-   "minutes": 0
+   "minutes": 0,
+   "need": "Safety Check"
   },
   {
    "element": 20,
@@ -1958,7 +2189,8 @@
    "type": "staff",
    "careItem": "Fall Risk Safety Checks",
    "careIdentifier": "Fall Risk Safety Checks",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Fall Risk Safety Checks"
   },
   {
    "element": 20,
@@ -1968,7 +2200,8 @@
    "type": "staff",
    "careItem": "Fall Risk Safety Checks",
    "careIdentifier": "Fall Risk Safety Checks",
-   "minutes": 6
+   "minutes": 6,
+   "need": "Fall Risk Safety Checks"
   },
   {
    "element": 20,
@@ -1978,7 +2211,8 @@
    "type": "staff",
    "careItem": "Wellness Checks",
    "careIdentifier": "Wellness Checks",
-   "minutes": 16
+   "minutes": 16,
+   "need": "Wellness Checks"
   },
   {
    "element": 21,
@@ -1988,7 +2222,8 @@
    "type": "staff",
    "careItem": "Trash Removal",
    "careIdentifier": "Trash Removal",
-   "minutes": 5
+   "minutes": 5,
+   "need": "Supplemental Trash Removal Service"
   },
   {
    "element": 21,
@@ -1998,7 +2233,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2008,7 +2244,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2018,7 +2255,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2028,7 +2266,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2038,7 +2277,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2048,7 +2288,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2058,7 +2299,8 @@
    "type": "staff",
    "careItem": "Additional Housekeeping Services",
    "careIdentifier": "Additional Housekeeping Services",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Additional Housekeeping Services"
   },
   {
    "element": 21,
@@ -2068,7 +2310,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2078,7 +2321,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2088,7 +2332,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2098,7 +2343,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2108,7 +2354,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2118,7 +2365,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2128,7 +2376,8 @@
    "type": "staff",
    "careItem": "Additional Personal Laundry Services",
    "careIdentifier": "Personal Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Personal Laundry Services"
   },
   {
    "element": 21,
@@ -2138,7 +2387,8 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 21,
@@ -2148,7 +2398,8 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 21,
@@ -2158,7 +2409,8 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 21,
@@ -2168,7 +2420,8 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 21,
@@ -2178,7 +2431,8 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 21,
@@ -2188,7 +2442,8 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 21,
@@ -2198,14 +2453,16 @@
    "type": "staff",
    "careItem": "Additional Linen Laundry Services",
    "careIdentifier": "Additional Linen Laundry Services",
-   "minutes": 30
+   "minutes": 30,
+   "need": "Additional Linen Laundry Services"
   },
   {
    "element": 22,
    "domain": "Additional Services",
    "question": "pet care assistance",
    "answer": "n/a - does not have a pet",
-   "type": "notApplicable"
+   "type": "notApplicable",
+   "need": "Pet Care - Does Not Apply"
   },
   {
    "element": 22,
@@ -2213,7 +2470,8 @@
    "question": "pet care assistance",
    "answer": "independent with pet care (feeding, toileting and clean-up)",
    "type": "independent",
-   "careIdentifier": "Pet Care - Independent"
+   "careIdentifier": "Pet Care - Independent",
+   "need": "Pet Care - Independent"
   },
   {
    "element": 22,
@@ -2223,7 +2481,8 @@
    "type": "staff",
    "careItem": "Pet Care Assistance",
    "careIdentifier": "Pet Care Assistance",
-   "minutes": 12
+   "minutes": 12,
+   "need": "Pet Care Assistance"
   },
   {
    "element": 22,
@@ -2233,7 +2492,8 @@
    "type": "staff",
    "careItem": "Pet Care Assistance",
    "careIdentifier": "Pet Care Assistance",
-   "minutes": 12
+   "minutes": 12,
+   "need": "Pet Care Assistance"
   },
   {
    "element": 22,
@@ -2243,7 +2503,8 @@
    "type": "staff",
    "careItem": "Pet Care Assistance",
    "careIdentifier": "Pet Care Assistance",
-   "minutes": 12
+   "minutes": 12,
+   "need": "Pet Care Assistance"
   },
   {
    "element": 22,
@@ -2253,7 +2514,8 @@
    "type": "staff",
    "careItem": "Pet Care Assistance",
    "careIdentifier": "Pet Care Assistance",
-   "minutes": 12
+   "minutes": 12,
+   "need": "Pet Care Assistance"
   },
   {
    "element": 22,
@@ -2263,7 +2525,8 @@
    "type": "staff",
    "careItem": "Pet Care Assistance",
    "careIdentifier": "Pet Care Assistance",
-   "minutes": 12
+   "minutes": 12,
+   "need": "Pet Care Assistance"
   },
   {
    "element": 22,
@@ -2273,7 +2536,8 @@
    "type": "staff",
    "careItem": "Pet Care Assistance",
    "careIdentifier": "Pet Care Assistance",
-   "minutes": 12
+   "minutes": 12,
+   "need": "Pet Care Assistance"
   },
   {
    "element": 22,
@@ -2281,14 +2545,16 @@
    "question": "pet care assistance",
    "answer": "outside provider assists with all pet care",
    "type": "outside",
-   "careIdentifier": "Pet Care - Outside Provider"
+   "careIdentifier": "Pet Care - Outside Provider",
+   "need": "Pet Care - Outside Provider"
   },
   {
    "element": 22,
    "domain": "Smoking Assessment",
    "question": "smoking level of assistance",
    "answer": "the resident is independent and able to smoke safely in the designated smoking area",
-   "type": "independent"
+   "type": "independent",
+   "need": "Smoking - Independent"
   },
   {
    "element": 22,
@@ -2298,7 +2564,8 @@
    "type": "staff",
    "careItem": "Smoking Assistance",
    "careIdentifier": "Smoking Assistance",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Smoking - Assistance"
   },
   {
    "element": 22,
@@ -2308,14 +2575,16 @@
    "type": "staff",
    "careItem": "Smoking Escort and Assistance",
    "careIdentifier": "Smoking Escort and Assistance",
-   "minutes": 20
+   "minutes": 20,
+   "need": "Smoking - Escort & Assistance"
   },
   {
    "element": 22,
    "domain": "Smoking Assessment",
    "question": "smoking level of assistance",
    "answer": "resident requires outside provider assistance with smoking and safety needs",
-   "type": "outside"
+   "type": "outside",
+   "need": "Smoking - Outside Provider"
   }
  ]
 }

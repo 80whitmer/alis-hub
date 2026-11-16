@@ -86,11 +86,15 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
   for (const r of report.residents) {
     for (const el of r.elements) {
       if (surveyor) {
-        detail.push({
+        el.careRows.forEach((cr, i) => detail.push({
           values: [r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? '', el.id, el.name,
-            el.questions.filter((q) => q.answered).map((q) => q.text).join('; '), answerSummary(el), el.statusLabel, el.weeklyMinutes],
+            i === 0 ? answerSummary(el) : '', cr.name, cr.schedule, cr.prn ? 'PRN' : '',
+            cr.prn ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
+            cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
+            cr.prn || cr.weeklyMinutes == null ? '' : cr.weeklyMinutes,
+            el.statusLabel, cr.source === 'care_plan' ? 'Care plan' : cr.source === 'assessment' ? 'Assessment answer' : ''],
           fill: FLAG_FILL[el.status],
-        });
+        }));
         continue;
       }
       const base = [
@@ -122,8 +126,10 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
     surveyor ? [
       { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 },
-      { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 34 }, { header: 'Assessment question(s)', width: 38 },
-      { header: 'Assessment answer(s)', width: 60 }, { header: 'Status', width: 32 }, { header: 'Weekly caregiver minutes', width: 12 },
+      { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 32 },
+      { header: 'Assessment answer(s)', width: 56 }, { header: 'Care item', width: 40 }, { header: 'Schedule', width: 18 }, { header: 'PRN', width: 6 },
+      { header: 'Minutes per scheduled day', width: 12 }, { header: 'PRN minutes per occurrence', width: 12 }, { header: 'Weekly minutes', width: 10 },
+      { header: 'Status', width: 30 }, { header: 'Source', width: 16 },
     ] : [
       { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 }, { header: 'Care plan published', width: 12 },
@@ -153,17 +159,17 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
   addTable(
     wb.addWorksheet('Resident totals'),
     report,
-    'Weekly caregiver minutes by resident (Staff time items only; minutes are per day x days per week; PRN and times-per-day not multiplied)',
+    'Caregiver minutes by resident: weekly = care item minutes (per day) x days per week; average daily = weekly / 7. PRN and times-per-day are not multiplied',
     [
       { header: 'Resident', width: 26 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 18 }, { header: 'Care plan published', width: 12 },
-      { header: 'Weekly caregiver minutes', width: 12 }, { header: 'Elements with staff time', width: 12 },
+      { header: 'Total care items', width: 10 }, { header: 'Weekly caregiver minutes', width: 12 }, { header: 'Average daily minutes', width: 12 }, { header: 'Average daily hours', width: 12 }, { header: 'Elements with staff time', width: 12 },
       { header: 'Minutes not yet configured', width: 12 }, { header: 'Not assessed', width: 10 },
     ],
     report.residents.map((r) => ({
       values: [
         r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? 'No completed evaluation', r.carePlanPublishDate ?? '',
-        r.weeklyCaregiverMinutes,
+        r.totalCareItems, r.weeklyCaregiverMinutes, r.averageDailyMinutes, round2(r.averageDailyMinutes / 60),
         r.elements.filter((e) => e.status === STATUS.STAFF_TIME).length,
         r.elements.filter((e) => e.status === STATUS.GAP).length,
         r.elements.filter((e) => e.status === STATUS.NOT_ASSESSED).length,
@@ -171,7 +177,40 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
     }))
   );
 
-  if (surveyor) return wb;
+  if (surveyor) {
+    // Roster layout, matching the ALIS HQ "Resident Roster with Care Plan Items" export: one row per care item,
+    // every element represented, and a totals row per resident. Estimated Mins = minutes on a scheduled day.
+    const roster = [];
+    for (const r of report.residents) {
+      for (const el of r.elements) {
+        for (const cr of el.careRows) {
+          roster.push({
+            values: [r.name, report.meta.communityName, cr.source === 'care_plan' ? (cr.label || 'ABST') : cr.source === 'assessment' ? 'Assessment answer' : '',
+              cr.name, cr.prn ? 'prn' : cr.schedule, cr.prn ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
+              cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
+              cr.prn || cr.minutesPerOccurrence == null ? '' : round2(cr.minutesPerOccurrence / 60)],
+            fill: FLAG_FILL[el.status],
+          });
+        }
+      }
+      roster.push({
+        values: [`${r.name} Total`, '', '', `Total Care Items: ${r.totalCareItems}`, '', `Avg Daily Mins: ${r.averageDailyMinutes}`, `PRN items: ${r.prnItems} (per occurrence, not in totals)`, `Avg Daily Hrs: ${round2(r.averageDailyMinutes / 60)}`],
+        fill: 'FFE7EEF7',
+      });
+    }
+    addTable(
+      wb.addWorksheet('Roster (HQ layout)'),
+      report,
+      'Care item roster in the ALIS HQ layout. Estimated Mins = minutes on a scheduled day; totals are average daily minutes (weekly / 7); PRN is per occurrence and not multiplied',
+      [
+        { header: 'Resident', width: 26 }, { header: 'Community', width: 28 }, { header: 'Care Item Label', width: 16 },
+        { header: 'Care Item', width: 46 }, { header: 'Schedule', width: 22 }, { header: 'Estimated Mins (per scheduled day)', width: 16 },
+        { header: 'Estimated Mins - PRN (per occurrence)', width: 16 }, { header: 'Estimated Hrs (per scheduled day)', width: 14 },
+      ],
+      roster
+    );
+    return wb;
+  }
 
   // 4. HQ roster format, for reconciliation with "Resident Roster with Care Plan Items" in ALIS HQ
   const hq = [];

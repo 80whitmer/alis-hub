@@ -358,6 +358,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
               type,
               informational: !!row?.informational,
               expectedCareItem: row?.careItem || null,
+              rowName: row?.careItem || row?.careIdentifier || row?.need || null,
               fromTable: !!row || ['n/a', 'none'].includes(norm(aText)),
               notes: given.notes || undefined,
             });
@@ -409,7 +410,44 @@ async function buildAbstCrosswalk(host, opts = {}) {
 
       const weeklyMinutes = round1(items.filter((it) => it.countsAsCaregiver && !it.prn && it.weeklyMinutes != null).reduce((s, it) => s + it.weeklyMinutes, 0));
 
+      // Roster-style rows (the layout of the HQ "Resident Roster with Care Plan Items"): the element's care plan
+      // items, plus one 0-minute row per assessment answer that resolves to Independent / Outside provider / Nurse /
+      // Does not apply. Those rows come from the resident's real answer (never inferred from a missing item) and
+      // are marked source 'assessment'. Staff answers with no matching care item show as "not yet configured".
+      const careRows = items.map((it) => ({
+        source: 'care_plan',
+        name: it.name,
+        label: it.label,
+        schedule: it.schedule,
+        prn: it.prn,
+        minutesPerOccurrence: it.minutesPerOccurrence,
+        weeklyMinutes: it.prn || !it.countsAsCaregiver ? null : it.weeklyMinutes,
+        countsAsCaregiver: it.countsAsCaregiver,
+        periodic: it.periodic,
+      }));
+      const haveNames = new Set(items.map((it) => norm(it.name)));
+      for (const a of allAnswers) {
+        if (!a.type || a.informational) continue;
+        const TYPE_WORD = { independent: 'Independent', outside: 'Outside provider', nurse: 'Nurse', notApplicable: 'Does not apply', staff: 'Staff assistance' };
+        const rowName = a.rowName || `${a.question} - ${TYPE_WORD[a.type]}`;
+        if (haveNames.has(norm(rowName))) continue;
+        haveNames.add(norm(rowName));
+        careRows.push({
+          source: 'assessment',
+          name: rowName,
+          label: null,
+          schedule: '—',
+          prn: false,
+          minutesPerOccurrence: a.type === 'staff' ? null : 0,
+          weeklyMinutes: a.type === 'staff' ? null : 0,
+          countsAsCaregiver: false,
+          answerType: a.type,
+        });
+      }
+      if (!careRows.length) careRows.push({ source: 'none', name: 'No assessment answer on file', schedule: '—', prn: false, minutesPerOccurrence: null, weeklyMinutes: null, countsAsCaregiver: false });
+
       const out = {
+        careRows,
         id: el.id,
         name: el.name,
         status,
@@ -440,7 +478,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
 
     outResidents.push({
       residentId: res.residentId,
-      name: res.fullName,
+      name: res.lastName && res.firstName ? `${res.lastName}, ${res.firstName}` : res.fullName,
       unit: asArray(res.rooms).join(', ') || null,
       productType: res.productType,
       evaluation: latest
@@ -450,6 +488,9 @@ async function buildAbstCrosswalk(host, opts = {}) {
       undecodableAnswers: undecodable,
       elements,
       weeklyCaregiverMinutes: round1(elements.reduce((s, e) => s + e.weeklyMinutes, 0)),
+      averageDailyMinutes: round1(elements.reduce((s, e) => s + e.weeklyMinutes, 0) / 7),
+      totalCareItems: elements.reduce((s, e) => s + e.careRows.length, 0),
+      prnItems: elements.reduce((s, e) => s + e.careRows.filter((r) => r.prn).length, 0),
       unassignedAbstItems: unassigned.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
       ambiguousDuplicateItems: ambiguous.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
       itemsNotInCatalog: notInCatalog.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),

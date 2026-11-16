@@ -51,53 +51,67 @@ function HeaderBlock({ meta, resident }) {
   );
 }
 
+function minutesCell(cr) {
+  if (cr.prn) return cr.minutesPerOccurrence != null ? `PRN · ${cr.minutesPerOccurrence}/occ.` : 'PRN';
+  return cr.minutesPerOccurrence == null ? 'Not yet configured' : cr.minutesPerOccurrence;
+}
+
 function ResidentSheet({ meta, resident, pageBreak }) {
   return (
     <table className="w-full text-xs border-collapse" style={pageBreak ? { pageBreakAfter: 'always' } : undefined}>
       <thead>
         <tr>
-          <th colSpan={4} className="text-left font-normal pb-2 border-b border-neutral-300">
+          <th colSpan={7} className="text-left font-normal pb-2 border-b border-neutral-300">
             <HeaderBlock meta={meta} resident={resident} />
           </th>
         </tr>
         <tr className="bg-neutral-100 text-left">
-          <th className="p-1 border border-neutral-300 w-[24%]">Care element</th>
-          <th className="p-1 border border-neutral-300 w-[46%]">Assessment answer</th>
-          <th className="p-1 border border-neutral-300 w-[8%]">Wkly min</th>
-          <th className="p-1 border border-neutral-300 w-[22%]">Status</th>
+          <th className="p-1 border border-neutral-300 w-[15%]">Care element</th>
+          <th className="p-1 border border-neutral-300 w-[25%]">Assessment answer</th>
+          <th className="p-1 border border-neutral-300 w-[22%]">Care item</th>
+          <th className="p-1 border border-neutral-300 w-[10%]">Schedule</th>
+          <th className="p-1 border border-neutral-300 w-[8%]">Mins / scheduled day</th>
+          <th className="p-1 border border-neutral-300 w-[6%]">Wkly mins</th>
+          <th className="p-1 border border-neutral-300 w-[14%]">Status</th>
         </tr>
       </thead>
       <tbody>
-        {resident.elements.map((el) => (
-          <tr key={el.id} className="align-top">
-            <td className="p-1 border border-neutral-300 font-semibold">{el.id}. {el.name}</td>
-            <td className="p-1 border border-neutral-300">
-              {el.questions.filter((q) => q.answered).length === 0 ? (
-                <span className="text-neutral-500">No answer on the latest completed evaluation</span>
-              ) : (
-                el.questions.filter((q) => q.answered).map((q) => (
-                  <div key={q.domain + q.text} className="mb-1">
-                    <span className="text-neutral-500">{q.text}: </span>
-                    {q.answers.map((a) => a.answer).join(' + ')}
-                  </div>
-                ))
+        {resident.elements.map((el) =>
+          el.careRows.map((cr, i) => (
+            <tr key={`${el.id}-${i}`} className="align-top">
+              {i === 0 && (
+                <>
+                  <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300 font-semibold">{el.id}. {el.name}</td>
+                  <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300">
+                    {el.questions.filter((q) => q.answered).length === 0 ? (
+                      <span className="text-neutral-500">No answer on the latest completed evaluation</span>
+                    ) : (
+                      el.questions.filter((q) => q.answered).map((q) => (
+                        <div key={q.domain + q.text} className="mb-1">
+                          <span className="text-neutral-500">{q.answers[0]?.question || q.text}: </span>
+                          {q.answers.map((a) => a.answer).join(' + ')}
+                        </div>
+                      ))
+                    )}
+                  </td>
+                </>
               )}
-              {el.subTypes && (
-                <div className="mt-1 space-y-0.5">
-                  {el.subTypes.map((sub) => (
-                    <div key={sub.name}><b>{sub.name}</b>: <StatusBadge status={sub.status} label={sub.statusLabel} /></div>
-                  ))}
-                </div>
+              <td className="p-1 border border-neutral-300">{cr.name}</td>
+              <td className="p-1 border border-neutral-300">{cr.schedule}</td>
+              <td className="p-1 border border-neutral-300 text-right">{minutesCell(cr)}</td>
+              <td className="p-1 border border-neutral-300 text-right">{cr.prn || cr.weeklyMinutes == null ? '' : cr.weeklyMinutes}</td>
+              {i === 0 && (
+                <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300"><StatusBadge status={el.status} label={el.statusLabel} /></td>
               )}
-            </td>
-            <td className="p-1 border border-neutral-300 text-right">{el.weeklyMinutes}</td>
-            <td className="p-1 border border-neutral-300"><StatusBadge status={el.status} label={el.statusLabel} /></td>
-          </tr>
-        ))}
+            </tr>
+          ))
+        )}
         <tr className="font-bold bg-neutral-50">
-          <td className="p-1 border border-neutral-300" colSpan={2}>Weekly caregiver minutes (Staff time only; care item minutes are per day × days per week; PRN and times-per-day not multiplied)</td>
+          <td className="p-1 border border-neutral-300" colSpan={5}>
+            Total care items: {resident.totalCareItems} · Average daily minutes: {resident.averageDailyMinutes} ({Math.round((resident.averageDailyMinutes / 60) * 100) / 100} hrs) · PRN items: {resident.prnItems} (per occurrence, not in totals)
+          </td>
           <td className="p-1 border border-neutral-300 text-right">{resident.weeklyCaregiverMinutes}</td>
-          <td className="p-1 border border-neutral-300" />
+          <td className="p-1 border border-neutral-300 font-normal">Weekly caregiver minutes</td>
         </tr>
       </tbody>
     </table>
