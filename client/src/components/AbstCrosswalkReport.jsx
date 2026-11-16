@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 /**
  * Oregon ABST crosswalk viewer for a completed abst-crosswalk job: community
@@ -207,7 +207,79 @@ function SideBySideSheet({ meta, resident, pageBreak }) {
   );
 }
 
-function ResidentSheet({ meta, resident, view, pageBreak }) {
+/** Minutes cells for the vertical summary: numbers for counted minutes, 0 for 0-minute statuses, a dash where nothing is counted. */
+function verticalMinutes(el) {
+  if (el.status === 'staff_time') return el.weeklyMinutes > 0 ? { daily: Math.round((el.weeklyMinutes / 7) * 10) / 10, weekly: el.weeklyMinutes } : { daily: 'PRN', weekly: '—' };
+  if (el.status === 'assessed_no_minutes' || el.status === 'not_assessed') return { daily: '—', weekly: '—' };
+  return { daily: 0, weekly: 0 };
+}
+
+/** One resident, 22 elements down the page, numbers only (the vertical counterpart of the resident summary row). */
+function VerticalSheet({ meta, resident, view, pageBreak }) {
+  const both = view === 'both';
+  const bases = both ? ['assessment', 'care_plan'] : [view];
+  const projected = bases.map((b) => projectResident(resident, b));
+  const colSpan = 2 + bases.length * 3;
+  return (
+    <table className="w-full text-xs border-collapse" style={pageBreak ? { pageBreakAfter: 'always' } : undefined}>
+      <thead>
+        <tr>
+          <th colSpan={colSpan} className="text-left font-normal pb-2 border-b border-neutral-300">
+            <HeaderBlock meta={meta} resident={resident} view={view} />
+          </th>
+        </tr>
+        <tr className="bg-neutral-100 text-left">
+          <th className="p-1 border border-neutral-300 w-[4%]">#</th>
+          <th className="p-1 border border-neutral-300">Care element</th>
+          {bases.map((b) => (
+            <Fragment key={b}>
+              <th className="p-1 border border-neutral-300">{both ? `Status (${b === 'assessment' ? 'assessment' : 'care plan'})` : 'Status'}</th>
+              <th className="p-1 border border-neutral-300 text-center">Avg daily min</th>
+              <th className="p-1 border border-neutral-300 text-center">Weekly min</th>
+            </Fragment>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {projected[0].elements.map((el, i) => (
+          <tr key={el.id}>
+            <td className="p-1 border border-neutral-300">{el.id}</td>
+            <td className="p-1 border border-neutral-300 font-semibold">{el.name}</td>
+            {projected.map((p, k) => {
+              const e = p.elements[i];
+              const m = verticalMinutes(e);
+              return (
+                <Fragment key={k}>
+                  <td className={`p-1 border border-neutral-300 ${STATUS_STYLE[e.status] || ''}`}>{e.statusLabel}</td>
+                  <td className="p-1 border border-neutral-300 text-center">{m.daily}</td>
+                  <td className="p-1 border border-neutral-300 text-center">{m.weekly}</td>
+                </Fragment>
+              );
+            })}
+          </tr>
+        ))}
+        <tr className="font-bold bg-neutral-50">
+          <td className="p-1 border border-neutral-300" colSpan={2}>Total caregiver minutes</td>
+          {projected.map((p, k) => (
+            <Fragment key={k}>
+              <td className="p-1 border border-neutral-300 font-normal">{both ? (k === 0 ? 'Assessment basis' : 'Care plan basis') : ''}</td>
+              <td className="p-1 border border-neutral-300 text-center">{p.averageDailyMinutes}</td>
+              <td className="p-1 border border-neutral-300 text-center">{p.weeklyCaregiverMinutes}</td>
+            </Fragment>
+          ))}
+        </tr>
+        <tr>
+          <td className="p-1 text-[11px] text-neutral-600" colSpan={colSpan}>
+            Average daily minutes = weekly / 7. PRN-only elements show PRN and are not in totals. Assistance assessed with no minutes set up shows a dash and is flagged in Status.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function ResidentSheet({ meta, resident, view, pageBreak, format }) {
+  if (format === 'summary') return <VerticalSheet meta={meta} resident={resident} view={view} pageBreak={pageBreak} />;
   return view === 'both'
     ? <SideBySideSheet meta={meta} resident={resident} pageBreak={pageBreak} />
     : <SingleSheet meta={meta} resident={resident} view={view} pageBreak={pageBreak} />;
@@ -307,6 +379,7 @@ export default function AbstCrosswalkReport({ jobId }) {
   const [view, setView] = useState('assessment');
   const [roster, setRoster] = useState(null);
   const [rosterPrint, setRosterPrint] = useState(false);
+  const [format, setFormat] = useState('detail');
 
   useEffect(() => {
     fetch(`/api/abst-crosswalk/${jobId}`)
@@ -487,6 +560,20 @@ export default function AbstCrosswalkReport({ jobId }) {
             ))}
           </select>
         </label>
+        <div className="text-xs">
+          <span className="block text-neutral-500 mb-1">Resident page format</span>
+          <div className="flex gap-2">
+            {[{ id: 'detail', label: 'Detail (audit)' }, { id: 'summary', label: 'Summary (clean)' }].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFormat(f.id)}
+                className={`px-3 py-1 rounded border text-xs ${format === f.id ? 'bg-primary-900 text-white border-primary-900' : 'bg-white text-neutral-700 border-neutral-300'}`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button className="btn btn-secondary disabled:opacity-50" disabled={!detail} onClick={() => window.print()}>🖨️ Print / save as PDF</button>
         <button className="btn btn-secondary disabled:opacity-50" disabled={loadingAll} onClick={printAll}>
           {loadingAll ? '⏳ Loading…' : '🖨️ Print all residents (excl. Independent)'}
@@ -500,14 +587,14 @@ export default function AbstCrosswalkReport({ jobId }) {
             <button className="underline" onClick={() => window.print()}>Print again</button> ·{' '}
             <button className="underline" onClick={() => setAllSheets(null)}>Close</button>
           </p>
-          {allSheets.residents.map((r) => <ResidentSheet key={r.residentId} meta={allSheets.meta} resident={r} view={view} pageBreak />)}
+          {allSheets.residents.map((r) => <ResidentSheet key={r.residentId} meta={allSheets.meta} resident={r} view={view} format={format} pageBreak />)}
         </div>
       )}
 
       {selectedId && !detail && <p className="abst-no-print text-sm text-neutral-400">Loading resident…</p>}
       {detail && !allSheets && !rosterPrint && (
         <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white">
-          <ResidentSheet meta={detail.meta} resident={detail.resident} view={view} />
+          <ResidentSheet meta={detail.meta} resident={detail.resident} view={view} format={format} />
         </div>
       )}
     </div>

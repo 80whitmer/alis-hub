@@ -146,6 +146,41 @@ function addResidentSummarySheet(wb, report, sheetName, title) {
   ws.views = [{ state: 'frozen', xSplit: 1, ySplit: TABLE_HEADER_ROW }];
 }
 
+/** One row per resident per element, numbers only and filterable by resident (the list form of the vertical resident page). */
+function addResidentListSheet(wb, reports, sheetName, title, both) {
+  const ws = wb.addWorksheet(sheetName);
+  const rows = [];
+  for (const { label, rep } of reports) {
+    for (const r of rep.residents) {
+      for (const el of r.elements) {
+        const staff = el.status === STATUS.STAFF_TIME;
+        const counted = staff && el.weeklyMinutes > 0;
+        const noMinutes = el.status === STATUS.GAP || el.status === STATUS.NOT_ASSESSED;
+        rows.push({
+          values: [
+            ...(both ? [label] : []), r.name, r.unit, r.productType, r.evaluation?.date ?? '', el.id, el.name, el.statusLabel,
+            counted ? Math.round((el.weeklyMinutes / 7) * 10) / 10 : staff ? 'PRN' : noMinutes ? '' : 0,
+            counted ? el.weeklyMinutes : staff || noMinutes ? '' : 0,
+          ],
+          fill: ROLLUP_FILL[el.status],
+        });
+      }
+    }
+  }
+  addTable(
+    ws,
+    reports[0].rep,
+    title,
+    [
+      ...(both ? [{ header: 'Basis', width: 16 }] : []),
+      { header: 'Resident', width: 26 }, { header: 'Unit', width: 7 }, { header: 'Product', width: 9 }, { header: 'Evaluation date', width: 12 },
+      { header: 'Element #', width: 9 }, { header: 'ODHS care element', width: 44 }, { header: 'Status', width: 34 },
+      { header: 'Average daily minutes', width: 12 }, { header: 'Weekly minutes', width: 12 },
+    ],
+    rows
+  );
+}
+
 const BASIS_LABEL = { assessment: 'Assessment basis', care_plan: 'Care plan basis' };
 
 /**
@@ -168,6 +203,8 @@ function buildSurveyorWorkbook(report, basis = 'assessment') {
   for (const { b, rep } of projected) {
     addResidentSummarySheet(wb, rep, both ? `Resident summary - ${b === 'assessment' ? 'assessment' : 'care plan'}` : 'Resident summary', `Resident summary by element, ${BASIS_LABEL[b].toLowerCase()}`);
   }
+
+  addResidentListSheet(wb, projected.map(({ b, rep }) => ({ label: BASIS_LABEL[b], rep })), 'Resident by element (list)', `Resident by element, numbers only, ${basisTitle}. Filter the Resident column for one resident's 22 elements`, both);
 
   // 1. Resident x Element
   const detail = [];
@@ -300,6 +337,8 @@ function buildInternalWorkbook(report) {
 
   addResidentSummarySheet(wb, report, 'Resident summary - assessment', 'Resident summary by element, assessment basis');
   if (report.residents[0]?.carePlanView) addResidentSummarySheet(wb, projectBasis(report, 'care_plan'), 'Resident summary - care plan', 'Resident summary by element, care plan basis');
+
+  addResidentListSheet(wb, [{ label: 'Assessment basis', rep: report }], 'Resident by element (list)', 'Resident by element, numbers only, assessment basis. Filter the Resident column for one resident', false);
 
   // 1. One row per resident per element (per care plan item where an element has several)
   const detail = [];
