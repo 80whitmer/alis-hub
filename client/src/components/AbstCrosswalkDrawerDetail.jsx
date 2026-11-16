@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 const EXPORTS = [
   { key: 'assessment', label: 'Excel: assessment basis', hint: 'Survey-facing. All residents, Independent-living excluded', query: '?excludeIndependent=1&basis=assessment', suffix: '' },
   { key: 'care_plan', label: 'Excel: care plan basis', hint: 'Survey-facing. Same layout, care plan minutes', query: '?excludeIndependent=1&basis=care_plan', suffix: ' (care plan basis)' },
+  { key: 'list', label: 'Excel: resident by element only', hint: 'Just the Resident by element sheet, all residents (excl. Independent), assessment basis', query: '?format=resident-list&excludeIndependent=1&basis=assessment', suffix: 'LIST' },
   { key: 'both', label: 'Excel: side by side (internal)', hint: 'Both bases with a difference column, for internal review', query: '?excludeIndependent=1&basis=both', suffix: ' (side by side, internal)' },
   { key: 'full', label: 'Excel: full detail (internal)', hint: 'Care item detail, setup gaps, unmapped items', query: '', suffix: null },
 ];
@@ -37,7 +38,7 @@ export default function AbstCrosswalkDrawerDetail({ job }) {
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = url;
-      a.download = ex.suffix === null ? data.filename : data.filename.replace(/\.xlsx$/i, ` - excl Independent${ex.suffix}.xlsx`);
+      a.download = ex.suffix === null ? data.filename : ex.suffix === 'LIST' ? `${data.meta.communityName} - Resident by element - excl Independent.xlsx`.replace(/[^a-z0-9 .\-()]/gi, '_') : data.filename.replace(/\.xlsx$/i, ` - excl Independent${ex.suffix}.xlsx`);
       document.body.appendChild(a);
       a.click();
       a.remove();

@@ -436,6 +436,30 @@ export default function AbstCrosswalkReport({ jobId }) {
     }
   }
 
+  async function downloadResidentList(residentId) {
+    setDownloading(true);
+    try {
+      const qs = `format=resident-list&basis=${view}${residentId ? `&residentId=${residentId}` : '&excludeIndependent=1'}`;
+      const res = await fetch(`/api/abst-crosswalk/${jobId}/download?${qs}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Download failed (${res.status})`);
+      const cd = res.headers.get('content-disposition') || '';
+      const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      const name = star ? decodeURIComponent(star[1]) : 'Resident by element.xlsx';
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(`Download failed: ${e.message}`);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function download(excludeIndependent = false) {
     setDownloading(true);
     try {
@@ -482,6 +506,9 @@ export default function AbstCrosswalkReport({ jobId }) {
         <div className="flex flex-col gap-2 shrink-0">
           <button onClick={() => download(true)} disabled={downloading} className="btn btn-accent disabled:opacity-50">
             {downloading ? '⏳ Downloading…' : `📥 Excel: all residents (excl. Independent) · ${{ assessment: 'assessment', care_plan: 'care plan', both: 'side by side' }[view]}`}
+          </button>
+          <button onClick={() => downloadResidentList(null)} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
+            📥 Excel: resident by element only (all residents)
           </button>
           <button onClick={() => download(false)} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
             📥 Excel: full detail (internal)
@@ -575,6 +602,9 @@ export default function AbstCrosswalkReport({ jobId }) {
           </div>
         </div>
         <button className="btn btn-secondary disabled:opacity-50" disabled={!detail} onClick={() => window.print()}>🖨️ Print / save as PDF</button>
+        <button className="btn btn-secondary disabled:opacity-50" disabled={!selectedId || downloading} onClick={() => downloadResidentList(selectedId)}>
+          📥 Excel: this resident
+        </button>
         <button className="btn btn-secondary disabled:opacity-50" disabled={loadingAll} onClick={printAll}>
           {loadingAll ? '⏳ Loading…' : '🖨️ Print all residents (excl. Independent)'}
         </button>

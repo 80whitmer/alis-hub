@@ -183,6 +183,34 @@ function addResidentListSheet(wb, reports, sheetName, title, both) {
 
 const BASIS_LABEL = { assessment: 'Assessment basis', care_plan: 'Care plan basis' };
 
+/** Just the one resident (regardless of product type), for a single-resident export. */
+function selectResident(report, residentId) {
+  const residents = report.residents.filter((r) => String(r.residentId) === String(residentId));
+  return { ...report, residents, meta: { ...report.meta, residentCount: residents.length } };
+}
+
+/**
+ * A workbook with only the "Resident by element" sheet (one row per resident per element, numbers only,
+ * filterable by resident). basis: 'assessment' | 'care_plan' | 'both'.
+ */
+function buildResidentListWorkbook(report, basis = 'assessment') {
+  const bases = basis === 'both' ? ['assessment', 'care_plan'] : [basis === 'care_plan' ? 'care_plan' : 'assessment'];
+  const both = bases.length === 2;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ALIS Hub';
+  wb.created = new Date(report.meta.generatedAt);
+  const single = report.residents.length === 1 ? `${report.residents[0].name}: ` : '';
+  const basisTitle = both ? 'assessment basis and care plan basis side by side' : BASIS_LABEL[bases[0]].toLowerCase();
+  addResidentListSheet(
+    wb,
+    bases.map((b) => ({ label: BASIS_LABEL[b], rep: projectBasis(report, b) })),
+    'Resident by element',
+    `${single}Resident by element, numbers only, ${basisTitle}${single ? '' : ". Filter the Resident column for one resident's 22 elements"}`,
+    both
+  );
+  return wb;
+}
+
 /**
  * Survey-facing workbook. basis: 'assessment' | 'care_plan' | 'both' (internal side-by-side comparison).
  * One row per care item per element; no setup-gap or care-item-detail sheets. A missing care item usually just
@@ -489,4 +517,4 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false, basis = 'assessm
   return surveyor ? buildSurveyorWorkbook(report, basis) : buildInternalWorkbook(report);
 }
 
-module.exports = { buildAbstCrosswalkWorkbook, filterReport, projectBasis };
+module.exports = { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, selectResident, filterReport, projectBasis };

@@ -4,7 +4,7 @@ const path = require('path');
 const router = express.Router();
 
 const { REPORTS_ROOT } = require('../automation/abstCrosswalkJob');
-const { buildAbstCrosswalkWorkbook, filterReport } = require('../services/abstCrosswalkWorkbook');
+const { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, selectResident, filterReport } = require('../services/abstCrosswalkWorkbook');
 
 /** jobIds are UUIDs — reject anything else before it touches the filesystem. */
 function jobDir(jobId) {
@@ -109,6 +109,27 @@ router.get('/:jobId/download', async (req, res) => {
   try {
     const report = readReport(req.params.jobId);
     if (!report) return res.status(404).json({ error: 'No ABST crosswalk report found for this job.' });
+    if (req.query.format === 'resident-list') {
+      // Standalone "Resident by element" workbook: all residents (optionally excl. Independent) or one resident.
+      const basis = ['assessment', 'care_plan', 'both'].includes(req.query.basis) ? req.query.basis : 'assessment';
+      let scoped = report;
+      let label = req.query.excludeIndependent === '1' ? ' - excl Independent' : '';
+      if (req.query.residentId) {
+        scoped = selectResident(report, req.query.residentId);
+        if (!scoped.residents.length) return res.status(404).json({ error: 'Resident not found in this report.' });
+        label = ` - ${scoped.residents[0].name}`;
+      } else if (req.query.excludeIndependent === '1') {
+        scoped = filterReport(report, { excludeProductTypes: ['Independent'] });
+      }
+      const wb = buildResidentListWorkbook(scoped, basis);
+      const sfx = { assessment: '', care_plan: ' (care plan basis)', both: ' (side by side, internal)' }[basis];
+      const full = `${report.meta.communityName} - Resident by element${label}${sfx}.xlsx`;
+      const safe = full.replace(/[^a-z0-9 .\-()]/gi, '_');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(full)}`);
+      await wb.xlsx.write(res);
+      return res.end();
+    }
     if (req.query.excludeIndependent === '1') {
       const basis = ['assessment', 'care_plan', 'both'].includes(req.query.basis) ? req.query.basis : 'assessment';
       const wb = buildAbstCrosswalkWorkbook(filterReport(report, { excludeProductTypes: ['Independent'] }), { surveyor: true, basis });
