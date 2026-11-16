@@ -94,6 +94,58 @@ function projectBasis(report, basis) {
   return { ...report, residents, summary: report.summaryCarePlan || report.summary };
 }
 
+/**
+ * Resident summary: one row per resident, one column per element, numbers only (the per-resident counterpart of the
+ * community roll-up). Staff-time cells are average daily minutes (weekly / 7); other statuses are short codes.
+ */
+const ROLLUP_CODE = { independent: 'IND', outside: 'OUT', nurse: 'RN', not_applicable: 'N/A', assessed_no_minutes: 'TBD', not_assessed: '—' };
+const ROLLUP_FILL = {
+  staff_time: 'FFDCE8FB', independent: 'FFDDF3E3', outside: 'FFD5F0EE', nurse: 'FFE7DDF3',
+  not_applicable: 'FFF0F0F0', assessed_no_minutes: 'FFFFE699', not_assessed: 'FFF4B6B6',
+};
+const ROLLUP_LEGEND = 'Number = average daily minutes (weekly / 7) for staff time · PRN = PRN only, not in totals · IND = independent · OUT = outside provider · RN = nurse task · N/A = does not apply · TBD = assistance assessed, minutes not yet configured · — = not assessed';
+
+function rollupCell(el) {
+  if (el.status === STATUS.STAFF_TIME) return el.weeklyMinutes > 0 ? Math.round((el.weeklyMinutes / 7) * 10) / 10 : 'PRN';
+  return ROLLUP_CODE[el.status];
+}
+
+function addResidentSummarySheet(wb, report, sheetName, title) {
+  const ws = wb.addWorksheet(sheetName);
+  const elementIds = report.summary.map((s) => s.id);
+  const columns = [
+    { header: 'Resident', width: 26 }, { header: 'Unit', width: 7 }, { header: 'Product', width: 9 }, { header: 'Evaluation date', width: 11 },
+    ...report.summary.map((s) => ({ header: `${s.id}. ${s.name}`, width: 11 })),
+    { header: 'Average daily minutes', width: 11 }, { header: 'Weekly minutes', width: 10 }, { header: 'Average daily hours', width: 10 },
+  ];
+  const rows = report.residents.map((r) => ({
+    values: [
+      r.name, r.unit, r.productType, r.evaluation?.date ?? '',
+      ...elementIds.map((id) => rollupCell(r.elements.find((e) => e.id === id))),
+      r.averageDailyMinutes, r.weeklyCaregiverMinutes, round2(r.averageDailyMinutes / 60),
+    ],
+  }));
+  addTable(ws, report, title, columns, rows);
+  ws.getRow(TABLE_HEADER_ROW).height = 78;
+  report.residents.forEach((r, i) => {
+    const row = ws.getRow(TABLE_HEADER_ROW + 1 + i);
+    row.alignment = { vertical: 'middle', horizontal: 'center' };
+    row.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
+    elementIds.forEach((id, k) => {
+      const cell = row.getCell(5 + k);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ROLLUP_FILL[r.elements.find((e) => e.id === id).status] } };
+    });
+    [5 + elementIds.length, 6 + elementIds.length, 7 + elementIds.length].forEach((c) => { row.getCell(c).font = { bold: true }; });
+  });
+  const legendRow = TABLE_HEADER_ROW + report.residents.length + 2;
+  ws.mergeCells(legendRow, 1, legendRow, Math.min(columns.length, 20));
+  ws.getCell(legendRow, 1).value = ROLLUP_LEGEND;
+  ws.getCell(legendRow, 1).font = { italic: true, size: 9 };
+  ws.getCell(legendRow, 1).alignment = { wrapText: true, vertical: 'top' };
+  ws.getRow(legendRow).height = 40;
+  ws.views = [{ state: 'frozen', xSplit: 1, ySplit: TABLE_HEADER_ROW }];
+}
+
 const BASIS_LABEL = { assessment: 'Assessment basis', care_plan: 'Care plan basis' };
 
 /**
@@ -111,6 +163,11 @@ function buildSurveyorWorkbook(report, basis = 'assessment') {
   const lead = both ? ['Basis'] : [];
   const leadW = both ? [{ width: 16 }] : [];
   const basisTitle = both ? 'assessment basis and care plan basis side by side' : `${BASIS_LABEL[bases[0]].toLowerCase()}`;
+
+  // 0. Resident summary (the clean, numbers-only view; first sheet)
+  for (const { b, rep } of projected) {
+    addResidentSummarySheet(wb, rep, both ? `Resident summary - ${b === 'assessment' ? 'assessment' : 'care plan'}` : 'Resident summary', `Resident summary by element, ${BASIS_LABEL[b].toLowerCase()}`);
+  }
 
   // 1. Resident x Element
   const detail = [];
@@ -240,6 +297,9 @@ function buildInternalWorkbook(report) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ALIS Hub';
   wb.created = new Date(report.meta.generatedAt);
+
+  addResidentSummarySheet(wb, report, 'Resident summary - assessment', 'Resident summary by element, assessment basis');
+  if (report.residents[0]?.carePlanView) addResidentSummarySheet(wb, projectBasis(report, 'care_plan'), 'Resident summary - care plan', 'Resident summary by element, care plan basis');
 
   // 1. One row per resident per element (per care plan item where an element has several)
   const detail = [];

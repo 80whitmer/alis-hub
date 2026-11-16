@@ -213,6 +213,60 @@ function ResidentSheet({ meta, resident, view, pageBreak }) {
     : <SingleSheet meta={meta} resident={resident} view={view} pageBreak={pageBreak} />;
 }
 
+const ROLLUP_CODE = { independent: 'IND', outside: 'OUT', nurse: 'RN', not_applicable: 'N/A', assessed_no_minutes: 'TBD', not_assessed: '—' };
+const ROLLUP_LEGEND = 'Number = average daily minutes (weekly / 7) for staff time · PRN = PRN only, not in totals · IND = independent · OUT = outside provider · RN = nurse task · N/A = does not apply · TBD = assistance assessed, minutes not yet configured · — = not assessed';
+
+function rollupCell(el) {
+  if (el.status === 'staff_time') return el.weeklyMinutes > 0 ? Math.round((el.weeklyMinutes / 7) * 10) / 10 : 'PRN';
+  return ROLLUP_CODE[el.status];
+}
+
+/** Numbers-only resident summary: the per-resident counterpart of the community roll-up. */
+function ResidentRollupTable({ meta, roster, basis, product }) {
+  const key = basis === 'care_plan' ? 'carePlan' : 'assessment';
+  const rows = roster.residents.filter((r) => product === 'all' || r.productType === product);
+  return (
+    <div className="mb-4">
+      <p className="font-semibold text-sm text-primary-900 mb-2">
+        Resident summary: average daily minutes by element ({basis === 'care_plan' ? 'care plan basis' : 'assessment basis'})
+      </p>
+      <div className="overflow-x-auto">
+        <table className="text-[11px] border-collapse w-full">
+          <thead>
+            <tr className="bg-neutral-100 text-left">
+              <th className="p-1 border border-neutral-300">Resident</th>
+              <th className="p-1 border border-neutral-300">Unit</th>
+              <th className="p-1 border border-neutral-300">Type</th>
+              {roster.elements.map((e) => <th key={e.id} className="p-1 border border-neutral-300 text-center" title={e.name}>{e.id}</th>)}
+              <th className="p-1 border border-neutral-300 text-center">Avg daily min</th>
+              <th className="p-1 border border-neutral-300 text-center">Weekly min</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.residentId}>
+                <td className="p-1 border border-neutral-300 whitespace-nowrap">{r.name}</td>
+                <td className="p-1 border border-neutral-300">{r.unit || '—'}</td>
+                <td className="p-1 border border-neutral-300">{r.productType}</td>
+                {r[key].elements.map((e) => (
+                  <td key={e.id} className={`p-1 border border-neutral-300 text-center ${STATUS_STYLE[e.status] || ''}`}>{rollupCell(e)}</td>
+                ))}
+                <td className="p-1 border border-neutral-300 text-center font-bold">{r[key].averageDailyMinutes}</td>
+                <td className="p-1 border border-neutral-300 text-center font-bold">{r[key].weeklyCaregiverMinutes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 text-[11px] text-neutral-600 leading-snug">
+        <p className="mb-1">{ROLLUP_LEGEND}</p>
+        <p>{roster.elements.map((e) => `${e.id} ${e.name}`).join(' · ')}</p>
+      </div>
+      <p className="mt-1 text-[11px] text-neutral-500 italic">{meta.headerLine}</p>
+    </div>
+  );
+}
+
 function SummaryTable({ title, rows, labels }) {
   return (
     <div className="mb-3">
@@ -251,6 +305,8 @@ export default function AbstCrosswalkReport({ jobId }) {
   const [allSheets, setAllSheets] = useState(null);
   const [loadingAll, setLoadingAll] = useState(false);
   const [view, setView] = useState('assessment');
+  const [roster, setRoster] = useState(null);
+  const [rosterPrint, setRosterPrint] = useState(false);
 
   useEffect(() => {
     fetch(`/api/abst-crosswalk/${jobId}`)
@@ -258,6 +314,16 @@ export default function AbstCrosswalkReport({ jobId }) {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || `Failed to load (${r.status})`);
         setData(d);
+      })
+      .catch((e) => setError(e.message));
+  }, [jobId]);
+
+  useEffect(() => {
+    fetch(`/api/abst-crosswalk/${jobId}/roster?excludeIndependent=1`)
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || `Failed to load (${r.status})`);
+        setRoster(d);
       })
       .catch((e) => setError(e.message));
   }, [jobId]);
@@ -287,6 +353,7 @@ export default function AbstCrosswalkReport({ jobId }) {
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || `Failed to load (${res.status})`);
       setSelectedId('');
+      setRosterPrint(false);
       setAllSheets(d);
       setTimeout(() => window.print(), 400);
     } catch (e) {
@@ -374,6 +441,33 @@ export default function AbstCrosswalkReport({ jobId }) {
         {view !== 'assessment' && <SummaryTable title={`Community summary${view === 'both' ? ' (care plan basis)' : ''}: residents by status, per element`} rows={data.summaryCarePlan || data.summary} labels={labels} />}
       </div>
 
+      {roster && (
+        <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <p className="text-xs text-neutral-500">Independent-living residents are not included. Follows the minutes basis above.</p>
+            <button className="btn btn-secondary" onClick={() => { setAllSheets(null); setSelectedId(''); setRosterPrint(true); setTimeout(() => window.print(), 400); }}>
+              🖨️ Print / save as PDF
+            </button>
+          </div>
+          {view !== 'care_plan' && <ResidentRollupTable meta={roster.meta} roster={roster} basis="assessment" product={product} />}
+          {view !== 'assessment' && <ResidentRollupTable meta={roster.meta} roster={roster} basis="care_plan" product={product} />}
+        </div>
+      )}
+
+      {rosterPrint && roster && (
+        <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white">
+          <p className="abst-no-print text-xs text-neutral-500 mb-2">
+            <button className="underline" onClick={() => window.print()}>Print again</button> ·{' '}
+            <button className="underline" onClick={() => setRosterPrint(false)}>Close</button>
+          </p>
+          <HeaderBlock meta={roster.meta} view={view} />
+          <div className="mt-2">
+            {view !== 'care_plan' && <ResidentRollupTable meta={roster.meta} roster={roster} basis="assessment" product={product} />}
+            {view !== 'assessment' && <ResidentRollupTable meta={roster.meta} roster={roster} basis="care_plan" product={product} />}
+          </div>
+        </div>
+      )}
+
       <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white flex flex-wrap items-end gap-3">
         <label className="text-xs">
           <span className="block text-neutral-500 mb-1">Product type</span>
@@ -384,7 +478,7 @@ export default function AbstCrosswalkReport({ jobId }) {
         </label>
         <label className="text-xs grow min-w-[260px]">
           <span className="block text-neutral-500 mb-1">Resident ({residents.length})</span>
-          <select className="border border-neutral-300 rounded p-1 text-sm w-full" value={selectedId} onChange={(e) => { setAllSheets(null); setSelectedId(e.target.value); }}>
+          <select className="border border-neutral-300 rounded p-1 text-sm w-full" value={selectedId} onChange={(e) => { setAllSheets(null); setRosterPrint(false); setSelectedId(e.target.value); }}>
             <option value="">Select a resident…</option>
             {residents.map((r) => (
               <option key={r.residentId} value={r.residentId}>
@@ -399,7 +493,7 @@ export default function AbstCrosswalkReport({ jobId }) {
         </button>
       </div>
 
-      {allSheets && (
+      {allSheets && !rosterPrint && (
         <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white space-y-6">
           <p className="abst-no-print text-xs text-neutral-500">
             {allSheets.residents.length} resident pages (Independent-living residents excluded). Use Print to save as PDF.{' '}
@@ -411,7 +505,7 @@ export default function AbstCrosswalkReport({ jobId }) {
       )}
 
       {selectedId && !detail && <p className="abst-no-print text-sm text-neutral-400">Loading resident…</p>}
-      {detail && !allSheets && (
+      {detail && !allSheets && !rosterPrint && (
         <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white">
           <ResidentSheet meta={detail.meta} resident={detail.resident} view={view} />
         </div>

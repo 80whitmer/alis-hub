@@ -58,6 +58,31 @@ router.get('/:jobId/resident/:residentId', (req, res) => {
   }
 });
 
+// GET /api/abst-crosswalk/:jobId/roster?excludeIndependent=1 — the numbers-only resident summary (both bases, no care item detail)
+router.get('/:jobId/roster', (req, res) => {
+  try {
+    const report = readReport(req.params.jobId);
+    if (!report) return res.status(404).json({ error: 'No ABST crosswalk report found for this job.' });
+    const filtered = req.query.excludeIndependent === '1' ? filterReport(report, { excludeProductTypes: ['Independent'] }) : report;
+    const slim = (elements) => elements.map((e) => ({ id: e.id, status: e.status, weeklyMinutes: e.weeklyMinutes }));
+    res.json({
+      meta: filtered.meta,
+      elements: report.summary.map((s) => ({ id: s.id, name: s.name })),
+      residents: filtered.residents.map((r) => ({
+        residentId: r.residentId,
+        name: r.name,
+        unit: r.unit,
+        productType: r.productType,
+        evaluationDate: r.evaluation?.date ?? null,
+        assessment: { elements: slim(r.elements), weeklyCaregiverMinutes: r.weeklyCaregiverMinutes, averageDailyMinutes: r.averageDailyMinutes },
+        carePlan: { elements: slim(r.carePlanView.elements), weeklyCaregiverMinutes: r.carePlanView.weeklyCaregiverMinutes, averageDailyMinutes: r.carePlanView.averageDailyMinutes },
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/abst-crosswalk/:jobId/residents?excludeIndependent=1 — every resident's full page (care item detail stripped; the printed crosswalk doesn't show it)
 router.get('/:jobId/residents', (req, res) => {
   try {
