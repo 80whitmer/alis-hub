@@ -28,6 +28,7 @@ router.get('/:jobId', (req, res) => {
       meta: report.meta,
       filename: report.filename,
       summary: report.summary,
+      summaryCarePlan: report.summaryCarePlan,
       residents: report.residents.map((r) => ({
         residentId: r.residentId,
         name: r.name,
@@ -69,6 +70,7 @@ router.get('/:jobId/residents', (req, res) => {
         ...r,
         elements: r.elements.map(({ careItems, ...el }) => el),
       })),
+
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -83,8 +85,10 @@ router.get('/:jobId/download', async (req, res) => {
     const report = readReport(req.params.jobId);
     if (!report) return res.status(404).json({ error: 'No ABST crosswalk report found for this job.' });
     if (req.query.excludeIndependent === '1') {
-      const wb = buildAbstCrosswalkWorkbook(filterReport(report, { excludeProductTypes: ['Independent'] }), { surveyor: true });
-      const name = report.filename.replace(/\.xlsx$/i, ' - excl Independent.xlsx');
+      const basis = ['assessment', 'care_plan', 'both'].includes(req.query.basis) ? req.query.basis : 'assessment';
+      const wb = buildAbstCrosswalkWorkbook(filterReport(report, { excludeProductTypes: ['Independent'] }), { surveyor: true, basis });
+      const suffix = { assessment: '', care_plan: ' (care plan basis)', both: ' (side by side, internal)' }[basis];
+      const name = report.filename.replace(/\.xlsx$/i, ` - excl Independent${suffix}.xlsx`);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
       await wb.xlsx.write(res);

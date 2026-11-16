@@ -33,10 +33,34 @@ function StatusBadge({ status, label }) {
   return <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${STATUS_STYLE[status] || ''}`}>{label}</span>;
 }
 
-function HeaderBlock({ meta, resident }) {
+const VIEWS = [
+  { id: 'assessment', label: 'Assessment basis', hint: 'minutes set by the assessment answer' },
+  { id: 'care_plan', label: 'Care plan basis', hint: "the care plan's own minutes and schedule" },
+  { id: 'both', label: 'Side by side (internal)', hint: 'compare both; share one basis with surveyors' },
+];
+const VIEW_TITLE = { assessment: 'Assessment basis', care_plan: 'Care plan basis', both: 'Assessment and care plan, side by side' };
+
+/** The resident as one minutes basis (assessment is the base data; care_plan swaps in the care plan's own rows). */
+function projectResident(resident, basis) {
+  if (basis !== 'care_plan' || !resident.carePlanView) return resident;
+  const cp = resident.carePlanView;
+  return {
+    ...resident,
+    elements: resident.elements.map((e) => {
+      const c = cp.elements.find((x) => x.id === e.id);
+      return { ...e, status: c.status, statusLabel: c.statusLabel, careRows: c.careRows, weeklyMinutes: c.weeklyMinutes, notes: c.notes };
+    }),
+    weeklyCaregiverMinutes: cp.weeklyCaregiverMinutes,
+    averageDailyMinutes: cp.averageDailyMinutes,
+    totalCareItems: cp.totalCareItems,
+    prnItems: cp.prnItems,
+  };
+}
+
+function HeaderBlock({ meta, resident, view }) {
   return (
     <div className="text-xs leading-snug">
-      <p className="text-base font-bold text-primary-900">{meta.communityName} · Oregon ABST care element crosswalk</p>
+      <p className="text-base font-bold text-primary-900">{meta.communityName} · Oregon ABST care element crosswalk{view ? ` · ${VIEW_TITLE[view]}` : ''}</p>
       <p>Generated {new Date(meta.generatedAt).toLocaleString('en-US')} · Data as of: {meta.dataAsOf}</p>
       <p className="italic">{meta.headerLine}</p>
       {meta.footnote ? <p>{meta.footnote}</p> : null}
@@ -51,64 +75,68 @@ function HeaderBlock({ meta, resident }) {
   );
 }
 
-function planCell(cr) {
-  if (cr.source === 'care_plan_only') return <span className="text-neutral-500">On care plan, not tied to an answer (not counted)</span>;
-  if (!cr.onCarePlan) return <span className="text-neutral-400">Not on care plan</span>;
-  return `${cr.carePlanMinutes ?? '—'} min · ${cr.carePlanSchedule}`;
-}
-
 function minutesCell(cr) {
   if (cr.source === 'care_plan_only') return '—';
   if (cr.prn) return cr.minutesPerOccurrence != null ? `PRN · ${cr.minutesPerOccurrence}/occ.` : 'PRN';
   return cr.minutesPerOccurrence == null ? 'Not yet configured' : cr.minutesPerOccurrence;
 }
 
-function ResidentSheet({ meta, resident, pageBreak }) {
+function AnswerCell({ el }) {
+  const answered = el.questions.filter((q) => q.answered);
+  if (answered.length === 0) return <span className="text-neutral-500">No answer on the latest completed evaluation</span>;
+  return answered.map((q) => (
+    <div key={q.domain + q.text} className="mb-1">
+      <span className="text-neutral-500">{q.answers[0]?.question || q.text}: </span>
+      {q.answers.map((a) => a.answer).join(' + ')}
+    </div>
+  ));
+}
+
+function rowLine(cr) {
+  const mins = cr.source === 'care_plan_only' ? 'not counted' : cr.prn ? (cr.minutesPerOccurrence != null ? `PRN ${cr.minutesPerOccurrence}/occ.` : 'PRN') : cr.minutesPerOccurrence == null ? 'not yet configured' : `${cr.minutesPerOccurrence} min`;
+  const wk = !cr.prn && cr.weeklyMinutes != null && cr.source !== 'care_plan_only' && cr.minutesPerOccurrence != null ? ` · ${cr.weeklyMinutes}/wk` : '';
+  return `${cr.name} · ${cr.schedule} · ${mins}${wk}`;
+}
+
+const sumNote = {
+  assessment: 'Minutes are set by the assessment answer (care item minutes in Care Settings).',
+  care_plan: "Minutes are the care plan's own minutes x schedule.",
+};
+
+function SingleSheet({ meta, resident, view, pageBreak }) {
+  const r = projectResident(resident, view);
   return (
     <table className="w-full text-xs border-collapse" style={pageBreak ? { pageBreakAfter: 'always' } : undefined}>
       <thead>
         <tr>
-          <th colSpan={8} className="text-left font-normal pb-2 border-b border-neutral-300">
-            <HeaderBlock meta={meta} resident={resident} />
+          <th colSpan={7} className="text-left font-normal pb-2 border-b border-neutral-300">
+            <HeaderBlock meta={meta} resident={r} view={view} />
           </th>
         </tr>
         <tr className="bg-neutral-100 text-left">
-          <th className="p-1 border border-neutral-300 w-[13%]">Care element</th>
-          <th className="p-1 border border-neutral-300 w-[22%]">Assessment answer</th>
-          <th className="p-1 border border-neutral-300 w-[19%]">Care item</th>
-          <th className="p-1 border border-neutral-300 w-[9%]">Schedule</th>
-          <th className="p-1 border border-neutral-300 w-[8%]">Mins / scheduled day</th>
+          <th className="p-1 border border-neutral-300 w-[14%]">Care element</th>
+          <th className="p-1 border border-neutral-300 w-[26%]">Assessment answer</th>
+          <th className="p-1 border border-neutral-300 w-[22%]">Care item</th>
+          <th className="p-1 border border-neutral-300 w-[11%]">Schedule</th>
+          <th className="p-1 border border-neutral-300 w-[9%]">Mins / scheduled day</th>
           <th className="p-1 border border-neutral-300 w-[6%]">Wkly mins</th>
-          <th className="p-1 border border-neutral-300 w-[13%]">Care plan (comparison)</th>
-          <th className="p-1 border border-neutral-300 w-[10%]">Status</th>
+          <th className="p-1 border border-neutral-300 w-[12%]">Status</th>
         </tr>
       </thead>
       <tbody>
-        {resident.elements.map((el) =>
+        {r.elements.map((el) =>
           el.careRows.map((cr, i) => (
             <tr key={`${el.id}-${i}`} className="align-top">
               {i === 0 && (
                 <>
                   <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300 font-semibold">{el.id}. {el.name}</td>
-                  <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300">
-                    {el.questions.filter((q) => q.answered).length === 0 ? (
-                      <span className="text-neutral-500">No answer on the latest completed evaluation</span>
-                    ) : (
-                      el.questions.filter((q) => q.answered).map((q) => (
-                        <div key={q.domain + q.text} className="mb-1">
-                          <span className="text-neutral-500">{q.answers[0]?.question || q.text}: </span>
-                          {q.answers.map((a) => a.answer).join(' + ')}
-                        </div>
-                      ))
-                    )}
-                  </td>
+                  <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300"><AnswerCell el={el} /></td>
                 </>
               )}
               <td className="p-1 border border-neutral-300">{cr.name}</td>
               <td className="p-1 border border-neutral-300">{cr.schedule}</td>
               <td className="p-1 border border-neutral-300 text-right">{minutesCell(cr)}</td>
               <td className="p-1 border border-neutral-300 text-right">{cr.prn || cr.weeklyMinutes == null ? '' : cr.weeklyMinutes}</td>
-              <td className="p-1 border border-neutral-300 text-neutral-600">{planCell(cr)}</td>
               {i === 0 && (
                 <td rowSpan={el.careRows.length} className="p-1 border border-neutral-300"><StatusBadge status={el.status} label={el.statusLabel} /></td>
               )}
@@ -117,13 +145,99 @@ function ResidentSheet({ meta, resident, pageBreak }) {
         )}
         <tr className="font-bold bg-neutral-50">
           <td className="p-1 border border-neutral-300" colSpan={5}>
-            Minutes are set by the assessment answer (care item minutes in Care Settings); the care plan column is for comparison only. Total care items: {resident.totalCareItems} · Average daily minutes: {resident.averageDailyMinutes} ({Math.round((resident.averageDailyMinutes / 60) * 100) / 100} hrs) · PRN items: {resident.prnItems} (per occurrence, not in totals)
+            {sumNote[view]} Total care items: {r.totalCareItems} · Average daily minutes: {r.averageDailyMinutes} ({Math.round((r.averageDailyMinutes / 60) * 100) / 100} hrs) · PRN items: {r.prnItems} (per occurrence, not in totals)
           </td>
-          <td className="p-1 border border-neutral-300 text-right">{resident.weeklyCaregiverMinutes}</td>
-          <td className="p-1 border border-neutral-300 font-normal" colSpan={2}>Weekly caregiver minutes</td>
+          <td className="p-1 border border-neutral-300 text-right">{r.weeklyCaregiverMinutes}</td>
+          <td className="p-1 border border-neutral-300 font-normal">Weekly caregiver minutes</td>
         </tr>
       </tbody>
     </table>
+  );
+}
+
+function SideBySideSheet({ meta, resident, pageBreak }) {
+  const cp = resident.carePlanView;
+  const diff = Math.round((resident.weeklyCaregiverMinutes - cp.weeklyCaregiverMinutes) * 10) / 10;
+  return (
+    <table className="w-full text-xs border-collapse" style={pageBreak ? { pageBreakAfter: 'always' } : undefined}>
+      <thead>
+        <tr>
+          <th colSpan={6} className="text-left font-normal pb-2 border-b border-neutral-300">
+            <HeaderBlock meta={meta} resident={resident} view="both" />
+          </th>
+        </tr>
+        <tr className="bg-neutral-100 text-left">
+          <th className="p-1 border border-neutral-300 w-[12%]">Care element</th>
+          <th className="p-1 border border-neutral-300 w-[20%]">Assessment answer</th>
+          <th className="p-1 border border-neutral-300 w-[26%]">Assessment basis</th>
+          <th className="p-1 border border-neutral-300 w-[26%]">Care plan basis</th>
+          <th className="p-1 border border-neutral-300 w-[8%]">Status: assessment</th>
+          <th className="p-1 border border-neutral-300 w-[8%]">Status: care plan</th>
+        </tr>
+      </thead>
+      <tbody>
+        {resident.elements.map((el) => {
+          const c = cp.elements.find((x) => x.id === el.id);
+          const differs = el.status !== c.status || el.weeklyMinutes !== c.weeklyMinutes;
+          return (
+            <tr key={el.id} className={`align-top ${differs ? 'bg-amber-50' : ''}`}>
+              <td className="p-1 border border-neutral-300 font-semibold">{el.id}. {el.name}</td>
+              <td className="p-1 border border-neutral-300"><AnswerCell el={el} /></td>
+              <td className="p-1 border border-neutral-300">
+                {el.careRows.map((cr, i) => <div key={i} className="mb-0.5">{rowLine(cr)}</div>)}
+                <div className="font-semibold mt-1">{el.weeklyMinutes} min/wk</div>
+              </td>
+              <td className="p-1 border border-neutral-300">
+                {c.careRows.map((cr, i) => <div key={i} className="mb-0.5">{rowLine(cr)}</div>)}
+                <div className="font-semibold mt-1">{c.weeklyMinutes} min/wk</div>
+              </td>
+              <td className="p-1 border border-neutral-300"><StatusBadge status={el.status} label={el.statusLabel} /></td>
+              <td className="p-1 border border-neutral-300"><StatusBadge status={c.status} label={c.statusLabel} /></td>
+            </tr>
+          );
+        })}
+        <tr className="font-bold bg-neutral-50">
+          <td className="p-1 border border-neutral-300" colSpan={2}>Weekly caregiver minutes (shaded rows differ)</td>
+          <td className="p-1 border border-neutral-300">Assessment: {resident.weeklyCaregiverMinutes} ({resident.averageDailyMinutes}/day)</td>
+          <td className="p-1 border border-neutral-300">Care plan: {cp.weeklyCaregiverMinutes} ({cp.averageDailyMinutes}/day)</td>
+          <td className="p-1 border border-neutral-300 font-normal" colSpan={2}>Difference: {diff > 0 ? '+' : ''}{diff} min/wk</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function ResidentSheet({ meta, resident, view, pageBreak }) {
+  return view === 'both'
+    ? <SideBySideSheet meta={meta} resident={resident} pageBreak={pageBreak} />
+    : <SingleSheet meta={meta} resident={resident} view={view} pageBreak={pageBreak} />;
+}
+
+function SummaryTable({ title, rows, labels }) {
+  return (
+    <div className="mb-3">
+      <p className="font-semibold text-sm text-primary-900 mb-2">{title}</p>
+      <div className="overflow-x-auto">
+        <table className="text-xs border-collapse w-full">
+          <thead>
+            <tr className="bg-neutral-100 text-left">
+              <th className="p-1 border border-neutral-300">Element</th>
+              {STATUS_ORDER.map((s) => <th key={s} className="p-1 border border-neutral-300">{labels[s]}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((e) => (
+              <tr key={e.id}>
+                <td className="p-1 border border-neutral-300">{e.id}. {e.name}</td>
+                {STATUS_ORDER.map((s) => (
+                  <td key={s} className={`p-1 border border-neutral-300 text-center ${(s === 'assessed_no_minutes' || s === 'not_assessed') && e.counts[s] ? STATUS_STYLE[s] : ''}`}>{e.counts[s]}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -136,6 +250,7 @@ export default function AbstCrosswalkReport({ jobId }) {
   const [downloading, setDownloading] = useState(false);
   const [allSheets, setAllSheets] = useState(null);
   const [loadingAll, setLoadingAll] = useState(false);
+  const [view, setView] = useState('assessment');
 
   useEffect(() => {
     fetch(`/api/abst-crosswalk/${jobId}`)
@@ -184,12 +299,13 @@ export default function AbstCrosswalkReport({ jobId }) {
   async function download(excludeIndependent = false) {
     setDownloading(true);
     try {
-      const res = await fetch(`/api/abst-crosswalk/${jobId}/download${excludeIndependent ? '?excludeIndependent=1' : ''}`);
+      const res = await fetch(`/api/abst-crosswalk/${jobId}/download${excludeIndependent ? `?excludeIndependent=1&basis=${view}` : ''}`);
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Download failed (${res.status})`);
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = url;
-      a.download = excludeIndependent ? data.filename.replace(/\.xlsx$/i, ' - excl Independent.xlsx') : data.filename;
+      const sfx = { assessment: '', care_plan: ' (care plan basis)', both: ' (side by side, internal)' }[view];
+      a.download = excludeIndependent ? data.filename.replace(/\.xlsx$/i, ` - excl Independent${sfx}.xlsx`) : data.filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -211,7 +327,7 @@ export default function AbstCrosswalkReport({ jobId }) {
     <div className="space-y-4">
       <style>{PRINT_CSS}</style>
 
-      <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white flex items-start justify-between gap-3">
+      <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-semibold text-primary-900">{data.meta.communityName}</p>
           <p className="text-xs text-neutral-500 mt-1">
@@ -225,7 +341,7 @@ export default function AbstCrosswalkReport({ jobId }) {
         </div>
         <div className="flex flex-col gap-2 shrink-0">
           <button onClick={() => download(true)} disabled={downloading} className="btn btn-accent disabled:opacity-50">
-            {downloading ? '⏳ Downloading…' : '📥 Excel: all residents (excl. Independent)'}
+            {downloading ? '⏳ Downloading…' : `📥 Excel: all residents (excl. Independent) · ${{ assessment: 'assessment', care_plan: 'care plan', both: 'side by side' }[view]}`}
           </button>
           <button onClick={() => download(false)} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
             📥 Excel: full detail (internal)
@@ -234,27 +350,28 @@ export default function AbstCrosswalkReport({ jobId }) {
       </div>
 
       <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white">
-        <p className="font-semibold text-sm text-primary-900 mb-2">Community summary: residents by status, per element</p>
-        <div className="overflow-x-auto">
-          <table className="text-xs border-collapse w-full">
-            <thead>
-              <tr className="bg-neutral-100 text-left">
-                <th className="p-1 border border-neutral-300">Element</th>
-                {STATUS_ORDER.map((s) => <th key={s} className="p-1 border border-neutral-300">{labels[s]}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {data.summary.map((e) => (
-                <tr key={e.id}>
-                  <td className="p-1 border border-neutral-300">{e.id}. {e.name}</td>
-                  {STATUS_ORDER.map((s) => (
-                    <td key={s} className={`p-1 border border-neutral-300 text-center ${(s === 'assessed_no_minutes' || s === 'not_assessed') && e.counts[s] ? STATUS_STYLE[s] : ''}`}>{e.counts[s]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <p className="font-semibold text-sm text-primary-900 mb-2">Minutes basis</p>
+        <div className="flex flex-wrap gap-2">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => setView(v.id)}
+              className={`px-3 py-1 rounded border text-xs ${view === v.id ? 'bg-primary-900 text-white border-primary-900' : 'bg-white text-neutral-700 border-neutral-300'}`}
+              title={v.hint}
+            >
+              {v.label}
+            </button>
+          ))}
         </div>
+        <p className="text-xs text-neutral-500 mt-2">
+          {VIEWS.find((v) => v.id === view).hint}. The page, print, and Excel export all follow this choice.
+          {view === 'both' ? ' Side by side is for internal review of discrepancies.' : ''}
+        </p>
+      </div>
+
+      <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white">
+        {view !== 'care_plan' && <SummaryTable title={`Community summary${view === 'both' ? ' (assessment basis)' : ''}: residents by status, per element`} rows={data.summary} labels={labels} />}
+        {view !== 'assessment' && <SummaryTable title={`Community summary${view === 'both' ? ' (care plan basis)' : ''}: residents by status, per element`} rows={data.summaryCarePlan || data.summary} labels={labels} />}
       </div>
 
       <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white flex flex-wrap items-end gap-3">
@@ -289,14 +406,14 @@ export default function AbstCrosswalkReport({ jobId }) {
             <button className="underline" onClick={() => window.print()}>Print again</button> ·{' '}
             <button className="underline" onClick={() => setAllSheets(null)}>Close</button>
           </p>
-          {allSheets.residents.map((r) => <ResidentSheet key={r.residentId} meta={allSheets.meta} resident={r} pageBreak />)}
+          {allSheets.residents.map((r) => <ResidentSheet key={r.residentId} meta={allSheets.meta} resident={r} view={view} pageBreak />)}
         </div>
       )}
 
       {selectedId && !detail && <p className="abst-no-print text-sm text-neutral-400">Loading resident…</p>}
       {detail && !allSheets && (
         <div id="abst-print-root" className="p-3 rounded border border-neutral-200 bg-white">
-          <ResidentSheet meta={detail.meta} resident={detail.resident} />
+          <ResidentSheet meta={detail.meta} resident={detail.resident} view={view} />
         </div>
       )}
     </div>

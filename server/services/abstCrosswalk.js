@@ -237,7 +237,6 @@ const round1 = (n) => Math.round(n * 10) / 10;
  */
 async function buildAbstCrosswalk(host, opts = {}) {
   const { communityId, careItems, footnote = '', onProgress = () => {} } = opts;
-  const minutesBasis = opts.minutesBasis === 'care_plan' ? 'care_plan' : 'assessment';
   if (!communityId) throw new Error('communityId is required.');
   const cid = Number(communityId);
 
@@ -289,10 +288,11 @@ async function buildAbstCrosswalk(host, opts = {}) {
     planByResident.get(p.residentId).push(p);
   }
 
-  const outResidents = [];
   const unresolvedQuestionMatchers = new Set();
 
-  for (const res of residents) {
+  // One pass per minutes basis. 'assessment' (default view): minutes from the assessment answer. 'care_plan': the
+  // published care plan's own minutes x schedule. Both are kept so the viewer can show either or side by side.
+  const buildOne = (res, minutesBasis) => {
     // latest COMPLETED evaluation
     const completed = evals
       .filter((e) => e.residentId === res.residentId && e.isCompleted)
@@ -579,7 +579,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
     const notInCatalog = planItems.filter((it) => !it.inCatalog);
     const ambiguous = planItems.filter((it) => it.ambiguousZero);
 
-    outResidents.push({
+    return {
       residentId: res.residentId,
       name: res.lastName && res.firstName ? `${res.lastName}, ${res.firstName}` : res.fullName,
       unit: asArray(res.rooms).join(', ') || null,
@@ -597,15 +597,32 @@ async function buildAbstCrosswalk(host, opts = {}) {
       unassignedAbstItems: unassigned.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
       ambiguousDuplicateItems: ambiguous.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
       itemsNotInCatalog: notInCatalog.map((it) => ({ name: it.name, schedule: it.schedule, minutesPerOccurrence: it.minutesPerOccurrence })),
-    });
-  }
+    };
+  };
 
+  const outResidents = residents.map((res) => {
+    const resident = buildOne(res, 'assessment');
+    const cp = buildOne(res, 'care_plan');
+    resident.carePlanView = {
+      elements: cp.elements.map((e) => ({ id: e.id, name: e.name, status: e.status, statusLabel: e.statusLabel, careRows: e.careRows, weeklyMinutes: e.weeklyMinutes, notes: e.notes, subTypes: e.subTypes })),
+      weeklyCaregiverMinutes: cp.weeklyCaregiverMinutes,
+      averageDailyMinutes: cp.averageDailyMinutes,
+      totalCareItems: cp.totalCareItems,
+      prnItems: cp.prnItems,
+    };
+    return resident;
+  });
   outResidents.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   // community summary: per element, count of residents in each status
   const summary = elementCfg.elements.map((el) => {
     const counts = Object.fromEntries(Object.values(STATUS).map((s) => [s, 0]));
     for (const r of outResidents) counts[r.elements.find((e) => e.id === el.id).status]++;
+    return { id: el.id, name: el.name, counts, total: outResidents.length };
+  });
+  const summaryCarePlan = elementCfg.elements.map((el) => {
+    const counts = Object.fromEntries(Object.values(STATUS).map((s) => [s, 0]));
+    for (const r of outResidents) counts[r.carePlanView.elements.find((e) => e.id === el.id).status]++;
     return { id: el.id, name: el.name, counts, total: outResidents.length };
   });
 
@@ -618,7 +635,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
       communityId: cid,
       communityName,
       retName,
-      minutesBasis,
+      minutesBasis: 'both',
       retVersionUsedForDecoding: retVersion,
       generatedAt,
       dataAsOf: `ALIS export API, pulled ${generatedAt}`,
@@ -629,6 +646,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
       unresolvedQuestionMatchers: [...unresolvedQuestionMatchers],
     },
     summary,
+    summaryCarePlan,
     residents: outResidents,
   };
 }

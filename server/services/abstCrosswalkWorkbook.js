@@ -59,16 +59,176 @@ function answerSummary(el) {
   return el.questions.flatMap((q) => q.answers.map((a) => a.answer)).join(' | ');
 }
 
-/** Drops residents of the given product types and recomputes the per-element summary so counts stay consistent. */
+/** Drops residents of the given product types and recomputes both per-element summaries so counts stay consistent. */
 function filterReport(report, { excludeProductTypes = [] } = {}) {
   if (!excludeProductTypes.length) return report;
   const residents = report.residents.filter((r) => !excludeProductTypes.includes(r.productType));
-  const summary = report.summary.map((s) => {
-    const counts = Object.fromEntries(Object.keys(s.counts).map((k) => [k, 0]));
-    for (const r of residents) counts[r.elements.find((e) => e.id === s.id).status]++;
-    return { ...s, counts, total: residents.length };
+  const recount = (rows, statusOf) => rows.map((sm) => {
+    const counts = Object.fromEntries(Object.keys(sm.counts).map((k) => [k, 0]));
+    for (const r of residents) counts[statusOf(r, sm.id)]++;
+    return { ...sm, counts, total: residents.length };
   });
-  return { ...report, residents, summary, meta: { ...report.meta, residentCount: residents.length } };
+  return {
+    ...report,
+    residents,
+    summary: recount(report.summary, (r, id) => r.elements.find((e) => e.id === id).status),
+    summaryCarePlan: recount(report.summaryCarePlan || report.summary, (r, id) => (r.carePlanView || r).elements.find((e) => e.id === id).status),
+    meta: { ...report.meta, residentCount: residents.length },
+  };
+}
+
+/** One minutes basis as a plain report: 'assessment' (the base data) or 'care_plan' (the care plan's own minutes x schedule). */
+function projectBasis(report, basis) {
+  if (basis !== 'care_plan') return report;
+  const residents = report.residents.map((r) => ({
+    ...r,
+    elements: r.elements.map((e) => {
+      const c = r.carePlanView.elements.find((x) => x.id === e.id);
+      return { ...e, status: c.status, statusLabel: c.statusLabel, careRows: c.careRows, weeklyMinutes: c.weeklyMinutes, notes: c.notes, subTypes: c.subTypes || e.subTypes };
+    }),
+    weeklyCaregiverMinutes: r.carePlanView.weeklyCaregiverMinutes,
+    averageDailyMinutes: r.carePlanView.averageDailyMinutes,
+    totalCareItems: r.carePlanView.totalCareItems,
+    prnItems: r.carePlanView.prnItems,
+  }));
+  return { ...report, residents, summary: report.summaryCarePlan || report.summary };
+}
+
+const BASIS_LABEL = { assessment: 'Assessment basis', care_plan: 'Care plan basis' };
+
+/**
+ * Survey-facing workbook. basis: 'assessment' | 'care_plan' | 'both' (internal side-by-side comparison).
+ * One row per care item per element; no setup-gap or care-item-detail sheets. A missing care item usually just
+ * means Independent or an outside provider, both fine at 0 minutes.
+ */
+function buildSurveyorWorkbook(report, basis = 'assessment') {
+  const bases = basis === 'both' ? ['assessment', 'care_plan'] : [basis === 'care_plan' ? 'care_plan' : 'assessment'];
+  const both = bases.length === 2;
+  const projected = bases.map((b) => ({ b, rep: projectBasis(report, b) }));
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ALIS Hub';
+  wb.created = new Date(report.meta.generatedAt);
+  const lead = both ? ['Basis'] : [];
+  const leadW = both ? [{ width: 16 }] : [];
+  const basisTitle = both ? 'assessment basis and care plan basis side by side' : `${BASIS_LABEL[bases[0]].toLowerCase()}`;
+
+  // 1. Resident x Element
+  const detail = [];
+  for (const { b, rep } of projected) {
+    for (const r of rep.residents) {
+      for (const el of r.elements) {
+        el.careRows.forEach((cr, i) => detail.push({
+          values: [
+            ...(both ? [BASIS_LABEL[b]] : []),
+            r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? '', el.id, el.name,
+            i === 0 ? answerSummary(el) : '', cr.name, cr.schedule, cr.prn ? 'PRN' : '',
+            cr.prn || cr.source === 'care_plan_only' ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
+            cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
+            cr.prn || cr.weeklyMinutes == null ? '' : cr.weeklyMinutes,
+            el.statusLabel,
+            cr.source === 'assessment' ? 'Assessment answer' : cr.source === 'care_plan_only' ? 'Care plan only (not counted)' : cr.source === 'care_plan' ? 'Care plan' : '',
+          ],
+          fill: FLAG_FILL[el.status],
+        }));
+      }
+    }
+  }
+  addTable(
+    wb.addWorksheet('Resident x Element'),
+    report,
+    `Oregon ABST crosswalk, ${basisTitle}`,
+    [
+      ...lead.map((h, i) => ({ header: h, ...leadW[i] })),
+      { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
+      { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 },
+      { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 32 },
+      { header: 'Assessment answer(s)', width: 56 }, { header: 'Care item', width: 40 }, { header: 'Schedule', width: 18 }, { header: 'PRN', width: 6 },
+      { header: 'Minutes per scheduled day', width: 12 }, { header: 'PRN minutes per occurrence', width: 12 }, { header: 'Weekly minutes', width: 10 },
+      { header: 'Status', width: 30 }, { header: 'Source', width: 22 },
+    ],
+    detail
+  );
+
+  // 2. Community summary
+  const statusOrder = [STATUS.STAFF_TIME, STATUS.INDEPENDENT, STATUS.NURSE, STATUS.OUTSIDE, STATUS.NOT_APPLICABLE, STATUS.GAP, STATUS.NOT_ASSESSED];
+  const summaryRows = [];
+  for (const { b, rep } of projected) {
+    for (const s of rep.summary) {
+      summaryRows.push({
+        values: [...(both ? [BASIS_LABEL[b]] : []), s.id, s.name, ...statusOrder.map((k) => s.counts[k]), s.total],
+        fill: s.counts[STATUS.GAP] || s.counts[STATUS.NOT_ASSESSED] ? 'FFFFF2CC' : undefined,
+      });
+    }
+  }
+  addTable(
+    wb.addWorksheet('Community summary'),
+    report,
+    'Residents by status for each element (every resident must appear in every element)',
+    [...(both ? [{ header: 'Basis', width: 16 }] : []), { header: '#', width: 5 }, { header: 'ODHS care element', width: 44 }, ...statusOrder.map((s) => ({ header: STATUS_LABEL[s], width: 18 })), { header: 'Total residents', width: 12 }],
+    summaryRows
+  );
+
+  // 3. Resident totals
+  const base = projected[0].rep;
+  const other = both ? projected[1].rep : null;
+  const totalsRows = base.residents.map((r, i) => {
+    const o = other ? other.residents[i] : null;
+    return {
+      values: [
+        r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? 'No completed evaluation', r.carePlanPublishDate ?? '',
+        r.totalCareItems, r.weeklyCaregiverMinutes, r.averageDailyMinutes, round2(r.averageDailyMinutes / 60),
+        ...(o ? [o.weeklyCaregiverMinutes, o.averageDailyMinutes, round1(r.weeklyCaregiverMinutes - o.weeklyCaregiverMinutes)] : []),
+      ],
+    };
+  });
+  const tl = both ? 'assessment ' : '';
+  addTable(
+    wb.addWorksheet('Resident totals'),
+    report,
+    'Caregiver minutes by resident: weekly = care item minutes (per day) x days per week; average daily = weekly / 7. PRN and times-per-day are not multiplied',
+    [
+      { header: 'Resident', width: 26 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
+      { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 18 }, { header: 'Care plan published', width: 12 },
+      { header: 'Total care items', width: 10 }, { header: `Weekly caregiver minutes${both ? ' (assessment)' : ''}`, width: 14 },
+      { header: `Average daily minutes${both ? ' (assessment)' : ''}`, width: 14 }, { header: `Average daily hours${both ? ' (assessment)' : ''}`, width: 12 },
+      ...(both ? [{ header: 'Weekly caregiver minutes (care plan)', width: 14 }, { header: 'Average daily minutes (care plan)', width: 14 }, { header: 'Difference in weekly minutes (assessment minus care plan)', width: 16 }] : []),
+    ],
+    totalsRows
+  );
+
+  // 4. Roster layout (one sheet per basis)
+  for (const { b, rep } of projected) {
+    const roster = [];
+    for (const r of rep.residents) {
+      for (const el of r.elements) {
+        for (const cr of el.careRows) {
+          roster.push({
+            values: [r.name, report.meta.communityName, cr.source === 'care_plan' ? (cr.label || 'ABST') : cr.source === 'assessment' ? 'Assessment answer' : cr.source === 'care_plan_only' ? 'Care plan (not counted)' : '',
+              cr.name, cr.prn ? 'prn' : cr.schedule, cr.prn || cr.source === 'care_plan_only' ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
+              cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
+              cr.prn || cr.minutesPerOccurrence == null || cr.source === 'care_plan_only' ? '' : round2(cr.minutesPerOccurrence / 60)],
+            fill: FLAG_FILL[el.status],
+          });
+        }
+      }
+      roster.push({
+        values: [`${r.name} Total`, '', '', `Total Care Items: ${r.totalCareItems}`, '', `Avg Daily Mins: ${r.averageDailyMinutes}`, `PRN items: ${r.prnItems} (per occurrence, not in totals)`, `Avg Daily Hrs: ${round2(r.averageDailyMinutes / 60)}`],
+        fill: 'FFE7EEF7',
+      });
+    }
+    addTable(
+      wb.addWorksheet(both ? (b === 'assessment' ? 'Roster - assessment basis' : 'Roster - care plan basis') : 'Roster (HQ layout)'),
+      report,
+      `Care item roster in the ALIS HQ layout, ${BASIS_LABEL[b].toLowerCase()}. Totals are average daily minutes (weekly / 7); PRN is per occurrence and not multiplied`,
+      [
+        { header: 'Resident', width: 26 }, { header: 'Community', width: 28 }, { header: 'Care Item Label', width: 18 },
+        { header: 'Care Item', width: 46 }, { header: 'Schedule', width: 22 }, { header: 'Estimated Mins (per scheduled day)', width: 16 },
+        { header: 'Estimated Mins - PRN (per occurrence)', width: 16 }, { header: 'Estimated Hrs (per scheduled day)', width: 14 },
+      ],
+      roster
+    );
+  }
+  return wb;
 }
 
 /**
@@ -76,7 +236,7 @@ function filterReport(report, { excludeProductTypes = [] } = {}) {
  * columns or care-item-level sheets (a missing care item usually just means Independent or an outside
  * provider, both fine at 0 minutes). The full internal workbook keeps the care item detail.
  */
-function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
+function buildInternalWorkbook(report) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ALIS Hub';
   wb.created = new Date(report.meta.generatedAt);
@@ -85,19 +245,6 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
   const detail = [];
   for (const r of report.residents) {
     for (const el of r.elements) {
-      if (surveyor) {
-        el.careRows.forEach((cr, i) => detail.push({
-          values: [r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? '', el.id, el.name,
-            i === 0 ? answerSummary(el) : '', cr.name, cr.schedule, cr.prn ? 'PRN' : '',
-            cr.prn ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
-            cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
-            cr.prn || cr.weeklyMinutes == null ? '' : cr.weeklyMinutes,
-            el.statusLabel, cr.source === 'assessment' ? 'Assessment answer' : cr.source === 'care_plan_only' ? 'Care plan only (not counted)' : cr.source === 'care_plan' ? 'Care plan' : '',
-            cr.onCarePlan ? (cr.carePlanMinutes ?? '') : '', cr.onCarePlan ? (cr.carePlanSchedule ?? '') : 'Not on care plan'],
-          fill: FLAG_FILL[el.status],
-        }));
-        continue;
-      }
       const base = [
         r.name, r.unit, r.productType, r.evaluation?.date ?? '', r.evaluation?.reason ?? '', r.carePlanPublishDate ?? '',
         el.id, el.name, el.questions.filter((q) => q.answered).map((q) => q.text).join('; '), answerSummary(el),
@@ -124,15 +271,7 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
     wb.addWorksheet('Resident x Element'),
     report,
     'Oregon ABST crosswalk, one row per resident per element',
-    surveyor ? [
-      { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
-      { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 },
-      { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 32 },
-      { header: 'Assessment answer(s)', width: 56 }, { header: 'Care item', width: 40 }, { header: 'Schedule', width: 18 }, { header: 'PRN', width: 6 },
-      { header: 'Minutes per scheduled day', width: 12 }, { header: 'PRN minutes per occurrence', width: 12 }, { header: 'Weekly minutes', width: 10 },
-      { header: 'Status', width: 30 }, { header: 'Source', width: 18 },
-      { header: 'Care plan minutes (comparison)', width: 12 }, { header: 'Care plan schedule (comparison)', width: 22 },
-    ] : [
+    [
       { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 }, { header: 'Care plan published', width: 12 },
       { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 30 }, { header: 'Assessment question(s)', width: 34 },
@@ -179,40 +318,6 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
     }))
   );
 
-  if (surveyor) {
-    // Roster layout, matching the ALIS HQ "Resident Roster with Care Plan Items" export: one row per care item,
-    // every element represented, and a totals row per resident. Estimated Mins = minutes on a scheduled day.
-    const roster = [];
-    for (const r of report.residents) {
-      for (const el of r.elements) {
-        for (const cr of el.careRows) {
-          roster.push({
-            values: [r.name, report.meta.communityName, cr.source === 'care_plan' ? (cr.label || 'ABST') : cr.source === 'assessment' ? 'Assessment answer' : cr.source === 'care_plan_only' ? 'Care plan (not counted)' : '',
-              cr.name, cr.prn ? 'prn' : cr.schedule, cr.prn || cr.source === 'care_plan_only' ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
-              cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
-              cr.prn || cr.minutesPerOccurrence == null ? '' : round2(cr.minutesPerOccurrence / 60)],
-            fill: FLAG_FILL[el.status],
-          });
-        }
-      }
-      roster.push({
-        values: [`${r.name} Total`, '', '', `Total Care Items: ${r.totalCareItems}`, '', `Avg Daily Mins: ${r.averageDailyMinutes}`, `PRN items: ${r.prnItems} (per occurrence, not in totals)`, `Avg Daily Hrs: ${round2(r.averageDailyMinutes / 60)}`],
-        fill: 'FFE7EEF7',
-      });
-    }
-    addTable(
-      wb.addWorksheet('Roster (HQ layout)'),
-      report,
-      'Care item roster in the ALIS HQ layout. Minutes come from the assessment answer (Care Settings minutes for the care item); totals are average daily minutes (weekly / 7); PRN is per occurrence and not multiplied',
-      [
-        { header: 'Resident', width: 26 }, { header: 'Community', width: 28 }, { header: 'Care Item Label', width: 16 },
-        { header: 'Care Item', width: 46 }, { header: 'Schedule', width: 22 }, { header: 'Estimated Mins (per scheduled day)', width: 16 },
-        { header: 'Estimated Mins - PRN (per occurrence)', width: 16 }, { header: 'Estimated Hrs (per scheduled day)', width: 14 },
-      ],
-      roster
-    );
-    return wb;
-  }
 
   // 4. HQ roster format, for reconciliation with "Resident Roster with Care Plan Items" in ALIS HQ
   const hq = [];
@@ -278,5 +383,11 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
+const round1 = (n) => Math.round(n * 10) / 10;
 
-module.exports = { buildAbstCrosswalkWorkbook, filterReport };
+/** surveyor: survey-facing workbook (basis: assessment | care_plan | both). Otherwise the full internal workbook. */
+function buildAbstCrosswalkWorkbook(report, { surveyor = false, basis = 'assessment' } = {}) {
+  return surveyor ? buildSurveyorWorkbook(report, basis) : buildInternalWorkbook(report);
+}
+
+module.exports = { buildAbstCrosswalkWorkbook, filterReport, projectBasis };
