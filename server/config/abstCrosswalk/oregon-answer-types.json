@@ -2585,6 +2585,176 @@
    "answer": "resident requires outside provider assistance with smoking and safety needs",
    "type": "outside",
    "need": "Smoking - Outside Provider"
+  },
+  {
+   "element": 7,
+   "domain": "Mobility and Transfers",
+   "question": "bed mobility",
+   "answer": "resident is independent with getting in and out of bed",
+   "type": "independent",
+   "need": "Bed Mobility - Independent",
+   "careIdentifier": "Bed Mobility - Independent",
+   "addedBy": "ALIS Hub (Bed Mobility mapped under Repositioning, Nov 2026); care item names from Care Settings"
+  },
+  {
+   "element": 7,
+   "domain": "Mobility and Transfers",
+   "question": "bed mobility",
+   "answer": "resident requires verbal reminders for bed mobility tasks",
+   "type": "staff",
+   "need": "Bed Mobility - Reminders",
+   "careIdentifier": "Bed Mobility - Reminders",
+   "addedBy": "ALIS Hub (Bed Mobility mapped under Repositioning, Nov 2026); care item names from Care Settings",
+   "careItem": "Bed Mobility - Reminders"
+  },
+  {
+   "element": 7,
+   "domain": "Mobility and Transfers",
+   "question": "bed mobility",
+   "answer": "resident requires setup assistance for bed mobility tasks",
+   "type": "staff",
+   "need": "Bed Mobility - Setup Assistance",
+   "careIdentifier": "Bed Mobility - Setup Assistance",
+   "addedBy": "ALIS Hub (Bed Mobility mapped under Repositioning, Nov 2026); care item names from Care Settings",
+   "careItem": "Bed Mobility - Setup Assistance"
+  },
+  {
+   "element": 7,
+   "domain": "Mobility and Transfers",
+   "question": "bed mobility",
+   "answer": "resident requires cueing/standby assistance for bed mobility tasks",
+   "type": "staff",
+   "need": "Bed Mobility - Cueing/Standby Assistance",
+   "careIdentifier": "Bed Mobility - Cueing/Standby Assistance",
+   "addedBy": "ALIS Hub (Bed Mobility mapped under Repositioning, Nov 2026); care item names from Care Settings",
+   "careItem": "Bed Mobility - Cueing/Standby Assistance"
+  },
+  {
+   "element": 7,
+   "domain": "Mobility and Transfers",
+   "question": "bed mobility",
+   "answer": "resident requires physical assistance of 1 staff for bed mobility tasks",
+   "type": "staff",
+   "need": "Bed Mobility - Physical Assistance",
+   "careIdentifier": "Bed Mobility - Physical Assistance",
+   "addedBy": "ALIS Hub (Bed Mobility mapped under Repositioning, Nov 2026); care item names from Care Settings",
+   "careItem": "Bed Mobility - Physical Assistance"
+  },
+  {
+   "element": 7,
+   "domain": "Mobility and Transfers",
+   "question": "bed mobility",
+   "answer": "resident requires physical assistance of 2 staff for bed mobility tasks",
+   "type": "staff",
+   "need": "Bed Mobility - Two Staff Assistance",
+   "careIdentifier": "Bed Mobility - Two Staff Assistance",
+   "addedBy": "ALIS Hub (Bed Mobility mapped under Repositioning, Nov 2026); care item names from Care Settings",
+   "careItem": "Bed Mobility - Two Staff Assistance"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "dining supervision requirements",
+   "answer": "resident does not require supervision (including unsupervised access to common area pantries, safe to use a microwave or stovetop, etc.)",
+   "type": "notApplicable",
+   "need": "Dining Supervision - Not required",
+   "careIdentifier": "Dining Supervision - Not required",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "dining supervision requirements",
+   "answer": "resident requires minimal supervision (including supervised access to common area pantries, etc.)",
+   "type": "staff",
+   "need": "Dining - Minimal Supervision",
+   "careIdentifier": "Dining - Minimal Supervision",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026",
+   "careItem": "Dining - Minimal Supervision"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "dining supervision requirements",
+   "answer": "resident requires constant supervision (e.g. choking risk, etc.)",
+   "type": "staff",
+   "need": "Dining - Constant Supervision",
+   "careIdentifier": "Dining - Constant Supervision",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026",
+   "careItem": "Dining - Constant Supervision"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "resident chooses to eat all meals in apartment; does not come to the dining room",
+   "type": "notApplicable",
+   "need": "Meal Escorts - Eats in apartment",
+   "careIdentifier": "Meal Escorts - Eats in apartment",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "resident is independent coming and going to all meals",
+   "type": "independent",
+   "need": "Meal Escorts - Independent",
+   "careIdentifier": "Meal Escorts - Independent",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "resident requires verbal reminders for meal times, but goes to dining room independently",
+   "type": "staff",
+   "need": "Meal Escorts - Reminders",
+   "careIdentifier": "Meal Escorts - Reminders",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "resident requires escorts to/from dining room and/or meal tray delivery/pick-up 1 x per day",
+   "type": "staff",
+   "need": "Dining - Escorts/Meal Tray Delivery 1x Daily",
+   "careIdentifier": "Dining - Escorts/Meal Tray Delivery 1x Daily",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026",
+   "careItem": "Dining - Escorts/Meal Tray Delivery 1x Daily"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "resident requires escorts to/from dining room and/or meal tray delivery/pick-up 2x per day",
+   "type": "staff",
+   "need": "Dining - Escorts/Meal Tray Delivery 2x Daily",
+   "careIdentifier": "Dining - Escorts/Meal Tray Delivery 2x Daily",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026",
+   "careItem": "Dining - Escorts/Meal Tray Delivery 2x Daily"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "resident requires escorts to/from dining room and/or meal tray delivery/pick-up 3x per day",
+   "type": "staff",
+   "need": "Dining - Escorts/Meal Tray Delivery 3x Daily",
+   "careIdentifier": "Dining - Escorts/Meal Tray Delivery 3x Daily",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026",
+   "careItem": "Dining - Escorts/Meal Tray Delivery 3x Daily"
+  },
+  {
+   "element": 9,
+   "domain": "Diet and Nutrition",
+   "question": "meal escorts / meal tray delivery",
+   "answer": "outside provider to assist with all meal escorts",
+   "type": "outside",
+   "need": "Meal Escorts - Outside Provider",
+   "careIdentifier": "Meal Escorts - Outside Provider",
+   "addedBy": "ALIS Hub (not in build list v3): dining supervision / meal escort answers mapped to Care Settings dining items, Nov 2026"
   }
  ]
 }

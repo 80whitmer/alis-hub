@@ -92,7 +92,8 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
             cr.prn ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
             cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
             cr.prn || cr.weeklyMinutes == null ? '' : cr.weeklyMinutes,
-            el.statusLabel, cr.source === 'care_plan' ? 'Care plan' : cr.source === 'assessment' ? 'Assessment answer' : ''],
+            el.statusLabel, cr.source === 'assessment' ? 'Assessment answer' : cr.source === 'care_plan_only' ? 'Care plan only (not counted)' : cr.source === 'care_plan' ? 'Care plan' : '',
+            cr.onCarePlan ? (cr.carePlanMinutes ?? '') : '', cr.onCarePlan ? (cr.carePlanSchedule ?? '') : 'Not on care plan'],
           fill: FLAG_FILL[el.status],
         }));
         continue;
@@ -129,7 +130,8 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
       { header: 'Element #', width: 8 }, { header: 'ODHS care element', width: 32 },
       { header: 'Assessment answer(s)', width: 56 }, { header: 'Care item', width: 40 }, { header: 'Schedule', width: 18 }, { header: 'PRN', width: 6 },
       { header: 'Minutes per scheduled day', width: 12 }, { header: 'PRN minutes per occurrence', width: 12 }, { header: 'Weekly minutes', width: 10 },
-      { header: 'Status', width: 30 }, { header: 'Source', width: 16 },
+      { header: 'Status', width: 30 }, { header: 'Source', width: 18 },
+      { header: 'Care plan minutes (comparison)', width: 12 }, { header: 'Care plan schedule (comparison)', width: 22 },
     ] : [
       { header: 'Resident', width: 24 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 11 },
       { header: 'Evaluation date', width: 12 }, { header: 'Evaluation reason', width: 16 }, { header: 'Care plan published', width: 12 },
@@ -185,8 +187,8 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
       for (const el of r.elements) {
         for (const cr of el.careRows) {
           roster.push({
-            values: [r.name, report.meta.communityName, cr.source === 'care_plan' ? (cr.label || 'ABST') : cr.source === 'assessment' ? 'Assessment answer' : '',
-              cr.name, cr.prn ? 'prn' : cr.schedule, cr.prn ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
+            values: [r.name, report.meta.communityName, cr.source === 'care_plan' ? (cr.label || 'ABST') : cr.source === 'assessment' ? 'Assessment answer' : cr.source === 'care_plan_only' ? 'Care plan (not counted)' : '',
+              cr.name, cr.prn ? 'prn' : cr.schedule, cr.prn || cr.source === 'care_plan_only' ? '' : (cr.minutesPerOccurrence ?? 'Not yet configured'),
               cr.prn ? (cr.minutesPerOccurrence ?? '') : '',
               cr.prn || cr.minutesPerOccurrence == null ? '' : round2(cr.minutesPerOccurrence / 60)],
             fill: FLAG_FILL[el.status],
@@ -201,7 +203,7 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false } = {}) {
     addTable(
       wb.addWorksheet('Roster (HQ layout)'),
       report,
-      'Care item roster in the ALIS HQ layout. Estimated Mins = minutes on a scheduled day; totals are average daily minutes (weekly / 7); PRN is per occurrence and not multiplied',
+      'Care item roster in the ALIS HQ layout. Minutes come from the assessment answer (Care Settings minutes for the care item); totals are average daily minutes (weekly / 7); PRN is per occurrence and not multiplied',
       [
         { header: 'Resident', width: 26 }, { header: 'Community', width: 28 }, { header: 'Care Item Label', width: 16 },
         { header: 'Care Item', width: 46 }, { header: 'Schedule', width: 22 }, { header: 'Estimated Mins (per scheduled day)', width: 16 },

@@ -237,6 +237,7 @@ const round1 = (n) => Math.round(n * 10) / 10;
  */
 async function buildAbstCrosswalk(host, opts = {}) {
   const { communityId, careItems, footnote = '', onProgress = () => {} } = opts;
+  const minutesBasis = opts.minutesBasis === 'care_plan' ? 'care_plan' : 'assessment';
   if (!communityId) throw new Error('communityId is required.');
   const cid = Number(communityId);
 
@@ -338,6 +339,8 @@ async function buildAbstCrosswalk(host, opts = {}) {
       };
     });
 
+    const planByName = new Map(planItems.map((it) => [norm(it.name), it]));
+
     const elements = elementCfg.elements.map((el) => {
       // answers per question
       const questions = el._questions.map((m) => {
@@ -408,41 +411,138 @@ async function buildAbstCrosswalk(host, opts = {}) {
       }
       if (allAnswers.some((a) => !a.fromTable)) notes.push('Answer type inferred from wording (not in the answer-type table).');
 
-      const weeklyMinutes = round1(items.filter((it) => it.countsAsCaregiver && !it.prn && it.weeklyMinutes != null).reduce((s, it) => s + it.weeklyMinutes, 0));
+      let weeklyMinutes = round1(items.filter((it) => it.countsAsCaregiver && !it.prn && it.weeklyMinutes != null).reduce((s, it) => s + it.weeklyMinutes, 0));
 
-      // Roster-style rows (the layout of the HQ "Resident Roster with Care Plan Items"): the element's care plan
-      // items, plus one 0-minute row per assessment answer that resolves to Independent / Outside provider / Nurse /
-      // Does not apply. Those rows come from the resident's real answer (never inferred from a missing item) and
-      // are marked source 'assessment'. Staff answers with no matching care item show as "not yet configured".
-      const careRows = items.map((it) => ({
-        source: 'care_plan',
-        name: it.name,
-        label: it.label,
-        schedule: it.schedule,
-        prn: it.prn,
-        minutesPerOccurrence: it.minutesPerOccurrence,
-        weeklyMinutes: it.prn || !it.countsAsCaregiver ? null : it.weeklyMinutes,
-        countsAsCaregiver: it.countsAsCaregiver,
-        periodic: it.periodic,
-      }));
-      const haveNames = new Set(items.map((it) => norm(it.name)));
-      for (const a of allAnswers) {
-        if (!a.type || a.informational) continue;
-        const TYPE_WORD = { independent: 'Independent', outside: 'Outside provider', nurse: 'Nurse', notApplicable: 'Does not apply', staff: 'Staff assistance' };
-        const rowName = a.rowName || `${a.question} - ${TYPE_WORD[a.type]}`;
-        if (haveNames.has(norm(rowName))) continue;
-        haveNames.add(norm(rowName));
-        careRows.push({
-          source: 'assessment',
-          name: rowName,
-          label: null,
-          schedule: '—',
-          prn: false,
-          minutesPerOccurrence: a.type === 'staff' ? null : 0,
-          weeklyMinutes: a.type === 'staff' ? null : 0,
-          countsAsCaregiver: false,
-          answerType: a.type,
-        });
+      // Roster-style rows (the layout of the HQ "Resident Roster with Care Plan Items"), every element represented.
+      // Rows from the resident's real assessment answers are marked source 'assessment'; nothing is inferred from a
+      // missing care plan item.
+      const TYPE_WORD = { independent: 'Independent', outside: 'Outside provider', nurse: 'Nurse', notApplicable: 'Does not apply', staff: 'Staff assistance' };
+      let careRows;
+      const minsByName = new Map();
+      if (minutesBasis === 'assessment') {
+        // Minutes come from the assessment answer: the care item the answer triggers, at its Care Settings (ABST)
+        // minutes, treated as minutes for the day. Frequency comes from the item name ("2x Per Week"); an item the
+        // resident's care plan carries as PRN stays PRN (the assessment gives no frequency for it); otherwise daily.
+        // The care plan's own minutes and schedule are kept alongside for comparison, never summed.
+        careRows = [];
+        const seen = new Set();
+        let staffRows = 0;
+        let staffWithMinutes = 0;
+        for (const a of allAnswers) {
+          if (!a.type || a.informational) continue;
+          const name = a.rowName || `${a.question} - ${TYPE_WORD[a.type]}`;
+          const key = norm(name);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const plan = planByName.get(key) || null;
+          const row = {
+            source: 'assessment',
+            name,
+            label: null,
+            schedule: '—',
+            prn: false,
+            minutesPerOccurrence: 0,
+            weeklyMinutes: 0,
+            countsAsCaregiver: false,
+            answerType: a.type,
+            carePlanMinutes: plan ? plan.minutesPerOccurrence : null,
+            carePlanSchedule: plan ? plan.schedule : null,
+            onCarePlan: !!plan,
+          };
+          if (a.type === 'staff') {
+            staffRows++;
+            const entry = catalog.resolve(name)?.abst || null;
+            const mins = entry && entry.minutes > 0 ? entry.minutes : null;
+            const weekMatch = name.match(/(\d+)x per week/i);
+            const prn = !!plan?.prn || /\bprn\b/i.test(name);
+            const perWeek = prn ? null : weekMatch ? Number(weekMatch[1]) : 7;
+            row.label = entry ? 'ABST' : null;
+            row.prn = prn;
+            row.schedule = prn ? 'PRN' : weekMatch ? `${perWeek}x per week` : 'Daily';
+            row.minutesPerOccurrence = mins;
+            row.weeklyMinutes = prn || mins == null ? null : round1(mins * perWeek);
+            row.countsAsCaregiver = mins != null;
+            if (mins != null) staffWithMinutes++;
+            minsByName.set(key, mins);
+          }
+          careRows.push(row);
+        }
+        // Care plan items for this element that no assessment answer points to: shown, never counted.
+        for (const it of items) {
+          if (seen.has(norm(it.name))) continue;
+          careRows.push({
+            source: 'care_plan_only',
+            name: it.name,
+            label: it.label,
+            schedule: it.schedule,
+            prn: it.prn,
+            minutesPerOccurrence: it.minutesPerOccurrence,
+            weeklyMinutes: null,
+            countsAsCaregiver: false,
+            carePlanMinutes: it.minutesPerOccurrence,
+            carePlanSchedule: it.schedule,
+            onCarePlan: true,
+          });
+        }
+        // "Additional Time" items are time added to each bath/shower, so they follow the bathing frequency
+        // ("Nx Per Week") rather than every day. Assumption to confirm with Leisure Care.
+        const bathsPerWeek = Math.max(0, ...careRows.map((r) => Number(r.name.match(/(\d+)x per week/i)?.[1] || 0)));
+        for (const r of careRows) {
+          if (r.source === 'assessment' && r.answerType === 'staff' && !r.prn && /additional time/i.test(r.name) && !/x per week/i.test(r.name) && bathsPerWeek > 0 && r.minutesPerOccurrence != null) {
+            r.schedule = `${bathsPerWeek}x per week (per bath)`;
+            r.weeklyMinutes = round1(r.minutesPerOccurrence * bathsPerWeek);
+          }
+        }
+        weeklyMinutes = round1(careRows.filter((r) => r.countsAsCaregiver && !r.prn && r.weeklyMinutes != null).reduce((sum, r) => sum + r.weeklyMinutes, 0));
+
+        notes.length = 0;
+        if (staffWithMinutes > 0) {
+          status = STATUS.STAFF_TIME;
+        } else if (!allAnswers.length) {
+          status = STATUS.NOT_ASSESSED;
+          notes.push(!latest ? 'No completed evaluation on file.' : !doc ? 'Latest completed evaluation has no answer data in ALIS export.' : 'No answer recorded for this element on the latest completed evaluation.');
+        } else if (staffRows > 0) {
+          status = STATUS.GAP;
+          notes.push('Assessment calls for staff assistance; minutes for this care item are not yet set up in Care Settings.');
+        } else if (topType) {
+          status = TYPE_TO_STATUS[topType];
+        } else {
+          status = STATUS.NOT_ASSESSED;
+          notes.push('Answer could not be classified.');
+        }
+        if (allAnswers.some((a) => !a.fromTable)) notes.push('Answer type inferred from wording (not in the answer-type table).');
+        const unassessed = careRows.filter((r) => r.source === 'care_plan_only' && r.minutesPerOccurrence > 0);
+        if (unassessed.length) notes.push(`Care plan also carries ${unassessed.length} item(s) with minutes that no assessment answer points to (not counted).`);
+      } else {
+        careRows = items.map((it) => ({
+          source: 'care_plan',
+          name: it.name,
+          label: it.label,
+          schedule: it.schedule,
+          prn: it.prn,
+          minutesPerOccurrence: it.minutesPerOccurrence,
+          weeklyMinutes: it.prn || !it.countsAsCaregiver ? null : it.weeklyMinutes,
+          countsAsCaregiver: it.countsAsCaregiver,
+          periodic: it.periodic,
+        }));
+        const haveNames = new Set(items.map((it) => norm(it.name)));
+        for (const a of allAnswers) {
+          if (!a.type || a.informational) continue;
+          const rowName = a.rowName || `${a.question} - ${TYPE_WORD[a.type]}`;
+          if (haveNames.has(norm(rowName))) continue;
+          haveNames.add(norm(rowName));
+          careRows.push({
+            source: 'assessment',
+            name: rowName,
+            label: null,
+            schedule: '—',
+            prn: false,
+            minutesPerOccurrence: a.type === 'staff' ? null : 0,
+            weeklyMinutes: a.type === 'staff' ? null : 0,
+            countsAsCaregiver: false,
+            answerType: a.type,
+          });
+        }
       }
       if (!careRows.length) careRows.push({ source: 'none', name: 'No assessment answer on file', schedule: '—', prn: false, minutesPerOccurrence: null, weeklyMinutes: null, countsAsCaregiver: false });
 
@@ -462,7 +562,10 @@ async function buildAbstCrosswalk(host, opts = {}) {
           const qi = { answers: (s.questionIndexes || [i]).flatMap((k) => questions[k]?.answers || []) };
           const subItems = items.filter((it) => s.prefixes.some((pf) => norm(it.name).startsWith(norm(pf))));
           const typed = (qi?.answers || []).filter((a) => a.type).sort((a, b) => TYPE_RANK[b.type] - TYPE_RANK[a.type]);
-          const sub = subItems.some((it) => it.countsAsCaregiver && it.minutesPerOccurrence > 0)
+          const subHasMinutes = minutesBasis === 'assessment'
+            ? (qi?.answers || []).some((a) => a.type === 'staff' && minsByName.get(norm(a.rowName || `${a.question} - ${TYPE_WORD[a.type]}`)) > 0)
+            : subItems.some((it) => it.countsAsCaregiver && it.minutesPerOccurrence > 0);
+          const sub = subHasMinutes
             ? STATUS.STAFF_TIME
             : !typed.length ? STATUS.NOT_ASSESSED
               : typed[0].type === 'staff' ? STATUS.GAP : TYPE_TO_STATUS[typed[0].type];
@@ -515,6 +618,7 @@ async function buildAbstCrosswalk(host, opts = {}) {
       communityId: cid,
       communityName,
       retName,
+      minutesBasis,
       retVersionUsedForDecoding: retVersion,
       generatedAt,
       dataAsOf: `ALIS export API, pulled ${generatedAt}`,
