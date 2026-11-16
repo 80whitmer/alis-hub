@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { formatLocalTime } from '../utils/timezone';
 import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
+import AbstCrosswalkDrawerDetail from '../components/AbstCrosswalkDrawerDetail';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -178,6 +179,8 @@ function JobDrawer({ jobId, onClose }) {
             <CrmIdAuditBulkDetail job={job} pct={pct} />
           ) : job?.type === 'care-item-reporting-label' || job?.type === 'care-item-assistance-level' ? (
             <CareItemUpdateDetail job={job} pct={pct} />
+          ) : job?.type === 'abst-crosswalk' ? (
+            <AbstCrosswalkDrawerDetail job={job} />
           ) : (
             <p className="text-neutral-500 text-sm">No detail view for this job type.</p>
           )}
