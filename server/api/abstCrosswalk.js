@@ -4,7 +4,7 @@ const path = require('path');
 const router = express.Router();
 
 const { REPORTS_ROOT } = require('../automation/abstCrosswalkJob');
-const { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, selectResident, filterReport } = require('../services/abstCrosswalkWorkbook');
+const { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, buildResidentTabsWorkbook, selectResident, filterReport } = require('../services/abstCrosswalkWorkbook');
 
 /** jobIds are UUIDs — reject anything else before it touches the filesystem. */
 function jobDir(jobId) {
@@ -109,6 +109,20 @@ router.get('/:jobId/download', async (req, res) => {
   try {
     const report = readReport(req.params.jobId);
     if (!report) return res.status(404).json({ error: 'No ABST crosswalk report found for this job.' });
+    if (req.query.format === 'resident-tabs') {
+      // One tab per resident plus an index sheet (Independent-living excluded when asked).
+      const basis = ['assessment', 'care_plan', 'both'].includes(req.query.basis) ? req.query.basis : 'assessment';
+      const excl = req.query.excludeIndependent === '1';
+      const scoped = excl ? filterReport(report, { excludeProductTypes: ['Independent'] }) : report;
+      const wb = buildResidentTabsWorkbook(scoped, basis);
+      const sfx = { assessment: '', care_plan: ' (care plan basis)', both: ' (side by side, internal)' }[basis];
+      const full = `${report.meta.communityName} - Residents, one tab each${excl ? ' - excl Independent' : ''}${sfx}.xlsx`;
+      const safe = full.replace(/[^a-z0-9 .\-()]/gi, '_');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(full)}`);
+      await wb.xlsx.write(res);
+      return res.end();
+    }
     if (req.query.format === 'resident-list') {
       // Standalone "Resident by element" workbook: all residents (optionally excl. Independent) or one resident.
       const basis = ['assessment', 'care_plan', 'both'].includes(req.query.basis) ? req.query.basis : 'assessment';

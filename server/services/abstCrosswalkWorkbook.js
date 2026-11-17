@@ -146,42 +146,188 @@ function addResidentSummarySheet(wb, report, sheetName, title) {
   ws.views = [{ state: 'frozen', xSplit: 1, ySplit: TABLE_HEADER_ROW }];
 }
 
-/** One row per resident per element, numbers only and filterable by resident (the list form of the vertical resident page). */
-function addResidentListSheet(wb, reports, sheetName, title, both) {
+/** Minutes cells for one element: numbers for counted minutes, 0 for 0-minute statuses, blank where nothing is counted. */
+function elementMinutes(el) {
+  const staff = el.status === STATUS.STAFF_TIME;
+  const counted = staff && el.weeklyMinutes > 0;
+  const noMinutes = el.status === STATUS.GAP || el.status === STATUS.NOT_ASSESSED;
+  return {
+    daily: counted ? Math.round((el.weeklyMinutes / 7) * 10) / 10 : staff ? 'PRN' : noMinutes ? '' : 0,
+    weekly: counted ? el.weeklyMinutes : staff || noMinutes ? '' : 0,
+  };
+}
+
+const colLetter = (n) => {
+  let out = '';
+  for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) out = String.fromCharCode(65 + ((x - 1) % 26)) + out;
+  return out;
+};
+
+/**
+ * One row per resident per element, numbers only (the list form of the vertical resident page), filterable by
+ * resident. Row 5 totals the visible rows with SUBTOTAL, so filtering the Resident column to one resident totals that
+ * resident and no filter totals the community. With two bases the sheet is one wide row per element (assessment and
+ * care plan columns, plus the difference) so each column totals on its own.
+ * reports: [{ label, rep }] — one entry per basis, same resident order.
+ */
+function addResidentListSheet(wb, reports, sheetName, title) {
   const ws = wb.addWorksheet(sheetName);
+  const both = reports.length === 2;
   const rows = [];
-  for (const { label, rep } of reports) {
-    for (const r of rep.residents) {
-      for (const el of r.elements) {
-        const staff = el.status === STATUS.STAFF_TIME;
-        const counted = staff && el.weeklyMinutes > 0;
-        const noMinutes = el.status === STATUS.GAP || el.status === STATUS.NOT_ASSESSED;
-        rows.push({
-          values: [
-            ...(both ? [label] : []), r.name, r.unit, r.productType, r.evaluation?.date ?? '', el.id, el.name, el.statusLabel,
-            counted ? Math.round((el.weeklyMinutes / 7) * 10) / 10 : staff ? 'PRN' : noMinutes ? '' : 0,
-            counted ? el.weeklyMinutes : staff || noMinutes ? '' : 0,
-          ],
-          fill: ROLLUP_FILL[el.status],
-        });
-      }
-    }
+  reports[0].rep.residents.forEach((r, ri) => {
+    r.elements.forEach((el, ei) => {
+      const parts = reports.map(({ rep }) => rep.residents[ri].elements[ei]);
+      const cells = parts.flatMap((p) => {
+        const m = elementMinutes(p);
+        return [p.statusLabel, m.daily, m.weekly];
+      });
+      const wk = parts.map((p) => elementMinutes(p).weekly);
+      const diff = both ? (typeof wk[0] === 'number' || wk[0] === 0) && (typeof wk[1] === 'number' || wk[1] === 0) ? round1(wk[0] - wk[1]) : '' : null;
+      rows.push({
+        values: [r.name, r.unit, r.productType, r.evaluation?.date ?? '', el.id, el.name, ...cells, ...(both ? [diff] : [])],
+        fill: ROLLUP_FILL[parts[0].status],
+      });
+    });
+  });
+  const lead = [
+    { header: 'Resident', width: 26 }, { header: 'Unit', width: 7 }, { header: 'Product', width: 9 }, { header: 'Evaluation date', width: 12 },
+    { header: 'Element #', width: 9 }, { header: 'ODHS care element', width: 44 },
+  ];
+  const group = (suffix) => [
+    { header: `Status${suffix}`, width: 32 }, { header: `Average daily minutes${suffix}`, width: 12 }, { header: `Weekly minutes${suffix}`, width: 12 },
+  ];
+  const columns = [...lead, ...group(both ? ' (assessment)' : ''), ...(both ? [...group(' (care plan)'), { header: 'Weekly difference (assessment minus care plan)', width: 14 }] : [])];
+  addTable(ws, reports[0].rep, title, columns, rows);
+
+  // Row 5: totals of the visible rows. SUBTOTAL(109) ignores rows hidden by the filter.
+  const first = TABLE_HEADER_ROW + 1;
+  const last = TABLE_HEADER_ROW + rows.length;
+  const totalRow = ws.getRow(5);
+  totalRow.height = 20;
+  ws.mergeCells(5, 1, 5, lead.length);
+  const label = ws.getCell(5, 1);
+  label.value = 'Total of visible rows (filter the Resident column to total one resident)';
+  label.font = { bold: true };
+  label.alignment = { horizontal: 'right', vertical: 'middle' };
+  const numericCols = both ? [lead.length + 2, lead.length + 3, lead.length + 5, lead.length + 6, lead.length + 7] : [lead.length + 2, lead.length + 3];
+  for (const c of numericCols) {
+    const L = colLetter(c);
+    const result = rows.reduce((sum, rw) => sum + (typeof rw.values[c - 1] === 'number' ? rw.values[c - 1] : 0), 0);
+    const cell = ws.getCell(5, c);
+    cell.value = { formula: `SUBTOTAL(109,${L}${first}:${L}${last})`, result: Math.round(result * 10) / 10 };
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE7EEF7' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
   }
-  addTable(
-    ws,
-    reports[0].rep,
-    title,
-    [
-      ...(both ? [{ header: 'Basis', width: 16 }] : []),
-      { header: 'Resident', width: 26 }, { header: 'Unit', width: 7 }, { header: 'Product', width: 9 }, { header: 'Evaluation date', width: 12 },
-      { header: 'Element #', width: 9 }, { header: 'ODHS care element', width: 44 }, { header: 'Status', width: 34 },
-      { header: 'Average daily minutes', width: 12 }, { header: 'Weekly minutes', width: 12 },
-    ],
-    rows
-  );
 }
 
 const BASIS_LABEL = { assessment: 'Assessment basis', care_plan: 'Care plan basis' };
+
+/** Excel sheet names: <= 31 chars, none of []:*?/\, no edge apostrophes, unique. */
+function uniqueSheetName(base, taken) {
+  const clean = String(base).replace(/[\[\]:*?/\\]/g, ' ').replace(/^'+|'+$/g, '').trim().slice(0, 31) || 'Resident';
+  let name = clean;
+  let n = 2;
+  while (taken.has(name.toLowerCase())) {
+    const suffix = ` (${n++})`;
+    name = clean.slice(0, 31 - suffix.length) + suffix;
+  }
+  taken.add(name.toLowerCase());
+  return name;
+}
+
+/**
+ * One tab per resident (22 elements, numbers only, with totals) plus an Index sheet that links to every tab.
+ * basis: 'assessment' | 'care_plan' | 'both' (both = status/minutes for each basis side by side).
+ */
+function buildResidentTabsWorkbook(report, basis = 'assessment') {
+  const bases = basis === 'both' ? ['assessment', 'care_plan'] : [basis === 'care_plan' ? 'care_plan' : 'assessment'];
+  const both = bases.length === 2;
+  const projected = bases.map((b) => projectBasis(report, b));
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ALIS Hub';
+  wb.created = new Date(report.meta.generatedAt);
+
+  const taken = new Set(['index']);
+  const sheetNames = report.residents.map((r) => uniqueSheetName(r.name, taken));
+
+  // Index
+  const index = wb.addWorksheet('Index');
+  const idxCols = [
+    { header: 'Resident (click to open tab)', width: 30 }, { header: 'Unit', width: 8 }, { header: 'Product', width: 10 }, { header: 'Evaluation date', width: 13 },
+    { header: `Average daily minutes${both ? ' (assessment)' : ''}`, width: 14 }, { header: `Weekly minutes${both ? ' (assessment)' : ''}`, width: 14 },
+    ...(both ? [{ header: 'Average daily minutes (care plan)', width: 14 }, { header: 'Weekly minutes (care plan)', width: 14 }] : []),
+  ];
+  const idxRows = report.residents.map((r, i) => ({
+    values: [
+      { text: r.name, hyperlink: `#'${sheetNames[i]}'!A1` }, r.unit, r.productType, r.evaluation?.date ?? '',
+      projected[0].residents[i].averageDailyMinutes, projected[0].residents[i].weeklyCaregiverMinutes,
+      ...(both ? [projected[1].residents[i].averageDailyMinutes, projected[1].residents[i].weeklyCaregiverMinutes] : []),
+    ],
+  }));
+  addTable(index, report, `Resident index: one tab per resident, ${both ? 'assessment and care plan basis' : BASIS_LABEL[bases[0]].toLowerCase()}`, idxCols, idxRows);
+  const lastIdx = TABLE_HEADER_ROW + idxRows.length;
+  index.getRows(TABLE_HEADER_ROW + 1, idxRows.length).forEach((row) => { row.getCell(1).font = { color: { argb: 'FF1F5FBF' }, underline: true }; });
+  const totRow = index.getRow(lastIdx + 1);
+  totRow.getCell(1).value = `Community total (${idxRows.length} residents, visible rows)`;
+  totRow.getCell(1).font = { bold: true };
+  const totCols = both ? [5, 6, 7, 8] : [5, 6];
+  for (const c of totCols) {
+    const L = colLetter(c);
+    totRow.getCell(c).value = {
+      formula: `SUBTOTAL(109,${L}${TABLE_HEADER_ROW + 1}:${L}${lastIdx})`,
+      result: Math.round(idxRows.reduce((sum, r) => sum + (typeof r.values[c - 1] === 'number' ? r.values[c - 1] : 0), 0) * 10) / 10,
+    };
+    totRow.getCell(c).font = { bold: true };
+  }
+
+  // One tab per resident
+  report.residents.forEach((r, i) => {
+    const ws = wb.addWorksheet(sheetNames[i]);
+    const cols = [
+      { header: '#', width: 5 }, { header: 'Care element', width: 46 },
+      ...bases.flatMap((b) => [
+        { header: `Status${both ? ` (${b === 'assessment' ? 'assessment' : 'care plan'})` : ''}`, width: 32 },
+        { header: 'Average daily minutes', width: 12 }, { header: 'Weekly minutes', width: 12 },
+      ]),
+    ];
+    const rows = r.elements.map((el, ei) => ({
+      values: [el.id, el.name, ...projected.flatMap((p) => {
+        const e = p.residents[i].elements[ei];
+        const m = elementMinutes(e);
+        return [e.statusLabel, m.daily, m.weekly];
+      })],
+      fill: ROLLUP_FILL[projected[0].residents[i].elements[ei].status],
+    }));
+    const unitText = r.unit ? `Unit ${r.unit}` : 'Unit —';
+    addTable(ws, report, `${r.name} · ${unitText} · ${r.productType} · Latest completed evaluation ${r.evaluation ? `${r.evaluation.date}${r.evaluation.reason ? ` (${r.evaluation.reason})` : ''}` : 'none on file'}`, cols, rows);
+    ws.autoFilter = undefined;
+    const lastRow = TABLE_HEADER_ROW + rows.length;
+    const tot = ws.getRow(lastRow + 1);
+    tot.getCell(2).value = 'Total caregiver minutes (average daily = weekly / 7; PRN not included)';
+    tot.getCell(2).font = { bold: true };
+    bases.forEach((b, k) => {
+      const dCol = 4 + k * 3;
+      const wCol = 5 + k * 3;
+      const rr = projected[k].residents[i];
+      tot.getCell(dCol).value = { formula: `SUM(${colLetter(dCol)}${TABLE_HEADER_ROW + 1}:${colLetter(dCol)}${lastRow})`, result: rr.averageDailyMinutes };
+      tot.getCell(wCol).value = { formula: `SUM(${colLetter(wCol)}${TABLE_HEADER_ROW + 1}:${colLetter(wCol)}${lastRow})`, result: rr.weeklyCaregiverMinutes };
+      tot.getCell(dCol).font = { bold: true };
+      tot.getCell(wCol).font = { bold: true };
+      tot.getCell(dCol).alignment = { horizontal: 'center' };
+      tot.getCell(wCol).alignment = { horizontal: 'center' };
+      if (both) tot.getCell(dCol - 1).value = b === 'assessment' ? 'Assessment basis' : 'Care plan basis';
+    });
+    const note = ws.getRow(lastRow + 3);
+    ws.mergeCells(lastRow + 3, 1, lastRow + 3, cols.length);
+    note.getCell(1).value = ROLLUP_LEGEND.replace('Number = average daily minutes (weekly / 7) for staff time · PRN = PRN only, not in totals · IND = independent · OUT = outside provider · RN = nurse task · N/A = does not apply · TBD = assistance assessed, minutes not yet configured · — = not assessed', 'Average daily minutes = weekly / 7. PRN-only elements show PRN and are not in totals. Assistance assessed with no minutes set up is left blank and flagged in Status.');
+    note.getCell(1).font = { italic: true, size: 9 };
+    ws.getRow(lastRow + 5).getCell(1).value = { text: '← Back to index', hyperlink: "#'Index'!A1" };
+    ws.getRow(lastRow + 5).getCell(1).font = { color: { argb: 'FF1F5FBF' }, underline: true };
+    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
+  });
+  return wb;
+}
 
 /** Just the one resident (regardless of product type), for a single-resident export. */
 function selectResident(report, residentId) {
@@ -205,8 +351,7 @@ function buildResidentListWorkbook(report, basis = 'assessment') {
     wb,
     bases.map((b) => ({ label: BASIS_LABEL[b], rep: projectBasis(report, b) })),
     'Resident by element',
-    `${single}Resident by element, numbers only, ${basisTitle}${single ? '' : ". Filter the Resident column for one resident's 22 elements"}`,
-    both
+    `${single}Resident by element, numbers only, ${basisTitle}${single ? '' : ". Filter the Resident column for one resident's 22 elements"}`
   );
   return wb;
 }
@@ -232,7 +377,7 @@ function buildSurveyorWorkbook(report, basis = 'assessment') {
     addResidentSummarySheet(wb, rep, both ? `Resident summary - ${b === 'assessment' ? 'assessment' : 'care plan'}` : 'Resident summary', `Resident summary by element, ${BASIS_LABEL[b].toLowerCase()}`);
   }
 
-  addResidentListSheet(wb, projected.map(({ b, rep }) => ({ label: BASIS_LABEL[b], rep })), 'Resident by element (list)', `Resident by element, numbers only, ${basisTitle}. Filter the Resident column for one resident's 22 elements`, both);
+  addResidentListSheet(wb, projected.map(({ b, rep }) => ({ label: BASIS_LABEL[b], rep })), 'Resident by element (list)', `Resident by element, numbers only, ${basisTitle}. Filter the Resident column for one resident's 22 elements`);
 
   // 1. Resident x Element
   const detail = [];
@@ -366,7 +511,7 @@ function buildInternalWorkbook(report) {
   addResidentSummarySheet(wb, report, 'Resident summary - assessment', 'Resident summary by element, assessment basis');
   if (report.residents[0]?.carePlanView) addResidentSummarySheet(wb, projectBasis(report, 'care_plan'), 'Resident summary - care plan', 'Resident summary by element, care plan basis');
 
-  addResidentListSheet(wb, [{ label: 'Assessment basis', rep: report }], 'Resident by element (list)', 'Resident by element, numbers only, assessment basis. Filter the Resident column for one resident', false);
+  addResidentListSheet(wb, [{ label: 'Assessment basis', rep: report }], 'Resident by element (list)', 'Resident by element, numbers only, assessment basis. Filter the Resident column for one resident');
 
   // 1. One row per resident per element (per care plan item where an element has several)
   const detail = [];
@@ -517,4 +662,4 @@ function buildAbstCrosswalkWorkbook(report, { surveyor = false, basis = 'assessm
   return surveyor ? buildSurveyorWorkbook(report, basis) : buildInternalWorkbook(report);
 }
 
-module.exports = { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, selectResident, filterReport, projectBasis };
+module.exports = { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, buildResidentTabsWorkbook, selectResident, filterReport, projectBasis };

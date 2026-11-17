@@ -436,10 +436,10 @@ export default function AbstCrosswalkReport({ jobId }) {
     }
   }
 
-  async function downloadResidentList(residentId) {
+  async function downloadResidentList(residentId, format = 'resident-list') {
     setDownloading(true);
     try {
-      const qs = `format=resident-list&basis=${view}${residentId ? `&residentId=${residentId}` : '&excludeIndependent=1'}`;
+      const qs = `format=${format}&basis=${view}${residentId ? `&residentId=${residentId}` : '&excludeIndependent=1'}`;
       const res = await fetch(`/api/abst-crosswalk/${jobId}/download?${qs}`);
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Download failed (${res.status})`);
       const cd = res.headers.get('content-disposition') || '';
@@ -508,7 +508,10 @@ export default function AbstCrosswalkReport({ jobId }) {
             {downloading ? '⏳ Downloading…' : `📥 Excel: all residents (excl. Independent) · ${{ assessment: 'assessment', care_plan: 'care plan', both: 'side by side' }[view]}`}
           </button>
           <button onClick={() => downloadResidentList(null)} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
-            📥 Excel: resident by element only (all residents)
+            📥 Excel: resident by element only (all residents, with totals)
+          </button>
+          <button onClick={() => downloadResidentList(null, 'resident-tabs')} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
+            📥 Excel: one tab per resident (with index)
           </button>
           <button onClick={() => download(false)} disabled={downloading} className="btn btn-secondary disabled:opacity-50">
             📥 Excel: full detail (internal)
