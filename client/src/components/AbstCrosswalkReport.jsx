@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import AbstShiftMinutes from './AbstShiftMinutes';
 
 /**
  * Oregon ABST crosswalk viewer for a completed abst-crosswalk job: community
@@ -518,6 +519,8 @@ export default function AbstCrosswalkReport({ jobId }) {
           </button>
         </div>
       </div>
+
+      <AbstShiftMinutes jobId={jobId} />
 
       <div className="abst-no-print p-3 rounded border border-neutral-200 bg-white">
         <p className="font-semibold text-sm text-primary-900 mb-2">Minutes basis</p>

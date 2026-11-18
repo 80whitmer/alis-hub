@@ -4,7 +4,9 @@ const path = require('path');
 const router = express.Router();
 
 const { REPORTS_ROOT } = require('../automation/abstCrosswalkJob');
-const { buildAbstCrosswalkWorkbook, buildResidentListWorkbook, buildResidentTabsWorkbook, selectResident, filterReport } = require('../services/abstCrosswalkWorkbook');
+const { buildShiftMinutes, validateRange } = require('../services/abstShiftMinutes');
+const { buildShiftMinutesWorkbook } = require('../services/abstShiftMinutesWorkbook');
+const { buildAbstCrosswalkWorkbook,buildResidentListWorkbook, buildResidentTabsWorkbook, selectResident, filterReport } = require('../services/abstCrosswalkWorkbook');
 
 /** jobIds are UUIDs — reject anything else before it touches the filesystem. */
 function jobDir(jobId) {
@@ -42,6 +44,57 @@ router.get('/:jobId', (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Shift minutes: pulled live from ALIS for the job's community (host/communityId come from the saved report, never from the
+// request). Aggregates only — no resident names. start/end default to the last 7 full days. See services/abstShiftMinutes.js.
+async function loadShiftMinutes(req) {
+  const report = readReport(req.params.jobId);
+  if (!report) return { status: 404, error: 'No ABST crosswalk report found for this job.' };
+  const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+  const start = req.query.start || day(-7);
+  const end = req.query.end || day(-1);
+  try {
+    validateRange(start, end);
+  } catch (err) {
+    return { status: 400, error: err.message };
+  }
+  const data = await buildShiftMinutes(report.meta.host, {
+    communityId: report.meta.communityId,
+    start,
+    end,
+    excludeIndependent: req.query.excludeIndependent !== '0',
+  });
+  return { data };
+}
+
+// GET /api/abst-crosswalk/:jobId/shift-minutes?start=YYYY-MM-DD&end=YYYY-MM-DD[&excludeIndependent=0]
+router.get('/:jobId/shift-minutes', async (req, res) => {
+  try {
+    const r = await loadShiftMinutes(req);
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json(r.data);
+  } catch (err) {
+    console.error('[abst-crosswalk GET /:jobId/shift-minutes] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/abst-crosswalk/:jobId/shift-minutes/download — same params, .xlsx
+router.get('/:jobId/shift-minutes/download', async (req, res) => {
+  try {
+    const r = await loadShiftMinutes(req);
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    const full = `${r.data.meta.communityName} - ABST minutes by shift (${r.data.meta.start} to ${r.data.meta.end}).xlsx`;
+    const safe = full.replace(/[^a-z0-9 .\-()]/gi, '_');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(full)}`);
+    await buildShiftMinutesWorkbook(r.data).xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error('[abst-crosswalk GET /:jobId/shift-minutes/download] Error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 
