@@ -4,6 +4,7 @@ import { formatLocalTime } from '../utils/timezone';
 import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
 import AbstCrosswalkDrawerDetail from '../components/AbstCrosswalkDrawerDetail';
+import AlertSubscriptionsResults from '../components/AlertSubscriptionsResults';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -181,6 +182,8 @@ function JobDrawer({ jobId, onClose }) {
             <CareItemUpdateDetail job={job} pct={pct} />
           ) : job?.type === 'abst-crosswalk' ? (
             <AbstCrosswalkDrawerDetail job={job} />
+          ) : job?.type === 'alert-subscriptions' ? (
+            <AlertSubscriptionsResults job={job} />
           ) : (
             <p className="text-neutral-500 text-sm">No detail view for this job type.</p>
           )}

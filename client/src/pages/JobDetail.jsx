@@ -6,6 +6,7 @@ import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
 import MedCartReportSummary from '../components/MedCartReportSummary';
 import AbstCrosswalkReport from '../components/AbstCrosswalkReport';
+import AlertSubscriptionsResults from '../components/AlertSubscriptionsResults';
 import ResidentPhotosSummary from '../components/ResidentPhotosSummary';
 import MovedOutBillingSummary from '../components/MovedOutBillingSummary';
 
@@ -464,7 +465,7 @@ export default function JobDetail() {
                           <td className="px-4 py-2">
                             <span className={`badge ${cfg.badge}`}>{cfg.icon} {item.status}</span>
                           </td>
-                          <td className="px-4 py-2 text-neutral-600 text-xs">{item.error || '—'}</td>
+                          <td className="px-4 py-2 text-neutral-600 text-xs">{item.error || item.detail || '—'}</td>
                           <td className="px-4 py-2 text-neutral-600 text-xs">
                             {item.finished_at ? formatLocalTimeOnly(item.finished_at) : '—'}
                           </td>
@@ -490,6 +491,13 @@ export default function JobDetail() {
         <div className="card mt-6">
           <h3 className="font-semibold text-primary-900 mb-4">Med Cart Report</h3>
           <MedCartReportSummary jobId={job.id} />
+        </div>
+      )}
+
+      {job.type === 'alert-subscriptions' && job.status !== 'queued' && (
+        <div className="card mt-6">
+          <h3 className="font-semibold text-primary-900 mb-4">Alert Subscription Results</h3>
+          <AlertSubscriptionsResults job={job} />
         </div>
       )}
 

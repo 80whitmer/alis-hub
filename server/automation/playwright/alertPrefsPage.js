@@ -37,6 +37,15 @@ function nameTokens(s) {
   return normName(s).split(/[\s,]+/).filter(Boolean);
 }
 
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+
 async function settle(page, ms = 1200) {
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(ms);
@@ -53,7 +62,7 @@ async function resolveStaff(page, host, name, { fallbackFacilityId } = {}) {
   if (want.length < 2) throw new Error(`Staff name "${name}" needs a first and last name.`);
   const searchWord = want[want.length - 1];
 
-  const attempt = async (facilityId) => {
+  const attempt = async (facilityId, term = searchWord, strict = true) => {
     await page.goto(`https://${host}.alisonline.com/Staff`, { waitUntil: 'domcontentloaded', timeout: 90000 });
     await settle(page);
     if (facilityId) {
@@ -77,12 +86,13 @@ async function resolveStaff(page, host, name, { fallbackFacilityId } = {}) {
       t.value = term;
       t.dispatchEvent(new Event('input', { bubbles: true }));
       t.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: term.slice(-1) }));
-    }, searchWord);
+    }, term);
     await page.waitForTimeout(3000);
     const rows = await page.evaluate(() => [...document.querySelectorAll('table tbody tr')].map((r) => ({
       text: (r.querySelector('td:nth-child(2)') || r).innerText.replace(/\s+/g, ' ').trim(),
       href: (r.querySelector('a[href*="/Staff/Profiles/"]') || {}).getAttribute?.('href') || null,
     })).filter((r) => r.href));
+    if (!strict) return rows.map((r) => ({ ...r, id: (r.href.match(/\/Staff\/Profiles\/(\d+)/) || [])[1] }));
     return rows
       .map((r) => ({ ...r, listedName: r.text.split(/\s{1,}(?=[A-Z][^,]*$)/)[0], id: (r.href.match(/\/Staff\/Profiles\/(\d+)/) || [])[1] }))
       .filter((r) => {
@@ -94,7 +104,19 @@ async function resolveStaff(page, host, name, { fallbackFacilityId } = {}) {
   let hits = await attempt(null);
   if (!hits.length && fallbackFacilityId) hits = await attempt(fallbackFacilityId);
   const uniq = [...new Map(hits.map((h) => [h.id, h])).values()];
-  if (!uniq.length) throw new Error(`No hired staff named "${name}" found (searched "${searchWord}" in All connected).`);
+  if (!uniq.length) {
+    // Near-miss hint (e.g. ALIS spells it "Umayam", the mapping says "Umayan"). Hint only — never auto-used.
+    let hint = '';
+    try {
+      const wantLast = want[want.length - 1];
+      const near = (await attempt(null, want[0], false)).filter((r) => {
+        const last = nameTokens(r.text.split(',')[0]).pop() || '';
+        return editDistance(last, wantLast) <= 2;
+      });
+      if (near.length) hint = ` Closest match in ALIS: ${near.slice(0, 3).map((r) => `${r.text.split(' ').slice(0, 2).join(' ')} #${r.id}`).join('; ')} — confirm it is the same person, then fix the name and re-run.`;
+    } catch { /* hint is best-effort */ }
+    throw new Error(`No hired staff named "${name}" found (searched "${searchWord}" in All connected).${hint}`);
+  }
   if (uniq.length > 1) throw new Error(`"${name}" is ambiguous — ${uniq.length} staff match (${uniq.map((u) => `${u.text} #${u.id}`).join('; ')}).`);
   return { id: uniq[0].id, listedName: uniq[0].text };
 }
