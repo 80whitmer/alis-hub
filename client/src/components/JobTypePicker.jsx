@@ -12,14 +12,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  * - Tiles are unchanged from before: icon, name, dashed border for the Evaluation Lookup
  *   tool, and the ⓘ popover with the description.
  */
-const GROUPS = [
-  { title: 'Setup & provisioning', hint: 'Create and configure communities', ids: ['create-communities', 'sync-resident-settings', 'il-incident-types'] },
-  { title: 'Staff & alerts', hint: 'Who gets notified', ids: ['alert-subscriptions'] },
-  { title: 'Residents & care', hint: 'Bulk resident and care-item changes', ids: ['resident-move-out', 'care-item-assistance-level', 'care-item-reporting-label', 'resident-photos', 'resident-acuity-history'] },
-  { title: 'Billing & finance', hint: 'GL accounts, open billing, revenue', ids: ['sync-gl-accounts', 'moved-out-billing', 'community-revenue-snapshot'] },
-  { title: 'Reports & analytics', hint: 'Exports, scorecards and QBR material', ids: ['kpi-export', 'wellness-scorecard', 'med-cart-report', 'abst-crosswalk', 'company-usage-audit'] },
-  { title: 'Audits & lookups', hint: 'Checks and live look-ups', ids: ['audit-history', 'crm-id-audit', 'crm-id-audit-bulk', 'evaluation-lookup'] },
-];
+import { JOB_GROUPS, OTHER_GROUP } from '../utils/jobGroups';
+
+const GROUPS = JOB_GROUPS; // groups, their ids and their colors live in utils/jobGroups.js (shared with the Job Board)
 
 const byName = (a, b) => a.name.localeCompare(b.name);
 
@@ -62,7 +57,7 @@ export default function JobTypePicker({ templates, selectedTemplate, onSelect, i
       return { ...g, items: items.filter(matches).sort(byName) };
     });
     const others = templates.filter((t) => !placed.has(t.id));
-    out.push({ title: 'Other', hint: '', items: others.filter(matches).sort(byName) });
+    out.push({ ...OTHER_GROUP, items: others.filter(matches).sort(byName) });
     return out.filter((s) => s.items.length);
   }, [templates, query]);
 
@@ -106,7 +101,8 @@ export default function JobTypePicker({ templates, selectedTemplate, onSelect, i
         {sections.map((section) => (
           <section key={section.title}>
             <div className="flex items-baseline gap-2 mb-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500">{section.title}</h3>
+              <span className={`self-center w-2 h-2 rounded-full ${section.c.dot}`} aria-hidden="true" />
+              <h3 className={`text-xs font-bold uppercase tracking-wider ${section.c.heading}`}>{section.title}</h3>
               {section.hint && <span className="text-xs text-neutral-400">{section.hint}</span>}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -119,9 +115,7 @@ export default function JobTypePicker({ templates, selectedTemplate, onSelect, i
                     }${
                       selectedTemplate === template.id
                         ? 'border-accent-500 bg-accent-50'
-                        : template.isTool
-                          ? 'border-neutral-200 bg-white hover:border-accent-300'
-                          : 'border-neutral-200 bg-white hover:border-neutral-300'
+                        : section.c.tile
                     }`}
                   >
                     <span className="text-2xl leading-none">{template.icon}</span>

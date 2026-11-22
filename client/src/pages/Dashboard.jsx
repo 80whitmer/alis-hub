@@ -5,6 +5,7 @@ import BackToTopButton from '../components/BackToTopButton';
 import AcuityHistoryDownloads from '../components/AcuityHistoryDownloads';
 import AbstCrosswalkDrawerDetail from '../components/AbstCrosswalkDrawerDetail';
 import AlertSubscriptionsResults from '../components/AlertSubscriptionsResults';
+import { groupForType } from '../utils/jobGroups';
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG = {
@@ -980,15 +981,19 @@ export default function Dashboard() {
           const pct       = job.total > 0 ? Math.round((job.completed / job.total) * 100) : 0;
           const isRunning = job.status === 'running' || job.status === 'queued';
           const isChecked = selected.has(job.id);
+          // Job group color (shared with the New Job page — utils/jobGroups.js): every job of a
+          // known type gets a colored left edge and group chip; finished jobs are also tinted.
+          const group     = groupForType(job.type);
+          const finished  = job.status === 'done';
 
           return (
             <div
               key={job.id}
               onClick={() => setDrawerJobId(job.id)}
-              className={`card cursor-pointer transition-all duration-150 ${
+              className={`card cursor-pointer transition-all duration-150 ${group ? `border-l-4 ${group.c.stripe}` : ''} ${
                 isChecked
                   ? 'border-primary-300 bg-primary-50 shadow-sm'
-                  : 'hover:border-neutral-300 hover:shadow-md'
+                  : `${group && finished ? group.c.tint : ''} hover:border-neutral-300 hover:shadow-md`
               }`}
             >
               <div className="flex items-start gap-3">
@@ -1009,8 +1014,9 @@ export default function Dashboard() {
                       <h3 className="font-semibold text-primary-900 truncate text-base leading-snug">
                         {job.label}
                       </h3>
-                      <p className="text-xs text-neutral-500 mt-1">
-                        {job.type} · {formatLocalTime(job.created_at)}
+                      <p className="text-xs text-neutral-500 mt-1 flex items-center gap-2 flex-wrap">
+                        {group && <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${group.c.chip}`}>{group.title}</span>}
+                        <span>{job.type} · {formatLocalTime(job.created_at)}</span>
                       </p>
                     </div>
 
