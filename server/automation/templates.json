@@ -1087,6 +1087,129 @@
           "communityId"
         ]
       }
+    },
+    {
+      "id": "alert-subscriptions",
+      "name": "Staff Alert Subscriptions (Sentinel Event)",
+      "description": "Subscribes listed staff to one alert category (default \"Sentinel Event\") by Real-time Email and Real-time Text, per community, through each staff profile's Alerts tab — never security roles or category-level settings. Add-only: ticks only the target row, leaves every other category and Daily Digest as found, and keeps the profile's email/cell exactly as autofilled. If a profile has no email or no cell, that route is skipped and flagged (ALIS blocks a Text save without a cell). Already-correct communities are skipped without submitting. Staff are matched by name and the job stops on any ambiguity. ALWAYS start with Dry run ON — it fills the dialog, screenshots it, and cancels. Upload the ALIS Communities export (Region column = regional director) plus the mapping workbook (\"ALL\" rows = company admins); Training Community is excluded.",
+      "category": "settings",
+      "icon": "🔔",
+      "timeout": 14400000,
+      "inputSchema": {
+        "type": "object",
+        "title": "Staff Alert Subscriptions",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Leisure Care LLC"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "examples": ["leisurecare"]
+          },
+          "dryRun": {
+            "type": "boolean",
+            "title": "Dry run (fill dialog, do not submit)",
+            "default": true
+          },
+          "alertLabel": {
+            "type": "string",
+            "title": "Alert category label",
+            "description": "Exact label of the category row in the Manage Alerts dialog.",
+            "default": "Sentinel Event"
+          },
+          "strictLabel": {
+            "type": "boolean",
+            "title": "Strict label (fail if the row label is not exactly the above)",
+            "default": false
+          },
+          "sendEmail": {
+            "type": "boolean",
+            "title": "Real-time Email",
+            "default": true
+          },
+          "sendText": {
+            "type": "boolean",
+            "title": "Real-time Text",
+            "default": true
+          },
+          "assignments": {
+            "type": "array",
+            "title": "Assignments",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Staff name (First Last)"
+                },
+                "communities": {
+                  "type": "array",
+                  "title": "Communities",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number",
+                        "title": "ALIS community ID"
+                      },
+                      "name": {
+                        "type": "string",
+                        "title": "Community name"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "communities"
+              ]
+            }
+          }
+        },
+        "required": [
+          "companyHost",
+          "assignments"
+        ],
+        "examples": [
+          {
+            "companyName": "ALIS Sandbox",
+            "companyHost": "medtelligent",
+            "dryRun": true,
+            "alertLabel": "Sentinel Event",
+            "strictLabel": false,
+            "sendEmail": true,
+            "sendText": true,
+            "assignments": [
+              {
+                "name": "Vidar Mo",
+                "communities": [
+                  {
+                    "id": 847,
+                    "name": "Aaron's Assisted Living"
+                  },
+                  {
+                    "id": 1037,
+                    "name": "Aislinn's AL"
+                  },
+                  {
+                    "id": 972,
+                    "name": "Victor's Community"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

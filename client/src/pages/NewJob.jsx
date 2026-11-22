@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateFormFields, renderFormField } from '../utils/schema-form-generator';
 import BillingItemsInput from '../components/BillingItemsInput';
+import AlertSubscriptionsInput from '../components/AlertSubscriptionsInput';
 import AdvancedJsonEditor from '../components/AdvancedJsonEditor';
 import CompanyLookup from '../components/CompanyLookup';
 import EvaluationDetail from './EvaluationDetail';
@@ -317,6 +318,7 @@ export default function NewJob() {
   const fields = generateFormFields(templateData.inputSchema);
   const currentTemplate = templates.find(t => t.id === selectedTemplate);
   const isGLSync = selectedTemplate === 'sync-gl-accounts';
+  const isAlertSubs = selectedTemplate === 'alert-subscriptions';
   const isKpiExport = selectedTemplate === 'kpi-export';
   const isWellnessScorecard = selectedTemplate === 'wellness-scorecard';
   const isAuditHistory = selectedTemplate === 'audit-history';
@@ -554,7 +556,11 @@ export default function NewJob() {
             )}
             {fields
               .filter(field => !usesCompanyLookup || (field.key !== 'companyName' && field.key !== 'hubspotCompanyId'))
+              .filter(field => !isAlertSubs || field.key !== 'assignments')
               .map(field => renderFormField(field, formData[field.key], handleFormChange))}
+            {isAlertSubs && (
+              <AlertSubscriptionsInput onChange={(a) => handleFormChange('assignments', a)} />
+            )}
           </div>
         )}
 

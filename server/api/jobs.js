@@ -130,6 +130,10 @@ router.post('/create', (req, res) => {
       // One row per resident; the job syncs them itself once it validates the payload.
       itemCount = (payload.residents || []).length;
       itemsToTrack = (payload.residents || []).filter((r) => r?.name);
+    } else if (templateId === 'alert-subscriptions') {
+      // Unit of work is person × community; the job validates the payload and
+      // calls syncJobItems itself, so don't pre-count anything here.
+      itemCount = 0;
     } else if (templateId === 'care-item-assistance-level' || templateId === 'care-item-reporting-label') {
       // This template's real unit of work is communities × items (one row
       // per care item PER community), resolved inside the job itself

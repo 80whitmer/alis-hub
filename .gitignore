@@ -34,6 +34,7 @@ server/automation/kpi-cache/
 server/automation/acuity-reports/
 server/automation/moved-out-billing-reports/
 server/automation/abst-crosswalk-reports/
+tmp/alert-subscription-reports/
 
 # Portfolio-wide CRM ID Audit workbooks — generated job output, never commit
 server/automation/crm-id-audit-bulk-reports/
