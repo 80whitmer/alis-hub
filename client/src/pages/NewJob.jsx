@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { generateFormFields, renderFormField } from '../utils/schema-form-generator';
 import BillingItemsInput from '../components/BillingItemsInput';
 import AlertSubscriptionsInput from '../components/AlertSubscriptionsInput';
+import JobTypePicker from '../components/JobTypePicker';
 import AdvancedJsonEditor from '../components/AdvancedJsonEditor';
 import CompanyLookup from '../components/CompanyLookup';
 import EvaluationDetail from './EvaluationDetail';
@@ -361,64 +362,20 @@ export default function NewJob() {
         </p>
       </div>
 
-      {/* Template selector — icon-first tiles, description on demand via the ⓘ
-          button rather than always-on body text, so picking a job type is one
-          glance and one click instead of reading five paragraphs first. */}
-      <div className="mb-8">
-        <label className="input-label">Job Type</label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {/* Every tile — real templates plus the Evaluation Lookup tool —
-              sorted A–Z by name in one list, so a new template lands in its
-              alphabetical spot instead of wherever templates.json lists it.
-              Evaluation Lookup isn't a job template (no backend registration,
-              no batch/async run, no Job Board entry) — see EvaluationDetail.jsx's
-              own doc comment: it's a live search tool. Kept in this grid anyway
-              (Aaron, Sep 2026) so every automation-adjacent tool lives in one
-              place; the dashed border is the only visual hint it behaves
-              differently — selecting it swaps the Configuration section below
-              for the live lookup tool instead of a job form (no schema fetch,
-              no Run Job button — see the two render guards below that key off
-              selectedTemplate === 'evaluation-lookup'). */}
-          {[...templates, EVALUATION_LOOKUP_TILE]
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(template => (
-            <div key={template.id} className="relative">
-              <button
-                onClick={() => { setSelectedTemplate(template.id); setInfoOpenId(null); }}
-                className={`w-full flex flex-col items-center gap-1.5 px-3 py-4 rounded-xl border-2 text-center transition-all ${
-                  template.isTool ? 'border-dashed ' : ''
-                }${
-                  selectedTemplate === template.id
-                    ? 'border-accent-500 bg-accent-50'
-                    : template.isTool
-                      ? 'border-neutral-200 bg-white hover:border-accent-300'
-                      : 'border-neutral-200 bg-white hover:border-neutral-300'
-                }`}
-              >
-                <span className="text-2xl leading-none">{template.icon}</span>
-                <span className="text-sm font-semibold text-primary-900 leading-tight">{template.name}</span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setInfoOpenId(infoOpenId === template.id ? null : template.id); }}
-                className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white border border-neutral-200 text-neutral-400 hover:text-accent-600 hover:border-accent-300 flex items-center justify-center text-[10px] font-bold leading-none"
-                aria-label={`About ${template.name}`}
-                title="What does this do?"
-              >
-                i
-              </button>
-              {infoOpenId === template.id && (
-                <div
-                  ref={infoPopoverRef}
-                  className="absolute z-20 top-full mt-1.5 left-0 right-0 p-3 rounded-lg border border-neutral-200 bg-white shadow-lg text-xs text-neutral-600 text-left"
-                >
-                  {template.description}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Template selector — grouped by theme with a search box (JobTypePicker).
+          Evaluation Lookup isn't a job template (no backend registration, no batch/async
+          run, no Job Board entry) — see EvaluationDetail.jsx. It stays in the picker so
+          every automation-adjacent tool lives in one place; the dashed border marks it,
+          and selecting it swaps the Configuration section below for the live lookup tool
+          (see the render guards below that key off selectedTemplate === 'evaluation-lookup'). */}
+      <JobTypePicker
+        templates={[...templates, EVALUATION_LOOKUP_TILE]}
+        selectedTemplate={selectedTemplate}
+        onSelect={setSelectedTemplate}
+        infoOpenId={infoOpenId}
+        setInfoOpenId={setInfoOpenId}
+        infoPopoverRef={infoPopoverRef}
+      />
 
       {/* Evaluation Lookup swaps in for the Configuration section entirely —
           no schema, no form, no Run Job button, just the live tool. */}

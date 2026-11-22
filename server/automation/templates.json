@@ -1135,6 +1135,14 @@
             "title": "Real-time Text",
             "default": true
           },
+          "concurrency": {
+            "type": "number",
+            "title": "People processed at once (1-4)",
+            "description": "Staff are independent, so several run in parallel, each in its own browser. A single person's communities always run one at a time.",
+            "default": 3,
+            "minimum": 1,
+            "maximum": 4
+          },
           "assignments": {
             "type": "array",
             "title": "Assignments",

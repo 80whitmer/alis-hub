@@ -46,9 +46,23 @@ function editDistance(a, b) {
   return d[a.length][b.length];
 }
 
-async function settle(page, ms = 1200) {
-  await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+async function settle(page, ms = 600) {
+  // ALIS polls in the background, so "networkidle" may never come — cap the wait.
+  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(ms);
+}
+
+/** Wait until the staff table stops changing (same rows twice in a row), not a fixed pause. */
+async function waitRowsStable(page, { minMs = 800, emptyMs = 4000, maxMs = 8000 } = {}) {
+  const start = Date.now();
+  let last = null;
+  while (Date.now() - start < maxMs) {
+    await page.waitForTimeout(250);
+    const snap = await page.evaluate(() => [...document.querySelectorAll('table tbody tr')].map((r) => r.innerText.replace(/\s+/g, ' ').trim()).join('|'));
+    const elapsed = Date.now() - start;
+    if (snap === last && elapsed >= minMs && (snap || elapsed >= emptyMs)) return;
+    last = snap;
+  }
 }
 
 /**
@@ -80,14 +94,14 @@ async function resolveStaff(page, host, name, { fallbackFacilityId } = {}) {
       s.dispatchEvent(new Event('change', { bubbles: true }));
       if (window.jQuery) window.jQuery(s).trigger('change');
     });
-    await page.waitForTimeout(2500);
+    await waitRowsStable(page, { minMs: 500, emptyMs: 1500 });
     await page.evaluate((term) => {
       const t = document.querySelector('#SearchTerm');
       t.value = term;
       t.dispatchEvent(new Event('input', { bubbles: true }));
       t.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: term.slice(-1) }));
     }, term);
-    await page.waitForTimeout(3000);
+    await waitRowsStable(page);
     const rows = await page.evaluate(() => [...document.querySelectorAll('table tbody tr')].map((r) => ({
       text: (r.querySelector('td:nth-child(2)') || r).innerText.replace(/\s+/g, ' ').trim(),
       href: (r.querySelector('a[href*="/Staff/Profiles/"]') || {}).getAttribute?.('href') || null,
@@ -131,11 +145,11 @@ async function openAlertsTab(page, host, staffId) {
     const accordion = page.locator('a:has-text("Alert & Notification Preferences")');
     if (!(await accordion.filter({ visible: true }).count())) {
       await page.locator('h2:has-text("Settings"), h3:has-text("Settings")').first().click().catch(() => {});
-      await page.waitForTimeout(1200);
+      await accordion.filter({ visible: true }).first().waitFor({ state: 'visible', timeout: 4000 }).catch(() => {});
     }
     if (!(await manageLink.count())) {
       await accordion.first().click().catch(() => {});
-      await page.waitForTimeout(1500);
+      await manageLink.first().waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
     }
   }
   try {
@@ -168,7 +182,8 @@ async function selectCommunity(page, facilityId) {
     } catch {
       throw new Error(`Picker did not switch to community ${fid} (Manage link never pointed at /Manage/${fid}).`);
     }
-    await page.waitForTimeout(1500);
+    // No fixed pause: the Manage dialog fetches this community's data fresh on every open
+    // (openManageDialog waits for that response), so a stale panel can't be read.
   }
 }
 
@@ -196,15 +211,22 @@ async function readSummaryRow(page, labelRegexSource) {
   }, labelRegexSource);
 }
 
+/**
+ * Open the Manage dialog. Each open fires a fresh XHR to /Staff/Preferences/Alerts/{staff}/Manage/{community}
+ * (~200ms), so we wait for that response and then for rows to render — rather than sleeping.
+ */
 async function openManageDialog(page) {
+  const fetched = page.waitForResponse((r) => /\/Preferences\/Alerts\/\d+\/Manage\/\d+/.test(r.url()), { timeout: 15000 }).catch(() => null);
   await page.locator('a:has-text("Manage Alerts Preferences")').filter({ visible: true }).first().click();
+  await fetched;
   await page.locator('tr').filter({ hasText: 'Default' }).first().waitFor({ state: 'visible', timeout: 15000 });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(150); // let the fetched rows replace any previous markup
 }
 
 async function closeDialog(page) {
-  await page.locator('button[data-dismiss="modal"]:has-text("Cancel")').filter({ visible: true }).first().click().catch(() => {});
-  await page.waitForTimeout(800);
+  const cancel = page.locator('button[data-dismiss="modal"]:has-text("Cancel")').filter({ visible: true }).first();
+  await cancel.click().catch(() => {});
+  await cancel.waitFor({ state: 'hidden', timeout: 4000 }).catch(() => {});
 }
 
 /**
@@ -290,7 +312,8 @@ async function subscribeInCommunity(page, { facilityId, label, wants, dryRun, sc
 
     if (needEmail) await tickBox(page, label, COL.email, true);
     if (needText) await tickBox(page, label, COL.text, true);
-    await page.waitForTimeout(800);
+    // The Email / Cell Phone inputs appear (client-side) once a delivery box is ticked.
+    await page.waitForFunction(() => [...document.querySelectorAll('input.mt-input')].some((i) => i.offsetParent), null, { timeout: 3000 }).catch(() => {});
 
     // Contact fields appear once a box is ticked and arrive pre-filled from the profile.
     const contact = await readContactFields(page);
@@ -325,22 +348,32 @@ async function subscribeInCommunity(page, { facilityId, label, wants, dryRun, sc
     }
 
     // Contact values are left exactly as autofilled; we never type into them.
+    const posted = page.waitForResponse((r) => r.request().method() === 'POST' && /Preferences/.test(r.url()), { timeout: 20000 }).catch(() => null);
     await page.locator('button.mt-btn_action').filter({ hasText: 'Submit' }).filter({ visible: true }).first().click();
-    await page.waitForTimeout(500);
-    const blocked = await page.locator('text=/Required|is required/i').filter({ visible: true }).count().catch(() => 0);
-    await page.waitForTimeout(4500);
-    const stillOpen = await page.locator('button.mt-btn_action').filter({ hasText: 'Submit' }).filter({ visible: true }).count();
-    if (stillOpen) {
+    // Done when the dialog closes; a visible "required" message means ALIS refused the save.
+    const outcome = await page.waitForFunction(() => {
+      const open = [...document.querySelectorAll('button.mt-btn_action')].some((b) => /Submit/.test(b.innerText) && b.offsetParent);
+      if (!open) return 'closed';
+      const req = [...document.querySelectorAll('*')].some((e) => e.children.length === 0 && e.offsetParent && /required/i.test(e.innerText || ''));
+      return req ? 'required' : false;
+    }, null, { timeout: 20000, polling: 150 }).then((h) => h.jsonValue()).catch(() => 'timeout');
+    if (outcome !== 'closed') {
       await closeDialog(page);
-      throw new Error(`ALIS did not accept the save (dialog stayed open${blocked ? ', a field is flagged Required' : ''}).`);
+      throw new Error(`ALIS did not accept the save (${outcome === 'required' ? 'a field is flagged Required' : 'dialog stayed open'}).`);
     }
+    await posted; // make sure the save request has completed before we read it back
 
     // Verify by reopening the dialog and reading the real checkboxes (the summary
     // list's chips proved unreliable to scrape — the saves were fine, the check wasn't).
-    await page.waitForTimeout(2000);
-    await openManageDialog(page);
-    const saved = await readRowBoxes(page, label);
-    await closeDialog(page);
+    // One retry in case the read-back raced the save.
+    let saved;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await openManageDialog(page);
+      saved = await readRowBoxes(page, label);
+      await closeDialog(page);
+      if ((!nowEmail || saved[COL.email].checked) && (!nowText || saved[COL.text].checked)) break;
+      if (attempt === 0) await page.waitForTimeout(1500);
+    }
     if ((nowEmail && !saved[COL.email].checked) || (nowText && !saved[COL.text].checked)) {
       throw new Error(`Submitted, but reopening shows Email=${saved[COL.email].checked}, Text=${saved[COL.text].checked} — expected ${[nowEmail && 'Email', nowText && 'Text'].filter(Boolean).join(' + ')}.`);
     }
