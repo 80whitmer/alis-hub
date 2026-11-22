@@ -56,12 +56,12 @@ function ToolUsageSummary({ jobs, templates }) {
   const maxTotal = Math.max(...rows.map((r) => r.total));
 
   return (
-    <div className="hidden md:block bg-white border border-neutral-200 rounded-xl px-4 py-3 max-w-md w-full self-stretch">
+    <div className="hidden md:block bg-white border border-neutral-200 rounded-xl px-4 py-3 max-w-3xl w-full self-stretch">
       <p className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-2">Tool Usage — most run</p>
       <div className="space-y-1.5">
         {rows.map((r) => (
           <div key={r.type} className="flex items-center gap-2 text-xs">
-            <span className="w-40 truncate text-neutral-700" title={r.template?.name || r.type}>
+            <span className="w-[21rem] shrink-0 leading-tight text-neutral-700" title={r.template?.name || r.type}>
               {r.template?.icon ? `${r.template.icon} ` : ''}{r.template?.name || r.type}
             </span>
             <div className="flex-1 h-1.5 bg-neutral-100 rounded-full overflow-hidden">
