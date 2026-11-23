@@ -790,6 +790,85 @@
       }
     },
     {
+      "id": "il-incident-types",
+      "name": "Create IL (Independent) Incident Types",
+      "description": "Creates Independent-Living incident types on Settings/Incidents via the Create Incident Type panel: sets the name and Reporting Label, multi-selects the listed communities under Communities Using Type, attaches an existing form (default \"Independent Incident Form\") toggled to Required, and submits. One type at a time; a type whose name already exists is skipped, so re-runs are safe. ALWAYS start with Dry run ON — it fills the panel, screenshots it, and closes it without clicking Create. Payload can be loaded from server/automation/data/il-incident-types/il-incident-types-payload.json.",
+      "category": "settings",
+      "icon": "🧾",
+      "timeout": 7200000,
+      "inputSchema": {
+        "type": "object",
+        "title": "Create IL Incident Types",
+        "properties": {
+          "companyName": {
+            "type": "string",
+            "title": "Company / Account Name",
+            "examples": ["Leisure Care LLC"]
+          },
+          "companyHost": {
+            "type": "string",
+            "title": "ALIS Company Host (subdomain)",
+            "examples": ["leisurecare"]
+          },
+          "dryRun": {
+            "type": "boolean",
+            "title": "Dry run (fill panel, do not submit)",
+            "default": true
+          },
+          "formName": {
+            "type": "string",
+            "title": "Associated Form",
+            "description": "Exact name of an existing form in the Associated Forms dropdown.",
+            "default": "Independent Incident Form"
+          },
+          "formRequired": {
+            "type": "boolean",
+            "title": "Form is Required",
+            "default": true
+          },
+          "communities": {
+            "type": "array",
+            "title": "Communities (exact ALIS dropdown names)",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "incidentTypes": {
+            "type": "array",
+            "title": "Incident Types",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "title": "Incident Type Name",
+                  "examples": [
+                    "Behaviors - Independent"
+                  ]
+                },
+                "reportingLabel": {
+                  "type": "string",
+                  "title": "Reporting Label",
+                  "examples": ["Behavioral"]
+                }
+              },
+              "required": [
+                "name",
+                "reportingLabel"
+              ]
+            }
+          }
+        },
+        "required": [
+          "companyHost",
+          "communities",
+          "incidentTypes"
+        ]
+      }
+    },
+    {
       "id": "med-cart-report",
       "name": "Community Med Cart Report",
       "description": "Ties ALIS's \"Default Med Cart\" field (only available via a manual export of ALIS's own Floor Plan report — the export API has no cart field) to actual medication-pass activity, broken out by med pass shift (AM/Noon/PM/HS). Flags floor-plan residents it couldn't match in ALIS, residents matched but missing a cart assignment, and ALIS residents absent from the floor plan file, rather than guessing. Requires the community's \"Default Med Cart\" column to actually be filled in on the floor plan — if it's blank for every unit, this report will come back empty.",

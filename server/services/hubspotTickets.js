@@ -42,6 +42,9 @@ const TICKET_PROPERTIES = [
   // `hs_next_step` (a different property on a different object type) —
   // just never pulled here before now.
   'next_step',
+  // Custom "Due Date" ticket property (label confirmed live Nov 2026 via
+  // search_properties on TICKET) — shown as a column in Ticket Activity.
+  'due_date',
   // Only the id is stored in snapshots; the note itself is fetched live
   // when someone opens it (GET /api/hubspot/pinned-notes).
   'hs_pinned_engagement_id',
@@ -258,6 +261,7 @@ async function getTicketSummaryForCompany(hubspotCompanyId) {
       // stage (see topThreeEnhancements below for why both are tracked).
       topThreeRank: t.properties.top_3 || null,
       nextStep: t.properties.next_step || null,
+      ticketDueDate: t.properties.due_date || null,
       // Needs nothing but HUBSPOT_PORTAL_ID (no extra API call) — same
       // ticketUrl() used by enrichRepeatIssueFlags/enrichOpenTickets below,
       // now attached to every live-pulled ticket so the Support Review /
@@ -645,6 +649,47 @@ async function getDealSummaryForCompany(hubspotCompanyId) {
 }
 
 /**
+ * Implementation/onboarding projects for one account's deals (Nov 2026,
+ * Aaron: HubSpot's company-record "Implementation" card showed more than the
+ * dashboard). Two fixes vs. the old `filter(d => d.projectStatus)`:
+ *
+ * 1. A deal counts as a tracked project if ANY implementation field is set
+ *    (status, RAG, owner, go-live date, or progress > 0). Confirmed live
+ *    (Viva, Nov 2026): TGR (50%), Kennesaw, Hidden Springs, Woodlands,
+ *    Nazareth and Bethlehem all had progress/RAG/go-live but a BLANK Project
+ *    Status, so a status-only filter silently dropped six live projects.
+ *    These come through with projectStatus null and `statusMissing: true`
+ *    (every consumer's isOpenProject already treats null as open). Deals
+ *    with only progress 0 and nothing else (Split Pay / Additional Payor
+ *    addenda) stay excluded.
+ * 2. A "Merged" deal has no link property in HubSpot (hs_merged_object_ids
+ *    is HubSpot's own record-merge, unrelated) — it's a manual status meaning
+ *    "tracked on a sibling project." We infer the survivor: a non-Merged
+ *    tracked deal on the same account with the same Projected Go-Live Date
+ *    (a community-add batch shares one date). `mergedInto` is null when none
+ *    exists — those are the Merged deals nobody is actually tracking.
+ */
+function buildImplementationProjects(deals) {
+  const tracked = deals.filter((d) => d.projectStatus || d.projectHealthRag || d.projectOwner || d.projectedGoLiveDate || (d.projectProgress || 0) > 0);
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  const survivors = tracked.filter((d) => d.projectStatus !== 'Merged');
+  return tracked.map((d) => {
+    let mergedInto = null;
+    if (d.projectStatus === 'Merged' && day(d.projectedGoLiveDate)) {
+      const match = survivors
+        .filter((s) => day(s.projectedGoLiveDate) === day(d.projectedGoLiveDate))
+        .sort((a, b) => (b.projectProgress || 0) - (a.projectProgress || 0))[0];
+      if (match) mergedInto = { dealId: match.id, name: match.name, projectStatus: match.projectStatus, url: match.url };
+    }
+    return {
+      dealId: d.id, name: d.name, projectStatus: d.projectStatus, statusMissing: !d.projectStatus, mergedInto,
+      projectHealthRag: d.projectHealthRag, projectProgress: d.projectProgress, projectOwner: d.projectOwner,
+      projectedGoLiveDate: d.projectedGoLiveDate, createdAt: d.createdAt, url: d.url, pinnedNoteId: d.pinnedNoteId,
+    };
+  });
+}
+
+/**
  * "Contract Truth" data-completeness check (Sep 2026, Aaron — ported from
  * alis-product-ops's server/services/hubspotDealsSummary.js, moved here
  * since "these don't really need to be on the product board" but the
@@ -942,5 +987,5 @@ function enrichOpenTickets(serviceHealth) {
 module.exports = {
   getTicketSummaryForCompany, getDealSummaryForCompany, getContractedModulesForCompany, getOpenTasksForDeal,
   enrichRepeatIssueFlags, enrichDealUrls, enrichOpenTickets, hubspotRecordUrl,
-  hubspotRequest, chunk, getPipelineStageLabels, computeContractTruth,
+  hubspotRequest, chunk, getPipelineStageLabels, computeContractTruth, buildImplementationProjects,
 };

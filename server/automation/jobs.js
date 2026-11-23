@@ -21,6 +21,7 @@ const { runMedCartReportJob }              = require('./medCartReportJob');
 const { runAbstCrosswalkJob }              = require('./abstCrosswalkJob');
 const { runMovedOutBillingJob }            = require('./movedOutBillingJob');
 const { runResidentPhotosJob }             = require('./residentPhotosJob');
+const { runIlIncidentTypesJob }            = require('./ilIncidentTypesJob');
 const { runAlertSubscriptionsJob }         = require('./alertSubscriptionsJob');
 
 /**
@@ -142,6 +143,9 @@ async function runTemplateJob(jobId, template, payload) {
 
       case 'care-item-reporting-label':
         return await runCareItemReportingLabelJob(jobId, payload);
+
+      case 'il-incident-types':
+        return await runIlIncidentTypesJob(jobId, payload);
 
       case 'alert-subscriptions':
         return await runAlertSubscriptionsJob(jobId, payload);

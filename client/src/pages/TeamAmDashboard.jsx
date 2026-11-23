@@ -3015,7 +3015,7 @@ function ImplementationProjectsSection({ accounts }) {
   return (
     <SectionCard
       title="Onboarding"
-      description="Implementation-tracked deals, portfolio-wide — only deals HubSpot has a Project Status on; tracking only started around mid-2025, so older deals won't show up here"
+      description="Implementation-tracked deals, portfolio-wide — deals with a Project Status or any project progress/owner/go-live set in HubSpot; tracking only started around mid-2025, so older deals won't show up here"
       defaultExpanded={false}
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -3100,7 +3100,20 @@ function ImplementationProjectsSection({ accounts }) {
                   </td>
                   <td className="py-2 pr-4"><RagBadge rag={p.projectHealthRag} /></td>
                   <td className="py-2 pr-4 text-neutral-500">{p.projectProgress != null ? `${p.projectProgress}%` : '—'}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{p.projectStatus || '—'}</td>
+                  <td className="py-2 pr-4 text-neutral-500">
+                    {p.projectStatus || (
+                      <span className="text-amber-600" title="HubSpot has progress/owner/go-live on this deal but no Project Status set — fix it on the deal's Implementation card">Not set</span>
+                    )}
+                    {p.projectStatus === 'Merged' && (
+                      p.mergedInto ? (
+                        <div className="text-xs text-neutral-400" title="Inferred: same Projected Go-Live Date as this project">
+                          → tracked on <a href={p.mergedInto.url} target="_blank" rel="noopener noreferrer" className="hover:text-accent-600 hover:underline">{(p.mergedInto.name || '').replace(/^.*? - /, '')}</a> ({p.mergedInto.projectStatus || 'no status'})
+                        </div>
+                      ) : (
+                        <div className="text-xs text-amber-600" title="No other project on this account shares this go-live date, so nothing appears to be tracking this community">no surviving project found</div>
+                      )
+                    )}
+                  </td>
                   <td className="py-2 pr-4 text-neutral-500">{p.projectOwner || '—'}</td>
                   <td className="py-2 text-neutral-500">{p.projectedGoLiveDate ? p.projectedGoLiveDate.slice(0, 10) : '—'}</td>
                 </tr>

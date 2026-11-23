@@ -5176,7 +5176,7 @@ function ImplementationProjectsSection({ accounts }) {
   return (
     <SectionCard
       title="Onboarding"
-      description="Implementation-tracked deals, portfolio-wide — only deals HubSpot has a Project Status on; tracking only started around mid-2025, so older deals won't show up here"
+      description="Implementation-tracked deals, portfolio-wide — deals with a Project Status or any project progress/owner/go-live set in HubSpot; tracking only started around mid-2025, so older deals won't show up here"
       defaultExpanded={false}
     >
       {companyOptions.length > 1 && (
@@ -5273,7 +5273,20 @@ function ImplementationProjectsSection({ accounts }) {
                   </td>
                   <td className="py-2 pr-4"><RagBadge rag={p.projectHealthRag} /></td>
                   <td className="py-2 pr-4 text-neutral-500">{p.projectProgress != null ? `${p.projectProgress}%` : '—'}</td>
-                  <td className="py-2 pr-4 text-neutral-500">{p.projectStatus || '—'}</td>
+                  <td className="py-2 pr-4 text-neutral-500">
+                    {p.projectStatus || (
+                      <span className="text-amber-600" title="HubSpot has progress/owner/go-live on this deal but no Project Status set — fix it on the deal's Implementation card">Not set</span>
+                    )}
+                    {p.projectStatus === 'Merged' && (
+                      p.mergedInto ? (
+                        <div className="text-xs text-neutral-400" title="Inferred: same Projected Go-Live Date as this project">
+                          → tracked on <a href={p.mergedInto.url} target="_blank" rel="noopener noreferrer" className="hover:text-accent-600 hover:underline">{(p.mergedInto.name || '').replace(/^.*? - /, '')}</a> ({p.mergedInto.projectStatus || 'no status'})
+                        </div>
+                      ) : (
+                        <div className="text-xs text-amber-600" title="No other project on this account shares this go-live date, so nothing appears to be tracking this community">no surviving project found</div>
+                      )
+                    )}
+                  </td>
                   <td className="py-2 pr-4 text-neutral-500">{p.projectOwner || '—'}</td>
                   <td className="py-2 text-neutral-500">{p.projectedGoLiveDate ? p.projectedGoLiveDate.slice(0, 10) : '—'}</td>
                 </tr>
@@ -6002,10 +6015,10 @@ export default function AccountHealthDashboard() {
               label="Open Tickets"
               value={rollup.openTickets}
               note="Client Submitted + In Progress, excl. enhancements"
-              jumpTo="tickets-open-by-category-2-0"
+              jumpTo="tickets-by-category-open"
               jumpLabel="Jump to breakdown ↓"
             />
-            <StatCard label="Closed Tickets" value={rollup.closedTickets} jumpTo="tickets-closed-by-category-2-0" jumpLabel="Jump to breakdown ↓" />
+            <StatCard label="Closed Tickets" value={rollup.closedTickets} jumpTo="tickets-by-category-closed" jumpLabel="Jump to breakdown ↓" />
             <StatCard
               label="Open Escalation Tickets"
               value={rollup.escalationCount}

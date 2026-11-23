@@ -2121,7 +2121,7 @@ function HealthScoreTrendSection({ jobId, dealSummary }) {
  */
 function OnboardingSection({ dealSummary }) {
   const allProjects = useMemo(
-    () => (dealSummary?.deals || []).filter((d) => d.projectStatus),
+    () => (dealSummary?.deals || []).filter((d) => (d.projectStatus || d.projectHealthRag || d.projectOwner || d.projectedGoLiveDate || (d.projectProgress || 0) > 0)), // same rule as hubspotTickets.js buildImplementationProjects
     [dealSummary]
   );
   const openProjects = useMemo(() => allProjects.filter(isOpenProject), [allProjects]);
@@ -2149,7 +2149,7 @@ function OnboardingSection({ dealSummary }) {
   return (
     <SectionCard
       title="Onboarding"
-      description="Implementation-tracked deals for this account — only deals HubSpot has a Project Status on; tracking only started around mid-2025, so older deals won't show up here"
+      description="Implementation-tracked deals for this account — deals with a Project Status or any progress/owner/go-live set in HubSpot; tracking only started around mid-2025, so older deals won't show up here"
     >
       {allProjects.length === 0 ? (
         <p className="text-sm text-neutral-500 italic">No implementation-tracked deals for this account.</p>
@@ -2203,7 +2203,7 @@ function OnboardingSection({ dealSummary }) {
                     </td>
                     <td className="py-2 pr-4"><RagBadge rag={p.projectHealthRag} /></td>
                     <td className="py-2 pr-4 text-neutral-500">{p.projectProgress != null ? `${p.projectProgress}%` : '—'}</td>
-                    <td className="py-2 pr-4 text-neutral-500">{p.projectStatus || '—'}</td>
+                    <td className="py-2 pr-4 text-neutral-500">{p.projectStatus || <span className="text-amber-600" title="Progress/owner/go-live set in HubSpot but no Project Status">Not set</span>}</td>
                     <td className="py-2 pr-4 text-neutral-500">{p.projectOwner || '—'}</td>
                     <td className="py-2 text-neutral-500">{p.projectedGoLiveDate ? p.projectedGoLiveDate.slice(0, 10) : '—'}</td>
                   </tr>

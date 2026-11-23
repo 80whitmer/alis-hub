@@ -903,7 +903,7 @@ function addOnboardingSlide(pptx, dealSummary) {
   const slide = pptx.addSlide();
   addSectionHeader(slide, 'Onboarding');
 
-  const allProjects = (dealSummary?.deals || []).filter((d) => d.projectStatus);
+  const allProjects = (dealSummary?.deals || []).filter((d) => (d.projectStatus || d.projectHealthRag || d.projectOwner || d.projectedGoLiveDate || (d.projectProgress || 0) > 0));
   if (allProjects.length === 0) {
     slide.addText('No implementation-tracked deals yet.', { x: 0.7, y: 1.5, w: 8.5, h: 0.5, fontFace: FONT_BODY, fontSize: 12, italic: true, color: BRAND.slate });
     return;
@@ -1307,7 +1307,7 @@ async function buildQbrDeck(snapshot, options = {}) {
   // HubSpot Deals above, not the always-shown-with-a-fallback treatment —
   // an account with no implementation-tracked deals at all just isn't
   // onboarding right now. Same gate as the on-screen OnboardingSection.
-  const hasImplementationProjects = includeHubspot && Boolean(dealSummary?.deals?.some((d) => d.projectStatus));
+  const hasImplementationProjects = includeHubspot && Boolean(dealSummary?.deals?.some((d) => (d.projectStatus || d.projectHealthRag || d.projectOwner || d.projectedGoLiveDate || (d.projectProgress || 0) > 0)));
   // Health Score Trend's own showX flag is defined just below keep()'s
   // declaration (see there) — kept next to it rather than here, since it
   // depends on keep() and this file declares that after this point.

@@ -130,6 +130,11 @@ router.post('/create', (req, res) => {
       // One row per resident; the job syncs them itself once it validates the payload.
       itemCount = (payload.residents || []).length;
       itemsToTrack = (payload.residents || []).filter((r) => r?.name);
+    } else if (templateId === 'il-incident-types') {
+      // One row per incident type; `communities` here is the shared association
+      // list (strings), not a unit of work, so don't let the generic branch count it.
+      itemCount = (payload.incidentTypes || []).length;
+      itemsToTrack = (payload.incidentTypes || []).filter((t) => t?.name);
     } else if (templateId === 'alert-subscriptions') {
       // Unit of work is person × community; the job validates the payload and
       // calls syncJobItems itself, so don't pre-count anything here.

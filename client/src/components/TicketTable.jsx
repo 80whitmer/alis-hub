@@ -352,6 +352,7 @@ export default function TicketTable({ items, showAccountManager = false }) {
                 <SortableHeader label="Status" column="pipelineStageLabel" sort={sort} onSort={toggleSort} />
                 <SortableHeader label="Created" column="createdAt" sort={sort} onSort={toggleSort} />
                 <SortableHeader label="Days Open" column="daysOpen" sort={sort} onSort={toggleSort} />
+                <SortableHeader label="Due Date" column="ticketDueDate" sort={sort} onSort={toggleSort} />
                 <SortableHeader label="Next Step" column="nextStep" sort={sort} onSort={toggleSort} />
                 <SortableHeader label="Tier" column="tier" sort={sort} onSort={toggleSort} />
                 <SortableHeader label="Size" column="totalCapacity" sort={sort} onSort={toggleSort} />
@@ -374,6 +375,7 @@ export default function TicketTable({ items, showAccountManager = false }) {
                   <td className="px-3 py-2 text-neutral-500">{t.isOpen ? (t.pipelineStageLabel || 'Open') : 'Closed'}</td>
                   <td className="px-3 py-2 text-neutral-500">{t.createdAt ? t.createdAt.slice(0, 10) : '—'}</td>
                   <td className="px-3 py-2 text-neutral-500">{t.daysOpen ?? '—'}</td>
+                  <td className="px-3 py-2 text-neutral-500 whitespace-nowrap">{t.ticketDueDate ? t.ticketDueDate.slice(0, 10) : '—'}</td>
                   <td className="px-3 py-2 text-neutral-500 max-w-xs truncate" title={t.nextStep || ''}>{t.nextStep || '—'}</td>
                   <td className="px-3 py-2 text-neutral-500">{tierStr(t.tier)}</td>
                   <td className="px-3 py-2 text-neutral-500">{t.totalCapacity ?? '—'}</td>

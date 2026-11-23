@@ -6,7 +6,7 @@ const {
   getOwnerId, getOwnedCompanies, getAccountManagerName, getLifecycleDataQualityFlag, LIFECYCLE_FLAG_LABELS,
   shouldDropLifecycleFlaggedAccount,
 } = require('../services/hubspotAccounts');
-const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl, computeContractTruth } = require('../services/hubspotTickets');
+const { getTicketSummaryForCompany, getDealSummaryForCompany, getOpenTasksForDeal, hubspotRecordUrl, computeContractTruth, buildImplementationProjects } = require('../services/hubspotTickets');
 const { getKeyContactsForCompany } = require('../services/hubspotContacts');
 const { getNextOccurrenceFromLink } = require('../services/googleCalendar');
 const { discoverRecurringCalls } = require('../services/recurringCallDiscovery');
@@ -22,6 +22,7 @@ const {
   listCommunityRevenueLatestMonthByCompany,
   listKeyContacts, replaceKeyContactsForCompany, pruneKeyContacts,
   listAlisAdminIds, listCompanyHosts,
+  listTeamAmSnapshots, updateTeamAmAging,
 } = require('../db/database');
 const { broadcast } = require('./broadcaster');
 const { parseAgingReportPdf } = require('../services/agingReportParser');
@@ -175,6 +176,7 @@ function mapLiveServiceHealth(ticketSummary) {
       pinnedNoteId: t.pinnedNoteId || null,
       category: t.category || null,
       nextStep: t.nextStep || null,
+      ticketDueDate: t.ticketDueDate || null,
       isOpen: t.isOpen,
       createdAt: t.createdAt || null,
       closedAt: t.closedAt || null,
@@ -302,13 +304,7 @@ async function mapLiveFinancialHealth(dealSummary) {
     // One Home Office can have several of these at once (one per
     // community/batch added), so this stays a flat list rather than
     // collapsing to a single per-account status.
-    implementationProjects: dealSummary.deals
-      .filter((d) => d.projectStatus)
-      .map((d) => ({
-        dealId: d.id, name: d.name, projectStatus: d.projectStatus, projectHealthRag: d.projectHealthRag,
-        projectProgress: d.projectProgress, projectOwner: d.projectOwner, projectedGoLiveDate: d.projectedGoLiveDate,
-        createdAt: d.createdAt, url: d.url, pinnedNoteId: d.pinnedNoteId,
-      })),
+    implementationProjects: buildImplementationProjects(dealSummary.deals),
     // "Contract Truth" data-completeness (Sep 2026, Aaron — moved here from
     // alis-product-ops's Dashboard: "I don't think these really need to be
     // on the product board"). See hubspotTickets.js's computeContractTruth.
@@ -618,7 +614,22 @@ router.post('/import-aging-report', async (req, res) => {
       updateAccountHealthAging(hubspotCompanyId, aging);
     }
 
+    // Mirror to Team AM's independent snapshot table so an import from
+    // either dashboard keeps both in sync (see teamAm.js's matching route).
+    let mirroredToTeamAm = 0;
+    try {
+      const taMatched = matchAgingRows(rows, listTeamAmSnapshots()).matched;
+      const taAggregated = aggregateAgingByAccount(taMatched, asOfDate);
+      for (const [hubspotCompanyId, aging] of taAggregated) {
+        updateTeamAmAging(hubspotCompanyId, aging);
+      }
+      mirroredToTeamAm = taAggregated.size;
+    } catch (mirrorErr) {
+      console.error('[accountHealth] Aging import: mirroring to Team AM failed:', mirrorErr);
+    }
+
     res.json({
+      mirroredToTeamAm,
       asOfDate,
       rowsParsed: rows.length,
       rowsMatched: matched.length,
